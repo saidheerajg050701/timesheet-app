@@ -1,0 +1,24 @@
+# Secrets and local settings
+.env
+.claude/settings.local.json
+
+# Databases (never commit real data)
+*.sqlite3
+*.sqlite3-journal
+backups/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Test and tool output
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+test-results/
+playwright-report/
+
+# macOS
+.DS_Store

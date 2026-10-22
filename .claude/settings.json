@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run pytest*)",
+      "Bash(uv run ruff*)",
+      "Bash(bash scripts/test_all.sh)",
+      "Bash(uv run python manage.py check*)",
+      "Bash(uv run python manage.py makemigrations*)",
+      "Bash(uv run python manage.py migrate*)",
+      "Bash(uv add *)",
+      "Bash(git status)",
+      "Bash(git diff*)"
+    ],
+    "deny": [
+      "Bash(uv run python manage.py flush*)",
+      "Bash(rm -rf*)",
+      "Bash(rm *sqlite3*)",
+      "Read(./.env)"
+    ]
+  }
+}
