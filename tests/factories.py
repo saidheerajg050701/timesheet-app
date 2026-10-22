@@ -1,4 +1,4 @@
-"""factory_boy factories (B.11). Timesheet, TimeEntry, ... factories arrive with their models."""
+"""factory_boy factories (B.11)."""
 
 from datetime import date
 
@@ -8,6 +8,7 @@ from django.conf import settings
 from factory.django import DjangoModelFactory
 
 from directory.models import Employee, Team, User
+from timesheets.models import Project, TimeEntry, Timesheet
 
 TEST_PASSWORD = "Test-Password-123!"
 
@@ -49,3 +50,30 @@ class UserFactory(DjangoModelFactory):
     @classmethod
     def _create(cls, model_class, *args, **kwargs):
         return cls._get_manager(model_class).create_user(*args, **kwargs)
+
+
+class ProjectFactory(DjangoModelFactory):
+    class Meta:
+        model = Project
+
+    code = factory.Sequence(lambda n: f"PRJ-{900 + n}")
+    name = factory.Sequence(lambda n: f"Project {n}")
+
+
+class TimesheetFactory(DjangoModelFactory):
+    class Meta:
+        model = Timesheet
+
+    employee = factory.SubFactory(EmployeeFactory)
+    week_start = date(2026, 10, 19)
+
+
+class TimeEntryFactory(DjangoModelFactory):
+    class Meta:
+        model = TimeEntry
+
+    timesheet = factory.SubFactory(TimesheetFactory)
+    work_date = factory.LazyAttribute(lambda o: o.timesheet.week_start)
+    category = TimeEntry.Category.PROJECT
+    project = factory.SubFactory(ProjectFactory)
+    minutes = 480

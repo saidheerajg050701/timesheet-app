@@ -20,6 +20,15 @@ uv run python manage.py migrate --database=payroll   # payroll database → payr
 uv run python manage.py runserver          # http://127.0.0.1:8000
 ```
 
+## Demo data and the employee directory
+```bash
+uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history
+uv run python manage.py seed_demo --large    # ~500 employees, 52 weeks (performance testing)
+uv run python manage.py import_employees data/your_file.csv   # create/update employees by employee_code
+```
+`seed_demo` refuses to run when the database already has data. Every demo login uses the
+`DEMO_PASSWORD` from `.env`. The admin at http://127.0.0.1:8000/admin/ is view-only for now.
+
 To create an admin login for an existing directory admin employee (ACTIVE, `is_admin` on,
 no account yet):
 ```bash

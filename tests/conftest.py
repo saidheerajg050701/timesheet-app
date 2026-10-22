@@ -36,3 +36,17 @@ def admin_employee(db):
 @pytest.fixture
 def user(db):
     return UserFactory()
+
+
+@pytest.fixture
+def demo_password(settings):
+    settings.DEMO_PASSWORD = "Demo-Password-2026!"
+    return settings.DEMO_PASSWORD
+
+
+@pytest.fixture
+def admin_client(client, db):
+    """A logged-in directory admin (is_staff/is_superuser come from is_admin, D-13)."""
+    admin = UserFactory(employee__is_admin=True)
+    client.force_login(admin)
+    return client

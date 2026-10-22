@@ -624,6 +624,7 @@ tests/
     test_signup.py
     test_passwords.py
     test_accounts.py       # UserManager, createsuperuser, directory → account sync (D-02, D-13, D-20)
+    test_audit.py          # exactly one of actor / system_actor (D-14)
     test_validation.py
     test_payroll_split.py
   integration/
@@ -634,6 +635,7 @@ tests/
     test_payroll_publish.py
     test_analytics.py
     test_admin.py
+    test_import_employees.py
     test_seed_demo.py
   e2e/
     test_e2e_flows.py      # marked @pytest.mark.e2e
@@ -696,6 +698,12 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-49 | Accounts | Employee set INACTIVE, then ACTIVE, and saved | User.is_active follows (D-13) |
 | T-50 | Accounts | HR changes Employee.email (mixed case, spaces) | Employee and User email both updated, lower-cased (D-20) |
 | T-51 | Accounts | Second employee given an existing email in different case | Refused; both emails stay unique (D-20) |
+| T-52 | Audit | AuditLog with both `actor` and `system_actor`, or neither | Refused by `record()` and by the database constraint; exactly one → saved (D-14) |
+| T-53 | Import | `import_employees` on a new CSV (manager listed after their report, optional `end_date` column) | Employees, teams, flags, status, end_date and manager links created; CREATE audit rows with system_actor |
+| T-54 | Import | Same `employee_code`s imported again with changes | Updated in place, no duplicates; linked User synced (D-13, D-20); UPDATE audit with before/after |
+| T-55 | Import | CSV with an unknown manager, bad status/date/boolean, duplicate code or email, missing column | Nothing imported; every error listed with its line |
+| T-56 | Seed | Approvals created by `seed_demo` | Only periods with both weeks SUBMITTED are APPROVED; most recent completed period and periods with a LOCKED week stay PENDING; approver = direct manager (HR for the CEO), never self (D-06, D-11) |
+| T-57 | Seed | Audit rows created by `seed_demo` | Seed's own rows use system_actor `seed_demo`; approvals, rejection, unlocks and the manager edit name the manager as actor (D-14) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -799,7 +807,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-24 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-27 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -827,6 +835,9 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-22 | Audit | AuditLog actions (full list): CREATE, UPDATE, DELETE, SUBMIT, APPROVE, REJECT, UNLOCK, PUBLISH, SUPERSEDE, EXPORT, PAY, SYNC. Publish, supersede, export, pay and sync each write an audit row. | B.6, B.10, C.4 P8 |
 | D-23 | Setup | `createsuperuser` refuses employees whose `is_admin` is off (in addition to unknown, not ACTIVE, or already having an account), so the superuser flags always match the directory (D-13). Set `is_admin` on the employee first. Tested by T-46/T-47. | B.6, C.4 P1 |
 | D-24 | Setup | Until Phase 3, `/` is a public static placeholder page that shows no data. Phase 3 puts it behind login; Phase 9 replaces it with the dashboard. | B.8, C.4 P1/P3/P9 |
+| D-25 | Setup | `week_start_for`, `deadline_for` and `pay_period_for` are built in Phase 2 (seed_demo needs them), with tests T-12, T-15 and T-16. Phase 5 adds `effective_status`, `expected_minutes_for` and the other calendar tests. | B.9, C.4 P2/P5 |
+| D-26 | Setup | Until Phase 11, Django Admin is view-only for every model (passwords shown only as a masked Argon2 summary). Phase 11 adds editing, deactivate and password reset together with their audit rows. | B.4 FR-10, C.4 P2/P11 |
+| D-27 | Data | Seed history is aligned to pay periods: the 6 completed periods before the current one (26 with `--large`), plus week 1 of the current period when today is in its week 2 — 12 or 13 weeks. The current week is left empty. | B.7, C.4 P2 |
 
 ---
 
