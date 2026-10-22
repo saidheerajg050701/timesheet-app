@@ -1,0 +1,25 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Timesheets{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-body-tertiary" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  <nav class="navbar navbar-expand-lg bg-dark" data-bs-theme="dark">
+    <div class="container">
+      <a class="navbar-brand" href="{% url 'home' %}">Timesheets</a>
+      {% block navbar %}{% endblock %}
+    </div>
+  </nav>
+  <main class="container py-4">
+    {% block content %}{% endblock %}
+  </main>
+  <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>
+  <script src="{% static 'vendor/htmx/htmx.min.js' %}"></script>
+  {# Pages with charts add: <script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script> #}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

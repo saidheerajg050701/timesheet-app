@@ -623,6 +623,7 @@ tests/
     test_permissions.py
     test_signup.py
     test_passwords.py
+    test_accounts.py       # UserManager, createsuperuser, directory → account sync (D-02, D-13, D-20)
     test_validation.py
     test_payroll_split.py
   integration/
@@ -687,6 +688,14 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-41 | Seed | `seed_demo` | ~50 employees, 3 sign-up candidates without accounts, payroll records exist |
 | T-42 | Seed | `seed_demo` run twice | Second run refuses, data unchanged |
 | T-43 | Change request | Week unlocked on Wednesday (D-21) | Still editable until Saturday 12:00; LOCKED after that if not resubmitted |
+| T-44 | Accounts | `create_user` / `create_superuser` without an employee | Refused (D-02) |
+| T-45 | Accounts | `create_user` for an employee (mixed-case email) | Email lower-cased from the directory; is_staff/is_superuser/is_active taken from the employee (D-02, D-13, D-20) |
+| T-46 | Accounts | `createsuperuser` with an unknown, INACTIVE, non-admin or already-linked employee_code | Refused; no account created (D-02, D-23) |
+| T-47 | Accounts | `createsuperuser` with an ACTIVE admin employee without an account | Superuser linked to the employee; email from the directory; Argon2 password (D-02) |
+| T-48 | Accounts | Employee `is_admin` switched on, then off, and saved | User is_staff and is_superuser follow (D-13) |
+| T-49 | Accounts | Employee set INACTIVE, then ACTIVE, and saved | User.is_active follows (D-13) |
+| T-50 | Accounts | HR changes Employee.email (mixed case, spaces) | Employee and User email both updated, lower-cased (D-20) |
+| T-51 | Accounts | Second employee given an existing email in different case | Refused; both emails stay unique (D-20) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -790,7 +799,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-22 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-24 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -816,6 +825,8 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-20 | Data | `Employee.email` is the source of truth. `User.email` updates automatically (lower-cased) when HR changes `Employee.email`; both stay unique. | B.4 FR-2, B.6, B.9 |
 | D-21 | Timesheet status | Reopen window: `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline. When the window ends without resubmission, the week becomes LOCKED. Tested by T-43. | B.4 FR-7/FR-8/FR-9, B.5, B.9, B.11 T-24/T-31/T-43, C.4 P6/P7, D.1 |
 | D-22 | Audit | AuditLog actions (full list): CREATE, UPDATE, DELETE, SUBMIT, APPROVE, REJECT, UNLOCK, PUBLISH, SUPERSEDE, EXPORT, PAY, SYNC. Publish, supersede, export, pay and sync each write an audit row. | B.6, B.10, C.4 P8 |
+| D-23 | Setup | `createsuperuser` refuses employees whose `is_admin` is off (in addition to unknown, not ACTIVE, or already having an account), so the superuser flags always match the directory (D-13). Set `is_admin` on the employee first. Tested by T-46/T-47. | B.6, C.4 P1 |
+| D-24 | Setup | Until Phase 3, `/` is a public static placeholder page that shows no data. Phase 3 puts it behind login; Phase 9 replaces it with the dashboard. | B.8, C.4 P1/P3/P9 |
 
 ---
 
