@@ -3,12 +3,13 @@
 
 - **Audience:** You (the project owner), building the app with Claude Code inside the Google Antigravity IDE
 - **Target:** A web application that runs entirely on your Mac (localhost), with local databases
-- **Version:** 2.1 — October 21, 2026
+- **Version:** 2.2 — October 21, 2026
 
 ### What changed
 
 | Version | Change | Details |
 |---|---|---|
+| 2.2 | **Decisions log** | New **section B.12** (D-01…D-22) settles the open points from the spec review. B.1–B.11 and Part C updated to match; **B.12 wins** if anything still conflicts |
 | 2.1 | **Payroll database** | Approved hours per week are copied into a **separate payroll database**. Only the new **Payroll** role (and admins) can see and export it (B.4 FR-11, B.6, Phase 8) |
 | 2.1 | **Full testing plan** | New **section B.11**: test tools, folder layout, 40+ named test cases, example test code, coverage targets, and a one-command test runner. Tests use their own temporary databases |
 | 2.1 | **Bigger demo data** | ~50 employees across 6 departments; most already have accounts and 12 weeks of timesheet history; approved weeks already in the payroll database; a few employees left without accounts to test sign-up (B.7) |
@@ -140,15 +141,15 @@ What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew
 | 7 | Testing | Automated tests for every phase + browser tests; see B.11 | **Decided** |
 | 8 | Company time zone | `America/Chicago` — `.env` → `COMPANY_TZ` | Default |
 | 9 | Work week | Monday → Sunday; a week is identified by its Monday | Default |
-| 10 | Weekly deadline | **Saturday 12:00 noon** company time, same week | Default |
-| 11 | Missed deadline | Week becomes **LOCKED** (missed); employee raises a **Change Request** to edit or submit | Default |
+| 10 | Weekly deadline | **Saturday 12:00 noon** company time, same week. Weekend hours may be entered in advance (D-09) | **Decided** |
+| 11 | Missed deadline | Week becomes **LOCKED** (missed). It must be unlocked — via the employee's **Change Request** or by the manager from the approval page — and then submitted. An unused reopen window returns the week to LOCKED (D-06, D-08) | **Decided** |
 | 12 | Biweekly period | 2 weeks, anchored on Monday `2026-01-05` — `.env` → `PAY_PERIOD_ANCHOR` | Default |
-| 13 | Approver | **Direct manager**; higher managers view only. Top-level people approved by an Admin | Default |
-| 14 | Analytics visibility | Employee: own. Manager: own + whole reporting tree. Admin: everyone. Payroll: payroll pages only | Default |
+| 13 | Approver | **Direct manager**; higher managers view only. Employees with **no manager** are approved by an Admin. **Nobody ever approves their own timesheet** (D-11) | **Decided** |
+| 14 | Analytics visibility | Roles add up (D-12). Everyone: own. Manager: + whole reporting tree. Admin: everyone. Payroll flag: adds payroll pages only | **Decided** |
 | 15 | Time categories | Project work, Meetings, Training, PTO, Sick, Holiday, Other | Default |
 | 16 | Overtime rule (payroll) | Worked hours (Project, Meetings, Training, Other) above the employee's expected weekly hours = overtime. PTO, Sick and Holiday are paid separately and never count as overtime | Default — confirm with payroll; real overtime rules depend on law and contracts |
 | 17 | Hours granularity | 15-minute steps; max 24 h/day; stored as whole minutes | Default |
-| 18 | Expected hours | 40 h/week, can differ per employee | Default |
+| 18 | Expected hours | 40 h/week, can differ per employee. Partial weeks (hire / end date) are prorated by active weekdays (D-19) | Default |
 | 19 | Email verification at sign-up | Off (directory check only) | Default |
 
 ### What `.env` is
@@ -156,6 +157,7 @@ What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew
 ```
 DJANGO_SECRET_KEY=change-me-to-a-long-random-string
 DJANGO_DEBUG=True
+DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 COMPANY_EMAIL_DOMAIN=@yourcompany.com
 COMPANY_TZ=America/Chicago
 PAY_PERIOD_ANCHOR=2026-01-05
@@ -192,7 +194,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 | View own analytics | ✅ | ✅ | ✅ | ✅ |
 | Raise a change request on own week | ✅ | ✅ | ✅ | ✅ |
 | View analytics of reporting tree | — | ✅ own tree | — | ✅ everyone |
-| Approve / reject biweekly timesheets | — | ✅ direct reports | — | ✅ anyone |
+| Approve / reject biweekly timesheets | — | ✅ direct reports | — | ✅ top-level employees only (never self) |
 | Edit a report's week after a change request (audited) | — | ✅ | — | ✅ |
 | **View payroll database (approved hours)** | — | — | ✅ | ✅ |
 | **Export payroll CSV; mark weeks as paid** | — | — | ✅ | ✅ |
@@ -201,11 +203,13 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - **Manager** is automatic: anyone with at least one employee reporting to them.
 - **Payroll** is the `is_payroll` flag in the employee directory.
 - **Admin** is the `is_admin` flag.
-- One person can have several roles (for example, a payroll specialist also fills in their own timesheet).
+- **Roles add up** (D-12). Everyone is an employee first (own timesheet, analytics, change requests). The payroll flag only **adds** `/payroll/` and never grants access to other people's timesheet details. A payroll user who is also a manager gets normal manager rights for their own tree.
+- **Nobody ever approves their own timesheet** (D-11). The approver is the direct manager; Admins approve only employees with no manager, never themselves (the CEO is approved by the HR admin).
+- `User.is_staff` / `is_superuser` always follow `Employee.is_admin`, and `User.is_active` follows `Employee.status` — kept in sync whenever an Employee is saved (D-13).
 
 ## B.4 Features (your requirements, made precise)
 
-**FR-1 Login.** Company email + password. Inactive employees cannot log in. 5 failed attempts → locked for 15 minutes.
+**FR-1 Login.** Company email + password. Inactive employees cannot log in (`User.is_active` follows `Employee.status`, D-13). 5 failed attempts → locked for 15 minutes.
 
 **FR-2 Sign-up with directory check and secure password storage.**
 1. Email is trimmed and lower-cased; it must end with `COMPANY_EMAIL_DOMAIN`.
@@ -214,7 +218,8 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 4. Pass → account created and linked to the directory record. Fail → *"This email is not in the company employee directory. Contact HR."* or *"An account already exists — please log in."*
 5. Password rules: at least 12 characters plus Django's standard checks (not too common, not all numbers, not too similar to the email).
 6. **The password is never stored as typed.** It is converted with **Argon2** (a one-way hash with a random "salt") and only that result is saved. At login, the typed password is hashed the same way and compared. Nobody — not admins, not someone with the database file — can read the original password. Forgotten passwords are **reset** by an admin, never shown.
-7. Directory admins automatically get Django Admin access.
+7. Directory admins automatically get Django Admin access, and lose it when `is_admin` is cleared — `is_staff`/`is_superuser` are kept in sync on every Employee save (D-13).
+8. The account email always mirrors the directory: `Employee.email` is the source of truth and `User.email` follows it, lower-cased (D-20).
 
 > **Why "hashing" and not "encryption":** encryption can be reversed with a key, so anyone who gets the key can read every password. Hashing cannot be reversed, which is why it is the industry standard for passwords. This meets — and is safer than — "encrypted passwords".
 
@@ -237,36 +242,38 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Hours by project across the team
 - Click anyone in the tree → read-only view of their analytics and timesheets
 
-**FR-7 Biweekly approvals page.** For managers.
+**FR-7 Biweekly approvals page.** For managers (and Admins, for employees with no manager). Nobody sees their own row (D-11).
 - Pick a pay period (default: most recent completed)
 - One row per direct report: week 1 and week 2 status, total hours, flags (late, overtime, missing days)
 - Open a row → both weeks' entries → **Approve** or **Reject** (comment required)
-- Approve only when both weeks are SUBMITTED (or LOCKED with entries)
+- Approve **only** when both weeks are SUBMITTED (D-06)
+- A LOCKED week shows an **Unlock** button: it creates a manager-authored ChangeRequest (status UNLOCKED) plus an audit entry and reopens the week until `reopen_until` (D-21); the employee then submits (D-06)
 - **Bulk approve** for rows with no flags
-- Reject → both weeks reopen for the employee with the manager's comment
+- Reject → both weeks become REOPENED with `reopen_until` set per D-21, and the manager's comment is shown to the employee (D-07)
+- **Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline
 
-**FR-8 Weekly deadline.** Submit by **Saturday 12:00 noon** company time. After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). Weeks with no timesheet at all (from the hire date onward) also count as missed.
+**FR-8 Weekly deadline.** Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
 
 **FR-9 Manager changes on request.**
 1. Employee opens a submitted or locked week → **Request change** → writes a reason.
 2. The manager's **Change Requests** page lists open requests (count shown in the menu).
-3. Manager chooses **Reject**, **Unlock for employee** (48-hour window), or **Edit directly**.
+3. Manager chooses **Reject**, **Unlock for employee** (open until the later of +48 hours and the week's Saturday 12:00 deadline, D-21; if unused, the week becomes LOCKED — D-08), or **Edit directly**.
 4. Every manager/admin change creates an **Audit Log** entry: who, when, before and after values, linked request.
-5. Editing a week in an approved period sets that approval back to PENDING — and the payroll record for that week is marked **superseded** (see FR-11).
+5. Editing a week in an approved period sets that approval back to PENDING — done only through `timesheets/services/approvals.py`, in the same transaction (D-10) — and the payroll record for that week is marked **superseded** (see FR-11).
 
 **FR-10 Admin (HR).** Through Django Admin at `/admin/`: manage employees (CSV import, deactivate, set Payroll/Admin flags), teams, projects; read-only audit log; view all timesheets; reset passwords.
 
 **FR-11 Payroll database (NEW).**
 1. When a manager **approves** a biweekly period, the app writes **one payroll record per approved week** into the **separate payroll database**.
 2. Each record is a **snapshot** at the moment of approval: Employee ID, name, department, team, week start, period start, **regular hours, overtime hours, PTO, Sick, Holiday, total hours**, expected hours, approver name, approval time.
-3. Payroll records are **never edited**. If an approved week is later changed (FR-9), the old record is marked **SUPERSEDED** and, after re-approval, a **new version** is written. Payroll always sees the current version plus a history of corrections.
+3. Payroll records are **append-only** (D-15): snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. This is enforced in code and tested. If an approved week is later changed (FR-9), the old record is marked **SUPERSEDED** and, after re-approval, a **new version** is written. Payroll always sees the current version plus a history of corrections. Timesheets of an employee who has since been deactivated can still be approved and paid (D-19).
 4. **Payroll page** (`/payroll/`), for Payroll and Admin only:
    - Filter by pay period, department, team, employee, status
    - Totals per employee per period (regular, overtime, PTO, sick, holiday)
    - **Export CSV** for the selected period → records are stamped with an export batch number and marked **EXPORTED**
    - **Mark as paid** → records become **PAID**
    - **Corrections** tab: weeks that changed after they were already exported or paid, so payroll can adjust the next run
-5. Payroll users cannot see timesheet details, notes, or analytics — only approved hours.
+5. The payroll flag never grants access to other people's timesheet details, notes, or analytics — only approved hours. (A payroll user still has their own employee pages, and manager rights for their own tree if they manage people — D-12.)
 6. Because the payroll database is a separate file, it can be backed up, handed over, or moved to a different server later without the rest of the app.
 
 ## B.5 Timesheet status flow
@@ -276,13 +283,19 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 | (none) | Employee saves the week | **DRAFT** |
 | DRAFT | Employee submits before Saturday 12:00 | **SUBMITTED** |
 | DRAFT or (none) | Saturday 12:00 passes without submitting | **LOCKED** (missed) |
-| SUBMITTED | Manager approves the period | **APPROVED** → payroll record written |
-| SUBMITTED | Manager rejects the period | **REOPENED** |
-| LOCKED / SUBMITTED / APPROVED | Change request → manager unlocks | **REOPENED** (48-hour window); payroll record superseded if it existed |
+| SUBMITTED (both weeks) | Manager approves the period | **APPROVED** → payroll record written. DRAFT / LOCKED / REOPENED weeks block approval (D-06) |
+| SUBMITTED | Manager rejects the period | **REOPENED** (`reopen_until` per D-21; D-07) |
+| LOCKED | Manager clicks **Unlock** on the approval page | **REOPENED** (window per D-21); creates a manager-authored ChangeRequest + audit entry (D-06) |
+| LOCKED / SUBMITTED / APPROVED | Change request → manager unlocks | **REOPENED** (window per D-21); payroll record superseded if it existed |
 | LOCKED / SUBMITTED / APPROVED | Change request → manager edits directly | **SUBMITTED** (approval reset to PENDING; payroll record superseded) |
-| REOPENED | Employee resubmits | **SUBMITTED** |
+| REOPENED | Employee resubmits | **SUBMITTED** (`is_late` stays True if past the original deadline, D-08) |
+| REOPENED | `reopen_until` passes without resubmission | **LOCKED** (D-08, D-21) |
 
-**Payroll record status:** `CURRENT` → `EXPORTED` → `PAID`; any of these → `SUPERSEDED` when the week changes.
+**Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline. A week unlocked on Wednesday therefore stays editable until Saturday 12:00.
+
+**Who may change APPROVED (D-10):** `PeriodApproval` is the source of truth. Only `timesheets/services/approvals.py` may move a `Timesheet.status` to or from APPROVED, in the same database transaction as the matching `PeriodApproval` change.
+
+**Payroll record status (D-15):** `CURRENT` → `EXPORTED` → `PAID`, forward only; any of these → `SUPERSEDED` when the week changes. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may ever change.
 
 ## B.6 Data model
 
@@ -302,7 +315,7 @@ class Employee(models.Model):              # the company employee directory
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE"; INACTIVE = "INACTIVE"
     employee_code = models.CharField(max_length=20, unique=True)    # Employee ID, e.g. EMP-0004
-    email = models.EmailField(unique=True)                          # stored lower-case
+    email = models.EmailField(unique=True)                          # stored lower-case; source of truth (D-20)
     first_name = models.CharField(max_length=60)
     last_name = models.CharField(max_length=60)
     job_title = models.CharField(max_length=100)
@@ -311,19 +324,26 @@ class Employee(models.Model):              # the company employee directory
                                 on_delete=models.SET_NULL, related_name="reports")
     location = models.CharField(max_length=100, blank=True)
     hire_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)                    # set on deactivation (D-19)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.ACTIVE)
     expected_weekly_minutes = models.PositiveIntegerField(default=2400)   # 40 h
     is_admin = models.BooleanField(default=False)
     is_payroll = models.BooleanField(default=False)                       # NEW
+    # save() calls directory/services/accounts.py → sync_account(self), which updates the linked
+    # User: is_staff/is_superuser = is_admin, is_active = (status == ACTIVE) (D-13), and
+    # email = self.email lower-cased (D-20).
 
 class User(AbstractUser):                  # login account — MUST exist before the first migrate
     username = None
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True)                          # always mirrors employee.email (D-20)
     employee = models.OneToOneField(Employee, on_delete=models.PROTECT, related_name="account")
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
+    objects = UserManager()                # custom manager, email login (D-02) — directory/managers.py
     # The inherited "password" field stores only the Argon2 hash, e.g. "argon2$argon2id$v=19$..."
 ```
+
+**User manager (D-02).** `UserManager.create_user(email, password, employee)` and `create_superuser(...)` both require an `employee`; flags and email are taken from it (D-13, D-20). `manage.py createsuperuser` asks for an **employee_code** that must exist, be ACTIVE, and have no account yet. Normal accounts come only from `seed_demo` or sign-up.
 
 ```python
 # timesheets/models.py
@@ -338,6 +358,7 @@ class Timesheet(models.Model):             # one per employee per week
     employee = models.ForeignKey("directory.Employee", on_delete=models.PROTECT, related_name="timesheets")
     week_start = models.DateField()        # always a Monday
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
+    # to/from APPROVED only via timesheets/services/approvals.py (D-10)
     submitted_at = models.DateTimeField(null=True, blank=True)
     is_late = models.BooleanField(default=False)
     reopen_until = models.DateTimeField(null=True, blank=True)
@@ -350,8 +371,9 @@ class TimeEntry(models.Model):
         PROJECT="PROJECT"; MEETING="MEETING"; TRAINING="TRAINING"; PTO="PTO"
         SICK="SICK"; HOLIDAY="HOLIDAY"; OTHER="OTHER"
     timesheet = models.ForeignKey(Timesheet, on_delete=models.CASCADE, related_name="entries")
-    work_date = models.DateField()
+    work_date = models.DateField()         # within the week and within hire_date…end_date (D-19)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.PROTECT)
+    # PROJECT entries must have an active project; all other categories must have none (D-18)
     category = models.CharField(max_length=10, choices=Category.choices)
     minutes = models.PositiveIntegerField()    # multiple of 15; daily total ≤ 1440
     notes = models.CharField(max_length=255, blank=True)
@@ -372,6 +394,7 @@ class ChangeRequest(models.Model):
         OPEN="OPEN"; REJECTED="REJECTED"; UNLOCKED="UNLOCKED"; EDITED="EDITED"
     timesheet = models.ForeignKey(Timesheet, on_delete=models.CASCADE, related_name="change_requests")
     requester = models.ForeignKey("directory.Employee", on_delete=models.PROTECT)
+    # requester is the manager for an Unlock from the approval page (D-06)
     reason = models.TextField()
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN)
     reviewer = models.ForeignKey("directory.Employee", null=True, blank=True,
@@ -384,15 +407,25 @@ class ChangeRequest(models.Model):
 ```python
 # audit/models.py
 class AuditLog(models.Model):
-    actor = models.ForeignKey("directory.Employee", on_delete=models.PROTECT)
+    class Action(models.TextChoices):     # full list (D-22)
+        CREATE="CREATE"; UPDATE="UPDATE"; DELETE="DELETE"; SUBMIT="SUBMIT"; APPROVE="APPROVE"
+        REJECT="REJECT"; UNLOCK="UNLOCK"; PUBLISH="PUBLISH"; SUPERSEDE="SUPERSEDE"
+        EXPORT="EXPORT"; PAY="PAY"; SYNC="SYNC"
+    actor = models.ForeignKey("directory.Employee", null=True, blank=True, on_delete=models.PROTECT)
+    system_actor = models.CharField(max_length=40, blank=True)   # e.g. "seed_demo", "sync_payroll" (D-14)
     entity_type = models.CharField(max_length=40)
     entity_id = models.CharField(max_length=40)
-    action = models.CharField(max_length=20)    # CREATE/UPDATE/DELETE/SUBMIT/APPROVE/REJECT/UNLOCK/PUBLISH
+    action = models.CharField(max_length=20, choices=Action.choices)
     before = models.JSONField(null=True, blank=True)
     after = models.JSONField(null=True, blank=True)
     change_request = models.ForeignKey("timesheets.ChangeRequest", null=True, blank=True,
                                        on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.CheckConstraint(       # exactly one of actor / system_actor (D-14)
+            condition=(Q(actor__isnull=False) & Q(system_actor=""))
+                    | (Q(actor__isnull=True) & ~Q(system_actor="")),
+            name="audit_exactly_one_actor")]
 ```
 
 ### Payroll database (`payroll.sqlite3`) — NEW
@@ -420,6 +453,7 @@ class PayrollWeek(models.Model):
     approved_at = models.DateTimeField()
     source_timesheet_id = models.PositiveIntegerField()   # id in the main database
     version = models.PositiveIntegerField(default=1)
+    # Everything above is frozen after creation. Only the fields below may change, forward only (D-15).
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.CURRENT)
     export_batch = models.CharField(max_length=40, blank=True)
     exported_at = models.DateTimeField(null=True, blank=True)
@@ -435,10 +469,11 @@ How the two databases work together:
 - `settings.DATABASES` has `default` → `db.sqlite3` and `payroll` → `payroll.sqlite3`.
 - `payroll/routers.py` sends every read, write and migration of the `payroll` app to the `payroll` database, and keeps all other apps out of it.
 - Migrate both: `uv run python manage.py migrate` and `uv run python manage.py migrate --database=payroll`.
-- `payroll/services.py → publish_period(approval)` runs after an approval and writes the week records. It is **idempotent** (running it twice never creates duplicates), so `manage.py sync_payroll` can safely re-check all approved periods and fill in anything missing — this protects against the two databases getting out of step.
+- `payroll/services/publish.py → publish_period(approval)` runs after an approval and writes the week records. It is **idempotent** (running it twice never creates duplicates), so `manage.py sync_payroll` can safely re-check all approved periods and fill in anything missing — this protects against the two databases getting out of step.
 
 Design notes:
-- The custom `User` model must be set up (`AUTH_USER_MODEL = "directory.User"`) **before the very first migrate**.
+- The custom `User` model and its `UserManager` must be set up (`AUTH_USER_MODEL = "directory.User"`) **before the very first migrate** (D-02).
+- Every app keeps business rules in a **services package**: `<app>/services/<module>.py` — never a single `services.py` (D-04).
 - Work dates are `DateField`; moments in time are stored in UTC and shown in company time.
 - Time is stored as whole **minutes** to avoid rounding errors; shown as hours (e.g. 37.75).
 
@@ -456,9 +491,9 @@ Design notes:
 | Login accounts already created | **All active employees except 3** sign-up test people (password = `DEMO_PASSWORD` from `.env`, stored as Argon2 hashes) |
 | Projects | 8 (one inactive) |
 | Timesheet history | **12 weeks** for every employee with an account: mostly on time, some late, a few missed, one rejected period, one open change request |
-| Approved periods | All completed periods approved except the most recent one (left **pending** to test approvals) |
+| Approved periods | All completed periods whose two weeks are both SUBMITTED are approved, except the most recent period (left **pending** to test approvals). Periods containing a missed (LOCKED) week stay **pending** (D-06) |
 | Payroll database | Pre-filled with every approved week (some marked EXPORTED and PAID for older periods, one SUPERSEDED correction) |
-| Audit log | Entries for the seeded approvals, rejection and manager edit |
+| Audit log | Entries for the seeded approvals, rejection and manager edit. Rows the seed itself creates use `system_actor="seed_demo"`; seeded human decisions name the manager as `actor` (D-14) |
 
 ### Core employees (`data/employees_core.csv`)
 ```csv
@@ -524,7 +559,7 @@ uv run python manage.py import_employees data/your_file.csv   # load a real dire
 | `/team/` | Managers | Hierarchy analytics + this week's compliance |
 | `/team/<employee_code>/` | Managers (own tree) | Read-only drill-down |
 | `/approvals/` | Managers | Biweekly approval list by period |
-| `/approvals/<period_start>/<employee_code>/` | Managers | Review both weeks; approve or reject |
+| `/approvals/<period_start>/<employee_code>/` | Managers | Review both weeks; approve or reject; unlock a LOCKED week (D-06) |
 | `/approvals/requests/` | Managers | Change-request inbox |
 | `/payroll/` | **Payroll, Admin** | Approved hours by period; filters; totals; Export CSV; Mark paid |
 | `/payroll/corrections/` | **Payroll, Admin** | Weeks changed after export/payment |
@@ -534,25 +569,31 @@ Every view checks permissions on the server — hiding a menu item is never the 
 
 ## B.9 Core business logic (plain Python functions)
 
+Every app uses a services package, `<app>/services/<module>.py` (D-04).
+
 | # | Function | Location |
 |---|---|---|
 | 1 | `week_start_for(d)` → Monday of that week | `timesheets/services/calendar.py` |
 | 2 | `deadline_for(week_start, tz)` → Saturday 12:00 company time | same |
-| 3 | `effective_status(timesheet, now)` → DRAFT becomes LOCKED after deadline | same |
+| 3 | `effective_status(timesheet, now)` → DRAFT becomes LOCKED after deadline; REOPENED becomes LOCKED after `reopen_until` (D-08, D-21) | same |
 | 4 | `pay_period_for(d, anchor)` → `(period_start, week1, week2)` | same |
-| 5 | `reporting_tree(employee)` → all reports, cycle-safe | `directory/services/permissions.py` |
-| 6 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` | same |
-| 7 | `validate_entries(...)` → 15-min steps, ≤ 24 h/day, dates in week, active projects | `timesheets/services/validation.py` |
-| 8 | `approve_period`, `reject_period`, `reset_approval` | `timesheets/services/approvals.py` |
-| 9 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
-| 10 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday | `payroll/services.py` |
-| 11 | `publish_period(approval)`, `supersede_week(...)`, `export_period(...)`, `mark_paid(...)` | same |
+| 5 | `expected_minutes_for(employee, week_start)` → `expected_weekly_minutes × active weekdays (Mon–Fri, within hire_date…end_date) / 5`; 0 for weeks fully outside employment (D-19) | same |
+| 6 | `reporting_tree(employee)` → all reports, cycle-safe | `directory/services/permissions.py` |
+| 7 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` — `can_approve` = direct manager, or Admin for employees with no manager, never self (D-11); payroll flag grants nothing beyond `/payroll/` (D-12) | same |
+| 8 | `sync_account(employee)` → copies is_admin → is_staff/is_superuser, status → is_active, email (lower-cased) → User (D-13, D-20) | `directory/services/accounts.py` |
+| 9 | `validate_entries(...)` → 15-min steps, ≤ 24 h/day, dates in week and within hire_date…end_date (D-19), PROJECT ⇔ active project (D-18) | `timesheets/services/validation.py` |
+| 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `timesheets/services/approvals.py` |
+| 11 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
+| 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday | `payroll/services/hours.py` |
+| 13 | `publish_period(approval)`, `supersede_week(...)` | `payroll/services/publish.py` |
+| 14 | `export_period(...)`, `mark_paid(...)` — forward-only status changes (D-15) | `payroll/services/export.py` |
+| 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks) | `analytics/services/metrics.py` |
 
 ## B.10 Quality rules
 
 - **Passwords:** Argon2 hashing (`PASSWORD_HASHERS` with `Argon2PasswordHasher` first); minimum 12 characters; plain passwords never logged, emailed, shown, or stored; admins can only reset.
 - **Security:** CSRF protection, secure sessions, lockout via django-axes; every query permission-checked on the server; `.env`, `db.sqlite3` and `payroll.sqlite3` never committed; `DEBUG=False` in production mode.
-- **Payroll integrity:** payroll records are append-only (never edited, only superseded); every publish, export and payment is audited.
+- **Payroll integrity:** payroll records are append-only as defined in D-15 (snapshot and hours fields frozen; lifecycle fields move forward only; corrections by superseding); every publish, supersede, export, payment and sync writes an AuditLog row (PUBLISH / SUPERSEDE / EXPORT / PAY / SYNC, D-22).
 - **Privacy:** managers see only their tree; payroll sees only approved hours.
 - **Usability:** Chrome and Safari, desktop and tablet; keyboard-friendly grid.
 - **Performance:** each page under 1 second with the `--large` seed.
@@ -599,6 +640,8 @@ tests/
 
 ### Test case catalogue (must all exist and pass)
 
+New catalogued tests continue as **T-43, T-44, …** and are added to this table in the same phase that writes them (D-16). Every catalogued test's docstring starts with its ID, e.g. `"""T-13: week still open at Saturday 11:59:59."""`; small helper tests don't need an ID (D-17).
+
 | ID | Area | Test case | Expected |
 |---|---|---|---|
 | T-01 | Sign-up | Email with wrong domain | Refused |
@@ -624,14 +667,14 @@ tests/
 | T-21 | Timesheet | Employee edits after submitting | Forbidden |
 | T-22 | Timesheet | No submission by deadline | LOCKED, counted as missed |
 | T-23 | Change request | Employee requests change | Visible to own manager only |
-| T-24 | Change request | Manager unlocks | REOPENED with 48-hour window; closes after window |
+| T-24 | Change request | Manager unlocks | REOPENED until the later of +48 h and the week's Saturday 12:00 deadline (D-21); after that without resubmission → LOCKED |
 | T-25 | Change request | Manager edits directly | AuditLog with before/after |
 | T-26 | Permissions | Employee opens `/team/` or another person's page | 403 Forbidden |
 | T-27 | Permissions | Director sees indirect reports; manager sees only own tree | Correct sets |
 | T-28 | Permissions | Reporting tree with a cycle in data | No infinite loop |
-| T-29 | Approvals | Approve when one week is still DRAFT | Blocked |
+| T-29 | Approvals | Approve when one week is still DRAFT or LOCKED | Blocked |
 | T-30 | Approvals | Approve both weeks | APPROVED; audit entry |
-| T-31 | Approvals | Reject without comment | Blocked; with comment → REOPENED |
+| T-31 | Approvals | Reject without comment | Blocked; with comment → REOPENED with `reopen_until` per D-21 |
 | T-32 | Approvals | Non-manager tries to approve | 403 |
 | T-33 | Payroll | Approval publishes 2 week records | Correct regular/overtime/PTO/sick/holiday split |
 | T-34 | Payroll | 45 h worked + 8 h PTO, 40 h expected | 40 regular, 5 overtime, 8 PTO |
@@ -643,6 +686,7 @@ tests/
 | T-40 | Analytics | On-time rate, overtime, hours by project for known data | Exact expected numbers |
 | T-41 | Seed | `seed_demo` | ~50 employees, 3 sign-up candidates without accounts, payroll records exist |
 | T-42 | Seed | `seed_demo` run twice | Second run refuses, data unchanged |
+| T-43 | Change request | Week unlocked on Wednesday (D-21) | Still editable until Saturday 12:00; LOCKED after that if not resubmitted |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -654,13 +698,16 @@ from timesheets.services.calendar import deadline_for, effective_status
 TZ = ZoneInfo("America/Chicago")
 
 def test_deadline_is_saturday_noon_local():
+    """Helper check: deadline_for returns Saturday 12:00 local time."""
     assert deadline_for(date(2026, 10, 19), TZ) == datetime(2026, 10, 24, 12, 0, tzinfo=TZ)
 
 def test_week_still_open_at_1159(draft_sheet_week_of_oct_19):
+    """T-13: week still open at Saturday 11:59:59."""
     now = datetime(2026, 10, 24, 11, 59, 59, tzinfo=TZ)
     assert effective_status(draft_sheet_week_of_oct_19, now) == "DRAFT"
 
 def test_week_locked_at_noon(draft_sheet_week_of_oct_19):
+    """T-14: week locked at Saturday 12:00:00."""
     now = datetime(2026, 10, 24, 12, 0, 0, tzinfo=TZ)
     assert effective_status(draft_sheet_week_of_oct_19, now) == "LOCKED"
 ```
@@ -672,6 +719,7 @@ from tests.factories import UserFactory
 
 @pytest.mark.django_db
 def test_password_is_hashed_with_argon2_never_plain_text():
+    """T-06: stored password is an Argon2 hash, never the typed password."""
     user = UserFactory(password="Correct-Horse-42!")
     assert user.password.startswith("argon2")
     assert "Correct-Horse-42!" not in user.password
@@ -679,6 +727,7 @@ def test_password_is_hashed_with_argon2_never_plain_text():
 
 @pytest.mark.django_db
 def test_same_password_gives_different_hashes():
+    """T-07: same password for two users gives different hashes (random salt)."""
     a = UserFactory(password="Same-Password-123")
     b = UserFactory(password="Same-Password-123")
     assert a.password != b.password
@@ -688,16 +737,18 @@ def test_same_password_gives_different_hashes():
 # tests/integration/test_payroll_publish.py
 import pytest
 from payroll.models import PayrollWeek
-from payroll.services import publish_period
+from payroll.services.publish import publish_period
 
 @pytest.mark.django_db(databases=["default", "payroll"])
 def test_overtime_and_pto_split(approved_period_45h_worked_8h_pto):
+    """T-34: 45 h worked + 8 h PTO with 40 h expected → 40 regular, 5 overtime, 8 PTO."""
     publish_period(approved_period_45h_worked_8h_pto)
     week = PayrollWeek.objects.using("payroll").get(status="CURRENT", week_start="2026-10-05")
     assert (week.regular_minutes, week.overtime_minutes, week.pto_minutes) == (2400, 300, 480)
 
 @pytest.mark.django_db(databases=["default", "payroll"])
 def test_publish_twice_creates_no_duplicates(approved_period_45h_worked_8h_pto):
+    """T-35: running publish_period twice creates no duplicates."""
     publish_period(approved_period_45h_worked_8h_pto)
     publish_period(approved_period_45h_worked_8h_pto)
     assert PayrollWeek.objects.using("payroll").filter(status="CURRENT").count() == 2
@@ -710,6 +761,7 @@ from playwright.sync_api import Page, expect
 
 @pytest.mark.e2e
 def test_signup_refused_for_unknown_email(page: Page, live_server):
+    """E2E: sign-up refused for an email that is not in the directory."""
     page.goto(f"{live_server.url}/signup/")
     page.get_by_label("Email").fill("nobody@yourcompany.com")
     page.get_by_label("Password", exact=True).fill("Long-Enough-Pass-1")
@@ -729,12 +781,41 @@ Runs, in order, and stops at the first failure:
 2. `uv run python manage.py makemigrations --check --dry-run` — no forgotten migrations
 3. `uv run python manage.py check` — Django configuration
 4. `uv run pytest -m "not e2e" --cov --cov-fail-under=80` — unit + integration with coverage
-5. `uv run pytest -m e2e` — browser tests
+5. `uv run pytest -m e2e` — browser tests. Until Phase 12, if no tests are marked `e2e` the script prints `e2e: skipped - no e2e tests yet` and treats pytest exit code 5 ("no tests collected") as success **for this step only**. Phase 12 installs Chromium and makes this step mandatory (D-01).
 
 ```bash
 bash scripts/test_all.sh
 ```
 Run it at the end of **every** phase, before committing.
+
+## B.12 Decisions log
+
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-22 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+
+| ID | Area | Decision | Affects |
+|---|---|---|---|
+| D-01 | Setup | `test_all.sh`: when no tests are marked `e2e`, skip the e2e step and print `e2e: skipped - no e2e tests yet`; treat pytest exit code 5 as success **only** for that step. Phase 12 installs Chromium and makes e2e mandatory. | B.11, C.4 P1/P12 |
+| D-02 | Setup | Custom `UserManager` with email login. `create_user` / `create_superuser` require an employee. `createsuperuser` asks for an `employee_code` that must exist, be ACTIVE and have no account. Normal accounts come from `seed_demo` or sign-up. | B.6, C.4 P1 |
+| D-03 | Setup | Add `DJANGO_ALLOWED_HOSTS` to `.env.example` (default `127.0.0.1,localhost`). | B.1 `.env`, C.4 P1 |
+| D-04 | Setup | Every app uses a services package: `<app>/services/<module>.py` (e.g. `payroll/services/publish.py`, `analytics/services/metrics.py`). | B.6, B.9, B.11, C.4 |
+| D-05 | Setup | Git: the project owner runs `git init` and the first commit before Phase 0. | C.1 |
+| D-06 | Timesheet status | Only SUBMITTED weeks can be approved. A LOCKED week must first be unlocked (through a change request, or by the manager directly from the approval page, which creates a manager-authored ChangeRequest and an audit entry) and then submitted. | B.1, B.4 FR-7, B.5, B.6, B.7, B.8, B.9, B.11 T-29 |
+| D-07 | Timesheet status | Reject sets both weeks to REOPENED with `reopen_until` set per D-21. | B.4 FR-7, B.5, B.11 T-31 |
+| D-08 | Timesheet status | When a reopen window (unlock or reject, length per D-21) ends without resubmission, the week becomes LOCKED. A week submitted after its original deadline keeps `is_late = True`. | B.1, B.4 FR-8/FR-9, B.5, B.9, B.11 T-24 |
+| D-09 | Timesheet status | The Saturday 12:00 deadline is intended. Weekend hours may be entered in advance; any change after submitting goes through a change request. | B.1, B.4 FR-8 |
+| D-10 | Timesheet status | `PeriodApproval` is the source of truth. Only `timesheets/services/approvals.py` may change `Timesheet.status` to or from APPROVED, in the same database transaction as the PeriodApproval change. | B.4 FR-9, B.5, B.6, B.9 |
+| D-11 | Roles | Nobody can ever approve their own timesheet. Approver = direct manager. Admins approve only employees with no manager, never themselves (the CEO is approved by the HR admin). In B.3, Admin approves "top-level employees only". | B.1, B.3, B.4 FR-7, B.9 |
+| D-12 | Roles | Roles add up. Payroll users are also employees (own timesheet, analytics, change requests). The payroll flag only adds `/payroll/` and never grants access to other people's timesheet details. A payroll user who is also a manager gets normal manager rights for their own tree. | B.1, B.3, B.4 FR-11, B.9 |
+| D-13 | Roles | Keep `User.is_staff` and `is_superuser` in sync with `Employee.is_admin`, and `User.is_active` with `Employee.status`, whenever an Employee is saved. | B.3, B.4 FR-1/FR-2, B.6, B.9, C.4 P1/P3 |
+| D-14 | Audit | `AuditLog.actor` becomes nullable, plus a new field `system_actor` (e.g. `"seed_demo"`, `"sync_payroll"`) used when no person is acting. Exactly one of the two must be set. | B.6, B.7, C.4 P2/P8 |
+| D-15 | Payroll | "Append-only" means snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. Enforced in code and tested. | B.4 FR-11, B.5, B.6, B.9, B.10 |
+| D-16 | Tests | New catalogued tests continue as T-43, T-44, … and are added to the B.11 table in the same phase. | B.11, C.4 |
+| D-17 | Tests | Every catalogued test's docstring starts with its ID, e.g. `"""T-13: week still open at Saturday 11:59:59."""`. Small helper tests don't need an ID. | B.11 examples |
+| D-18 | Data | PROJECT entries must have an active project; all other categories must have no project. | B.6, B.9, C.4 P5 |
+| D-19 | Data | Add `Employee.end_date` (nullable, set on deactivation). Entries are allowed only between `hire_date` and `end_date`. Expected hours for a partial week = `expected_weekly_minutes × active weekdays (Mon–Fri) / 5`. Weeks fully outside employment are never "missed". Existing timesheets of a deactivated employee can still be approved and paid. | B.1, B.4 FR-8/FR-11, B.6, B.9, C.4 P5/P8/P9/P11 |
+| D-20 | Data | `Employee.email` is the source of truth. `User.email` updates automatically (lower-cased) when HR changes `Employee.email`; both stay unique. | B.4 FR-2, B.6, B.9 |
+| D-21 | Timesheet status | Reopen window: `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline. When the window ends without resubmission, the week becomes LOCKED. Tested by T-43. | B.4 FR-7/FR-8/FR-9, B.5, B.9, B.11 T-24/T-31/T-43, C.4 P6/P7, D.1 |
+| D-22 | Audit | AuditLog actions (full list): CREATE, UPDATE, DELETE, SUBMIT, APPROVE, REJECT, UNLOCK, PUBLISH, SUPERSEDE, EXPORT, PAY, SYNC. Publish, supersede, export, pay and sync each write an audit row. | B.6, B.10, C.4 P8 |
 
 ---
 
@@ -766,6 +847,7 @@ Claude Code reads this automatically at the start of every session.
 ## Source of truth
 - The full spec is docs/BUILD_GUIDE.md (Part B, including B.11 testing). Follow it exactly.
   If something is unclear, ask me before guessing.
+- If docs/BUILD_GUIDE.md B.12 conflicts with anything else, B.12 wins.
 - Build only the phase I ask for (Part C.4). Stop when that phase is done.
 
 ## Stack (do not substitute without asking)
@@ -777,15 +859,19 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 
 ## Conventions
 - Apps: directory, timesheets, audit, payroll, analytics. Settings package: config.
-- Business rules live in <app>/services/*.py as plain, tested functions. Views stay thin.
+- Every app uses a services package: <app>/services/<module>.py (e.g. payroll/services/publish.py,
+  analytics/services/metrics.py); never a single services.py. Business rules live there as plain,
+  tested functions. Views stay thin.
 - Every view enforces permissions server-side via directory/services/permissions.py.
 - Payroll models live only in the payroll database; no foreign keys across databases; payroll
-  records are append-only (supersede, never edit). publish_period must be idempotent.
+  records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
-- Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row.
-- Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01…T-42, factories, fixed clock).
-  Every new rule gets tests in the same phase. Name tests so the T-number is in the docstring.
+- Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row
+  (system actions use system_actor instead of actor, D-14).
+- Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
+  Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
+  to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
 - Never commit .env, db.sqlite3 or payroll.sqlite3. Keep .env.example up to date.
 - Always run Python through uv (`uv run ...`); add packages with `uv add`, never pip.
 
@@ -802,6 +888,12 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 2. The server starts without errors.
 3. Summarize what changed, list the new test IDs, and give me exact browser steps to verify.
 4. Never delete or flush db.sqlite3 or payroll.sqlite3, or squash/delete migrations, without asking me.
+```
+
+Then make the first commit yourself **before Phase 0** (D-05):
+```bash
+git add -A
+git commit -m "Initial docs"
 ```
 
 ## C.3 Working rhythm with Claude Code
@@ -834,16 +926,20 @@ Plan first, then scaffold the project in the current folder:
 - uv project pinned to Python 3.13; add django ">=5.2,<5.3", django-environ, argon2-cffi, django-axes,
   django-import-export, faker; dev deps: pytest, pytest-django, factory-boy, time-machine, pytest-cov,
   pytest-playwright, ruff.
-- Django project package "config"; apps: directory, timesheets, audit, payroll, analytics.
+- Django project package "config"; apps: directory, timesheets, audit, payroll, analytics, each with
+  a services/ package (D-04).
 - Two databases (default → db.sqlite3, payroll → payroll.sqlite3) and payroll/routers.py as in B.6.
-- Custom User model (directory.User) with Team and Employee models exactly as in B.6, with
-  AUTH_USER_MODEL set BEFORE the first migrate.
+- Custom User model (directory.User) with Team and Employee models exactly as in B.6 (including
+  end_date), with AUTH_USER_MODEL set BEFORE the first migrate. Custom UserManager and the
+  createsuperuser employee_code flow (D-02). directory/services/accounts.py sync_account called on
+  every Employee save (D-13, D-20).
 - PASSWORD_HASHERS with Argon2PasswordHasher first; password validators with min length 12.
-- Settings from .env via django-environ; .env.example with every variable from B.1;
-  TIME_ZONE from COMPANY_TZ, USE_TZ=True.
+- Settings from .env via django-environ; .env.example with every variable from B.1, including
+  DJANGO_ALLOWED_HOSTS (D-03); TIME_ZONE from COMPANY_TZ, USE_TZ=True.
 - Vendor Bootstrap 5, HTMX and Chart.js into static/vendor/. base.html and a placeholder home page.
 - Test setup from B.11: tests/ folders, conftest.py, factories.py, pytest markers (e2e), coverage config,
-  and scripts/test_all.sh. Write T-06, T-07, T-08 now (password hashing tests).
+  and scripts/test_all.sh with the e2e skip rule (D-01). Write T-06, T-07, T-08 now (password hashing
+  tests), plus new catalogued tests (T-43 onward, D-16) for D-02, D-13 and D-20.
 - ruff config, .gitignore (.env, *.sqlite3, .venv, backups/, htmlcov/), README.md.
 Migrate both databases, run the tests, then tell me how to start the server.
 ```
@@ -855,17 +951,19 @@ Then `uv run python manage.py runserver` and open http://127.0.0.1:8000.
 
 ### Phase 2 — Data model & demo data
 ```
-Implement the remaining main-database models from B.6 (timesheets, audit) and migrations.
+Implement the remaining main-database models from B.6 (timesheets, audit — AuditLog with nullable
+actor, system_actor and the exactly-one constraint, D-14) and migrations.
 Management commands:
 - import_employees <csv>: upsert by employee_code (teams created; managers linked in a second pass;
-  is_admin, is_payroll, status columns).
+  is_admin, is_payroll, status columns; optional end_date column, D-19).
 - seed_demo exactly as described in B.7: data/employees_core.csv (13 core employees), ~37 Faker
   employees with a fixed seed, accounts for all active employees except qa1, ops1, ops2, passwords
   from DEMO_PASSWORD set with set_password (Argon2), 8 projects, 12 weeks of history with the mix
   described, refuse to run if data already exists. --large option (~500 employees, 52 weeks).
-  (Payroll records are added to the seed in Phase 8.)
+  Approve only periods whose two weeks are SUBMITTED (D-06); audit rows the seed itself creates use
+  system_actor="seed_demo" (D-14). (Payroll records are added to the seed in Phase 8.)
 Register models in Django Admin (AuditLog read-only). Tests: T-41 (without payroll part), T-42,
-plus import_employees tests.
+plus import_employees tests and a new catalogued test for D-14.
 ```
 ✅ Verify: `uv run python manage.py seed_demo`, then log in at http://127.0.0.1:8000/admin/ as `hr@yourcompany.com` and browse employees and timesheets. Open any user — the password shows as an Argon2 hash, not the real password.
 
@@ -874,7 +972,7 @@ plus import_employees tests.
 Implement FR-1 and FR-2: /login/, /signup/, /logout/ with Bootstrap pages.
 Eligibility rules in directory/services/signup.py. Configure django-axes (5 failures → 15-minute lock).
 Require login everywhere except login and signup. Inactive employees cannot log in.
-Directory admins get is_staff and is_superuser when their account is created.
+Directory admins get is_staff and is_superuser through the D-13 sync (built in Phase 1).
 Tests: T-01 to T-05 and T-09 to T-11.
 ```
 ✅ Verify: sign-up works for `qa1@yourcompany.com`; refused for `nobody@yourcompany.com`, `former@yourcompany.com` and `dev1@gmail.com`; `dev1@yourcompany.com` says the account already exists.
@@ -885,7 +983,9 @@ Build the logged-in layout: navbar with name, Employee ID, job title and team (F
 Timesheets, Requests for everyone; Team and Approvals only for managers; Payroll only for payroll/admin;
 Admin link only for admins. /profile/ with password change.
 directory/services/permissions.py: reporting_tree (cycle-safe), is_manager, can_view, can_approve,
-can_edit, can_access_payroll, plus view decorators/mixins. Tests: T-26, T-27, T-28.
+can_edit, can_access_payroll, plus view decorators/mixins. can_approve per D-11 (never self; admins
+only for employees with no manager); roles add up and the payroll flag grants nothing beyond /payroll/
+(D-12). Tests: T-26, T-27, T-28, plus new catalogued tests for D-11 and D-12.
 ```
 ✅ Verify: `dev1` sees no Team/Approvals/Payroll; `eng.manager` sees Team and Approvals; `payroll` sees Payroll.
 
@@ -894,47 +994,62 @@ can_edit, can_access_payroll, plus view decorators/mixins. Tests: T-26, T-27, T-
 Implement FR-8 and /timesheets/ and /timesheets/<YYYY-MM-DD>/: rows by project/category, Mon–Sun
 columns, 15-minute steps, live totals with HTMX, Save draft, Submit, deadline countdown.
 Calendar logic in timesheets/services/calendar.py, validation in timesheets/services/validation.py.
-"now" is a parameter so tests control the clock. Tests: T-12 to T-22.
+Weekend hours can be entered in advance (D-09). PROJECT entries need an active project, other
+categories none (D-18). Entries only within hire_date…end_date; expected_minutes_for prorates
+partial weeks; weeks outside employment are never missed (D-19).
+"now" is a parameter so tests control the clock. Tests: T-12 to T-22, plus new catalogued tests for
+D-18 and D-19.
 ```
 ✅ Verify: fill in and submit this week — it becomes read-only. A past unsubmitted week shows LOCKED.
 
 ### Phase 6 — Change requests & manager edits
 ```
-Implement FR-9: Request change; /requests/; /approvals/requests/ with Reject, Unlock (48 h) and
+Implement FR-9: Request change; /requests/; /approvals/requests/ with Reject, Unlock (window per D-21) and
 Edit directly; AuditLog with before/after for every manager/admin change; editing a week in an approved
-period resets that PeriodApproval to PENDING (leave a clear hook for the payroll "supersede" step,
-implemented in Phase 8). Open-request count in the managers' menu. Tests: T-23 to T-25.
+period resets that PeriodApproval to PENDING through timesheets/services/approvals.py in one
+transaction (D-10) (leave a clear hook for the payroll "supersede" step, implemented in Phase 8).
+reopen_until = the later of +48 h and the week's Saturday 12:00 deadline (D-21); an unused window
+makes the week LOCKED; late resubmissions keep is_late (D-08).
+Open-request count in the managers' menu. Tests: T-23 to T-25, T-43, plus new catalogued tests for D-08.
 ```
 ✅ Verify: dev1 requests a change → eng.manager edits it → the audit log in /admin/ shows before/after.
 
 ### Phase 7 — Biweekly approvals
 ```
 Implement FR-7: /approvals/ with pay-period picker and one row per direct report; detail page to approve
-or reject (comment required); bulk approve for rows without flags; admins approve top-level employees.
-Logic in timesheets/services/approvals.py. Tests: T-29 to T-32.
+or reject (comment required); bulk approve for rows without flags; admins approve employees with no
+manager, never themselves (D-11). Only SUBMITTED weeks can be approved; LOCKED weeks get an Unlock
+button that creates a manager-authored ChangeRequest + audit entry (D-06). Reject → REOPENED with
+reopen_until per D-21 (D-07). Logic in timesheets/services/approvals.py, the only code that moves
+weeks to/from APPROVED (D-10). Tests: T-29 to T-32, plus new catalogued tests for D-06, D-07, D-10, D-11.
 ```
 ✅ Verify: as eng.manager, approve the pending period for dev2 and reject one for dev1; dev1 sees the comment and can resubmit.
 
 ### Phase 8 — Payroll database (NEW)
 ```
 Implement FR-11 and the payroll app (models only in the payroll database, as in B.6):
-- payroll/services.py: split_hours (overtime rule from B.1 row 16), publish_period (idempotent),
-  supersede_week, export_period (CSV + batch number), mark_paid. Call publish_period after approval;
-  call supersede_week from the Phase 6 hook.
+- payroll/services/ package (D-04): hours.py split_hours (overtime rule from B.1 row 16);
+  publish.py publish_period (idempotent), supersede_week; export.py export_period (CSV + batch number),
+  mark_paid. Call publish_period after approval; call supersede_week from the Phase 6 hook.
+- Append-only per D-15: frozen snapshot/hours fields, forward-only status changes, enforced in code.
+- Deactivated employees' existing timesheets can still be approved and paid (D-19).
 - sync_payroll management command that re-checks all approved periods.
 - /payroll/ (filters, per-employee totals, Export CSV, Mark paid) and /payroll/corrections/,
-  for payroll and admin only. Audit publish/export/paid actions.
+  for payroll and admin only.
+- Required AuditLog rows (D-22): publish → PUBLISH, supersede → SUPERSEDE, export → EXPORT,
+  mark paid → PAY, sync_payroll → SYNC (system_actor="sync_payroll", D-14).
 - Extend seed_demo to fill the payroll database as described in B.7 (older periods EXPORTED/PAID,
   one SUPERSEDED correction).
 - backup_db must back up both databases.
-Tests: T-33 to T-39, and the payroll part of T-41.
+Tests: T-33 to T-39, the payroll part of T-41, plus new catalogued tests for D-15 and D-19.
 ```
 ✅ Verify: log in as `payroll@yourcompany.com` → Payroll shows approved weeks with hours split. Approve a period as eng.manager → new weeks appear for payroll. Export CSV opens in Excel/Numbers. Log in as dev1 → `/payroll/` is Forbidden.
 
 ### Phase 9 — Personal analytics dashboard
 ```
-Implement FR-5 on the home page with Chart.js. Metrics in analytics/services.py as tested pure
-functions (missed weeks counted from hire date). Chart data via json_script. Range filter 4/12/26 weeks.
+Implement FR-5 on the home page with Chart.js. Metrics in analytics/services/metrics.py as tested pure
+functions (missed weeks counted only within hire_date…end_date; expected hours prorated for partial
+weeks, D-19). Chart data via json_script. Range filter 4/12/26 weeks.
 Current-week card with countdown. Test: T-40.
 ```
 
@@ -950,13 +1065,16 @@ dashboard components. Enforce can_view on every query. With the --large seed, pa
 ### Phase 11 — Admin polish
 ```
 Finish FR-10 in Django Admin: CSV import/export for Employee, filters and search for employees, teams,
-projects and timesheets, a "deactivate" action, is_admin/is_payroll editing, password reset (never show
-passwords), read-only filterable AuditLog. Only directory admins reach /admin/. Tests for access rules.
+projects and timesheets, a "deactivate" action (sets status INACTIVE and end_date, D-19),
+is_admin/is_payroll editing and email changes (User synced per D-13/D-20), password reset (never show
+passwords), read-only filterable AuditLog. Only directory admins reach /admin/. Tests for access rules
+(new catalogued IDs, D-16).
 ```
 
 ### Phase 12 — Full test pass, hardening & backup
 ```
-Complete B.11: make sure every test ID T-01 to T-42 exists and passes; write the Playwright E2E tests
+Complete B.11: make sure every catalogued test ID (T-01 onward) exists and passes; install Chromium and
+remove the e2e skip from scripts/test_all.sh so e2e is mandatory (D-01); write the Playwright E2E tests
 (marked e2e) for: sign-up refused/accepted, submit before deadline, locked after deadline (fixed clock),
 change request → manager edit, approve → payroll record visible to payroll user, reject, permission
 denials. Reach the coverage targets. Run `manage.py check --deploy` and fix what applies to a local app.
@@ -1014,7 +1132,7 @@ Use the demo logins from B.7 (password = `DEMO_PASSWORD`).
 | 4 | dev2 | Wrong password 5 times | Locked for 15 minutes |
 | 5 | dev1 | Save draft, then submit before Saturday 12:00 | SUBMITTED, read-only |
 | 6 | dev1 | Look at a past unsubmitted week | LOCKED; counted as missed on dashboard |
-| 7 | dev1 → eng.manager | Request change → manager unlocks | dev1 can edit for 48 hours |
+| 7 | dev1 → eng.manager | Request change → manager unlocks | dev1 can edit for at least 48 hours (until the later of +48 h and Saturday 12:00, D-21) |
 | 8 | eng.manager | Edit a report's week | Audit log entry with before/after values |
 | 9 | eng.manager | Approve a biweekly period | Both weeks APPROVED |
 | 10 | payroll | Open Payroll for that period | New week records with regular/overtime/PTO split |

@@ -3,6 +3,7 @@
 ## Source of truth
 - The full spec is docs/BUILD_GUIDE.md (Part B, including B.11 testing). Follow it exactly.
   If something is unclear, ask me before guessing.
+- If docs/BUILD_GUIDE.md B.12 conflicts with anything else, B.12 wins.
 - Build only the phase I ask for (Part C.4). Stop when that phase is done.
 
 ## Stack (do not substitute without asking)
@@ -14,15 +15,19 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 
 ## Conventions
 - Apps: directory, timesheets, audit, payroll, analytics. Settings package: config.
-- Business rules live in <app>/services/*.py as plain, tested functions. Views stay thin.
+- Every app uses a services package: <app>/services/<module>.py (e.g. payroll/services/publish.py,
+  analytics/services/metrics.py); never a single services.py. Business rules live there as plain,
+  tested functions. Views stay thin.
 - Every view enforces permissions server-side via directory/services/permissions.py.
 - Payroll models live only in the payroll database; no foreign keys across databases; payroll
-  records are append-only (supersede, never edit). publish_period must be idempotent.
+  records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
-- Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row.
-- Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01…T-42, factories, fixed clock).
-  Every new rule gets tests in the same phase. Name tests so the T-number is in the docstring.
+- Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row
+  (system actions use system_actor instead of actor, D-14).
+- Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
+  Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
+  to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
 - Never commit .env, db.sqlite3 or payroll.sqlite3. Keep .env.example up to date.
 - Always run Python through uv (`uv run ...`); add packages with `uv add`, never pip.
 
