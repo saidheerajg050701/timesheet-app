@@ -1,0 +1,21 @@
+{% load timesheet_tags %}<tr id="row-{{ row.index }}">
+  <td>
+    {% if editable %}
+      <select name="row-{{ row.index }}-kind" class="form-select form-select-sm" aria-label="Project or category, row {{ row.index|add:1 }}">
+        <option value="">Choose…</option>
+        {% for value, label in kinds %}<option value="{{ value }}"{% if value == row.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    {% else %}{{ row.label }}{% endif %}
+  </td>
+  {% for day, value in days|zip_with:row.cells %}
+    <td class="{% if day.weekend %}table-light{% endif %}">
+      <input type="text" inputmode="decimal" name="row-{{ row.index }}-d{{ forloop.counter0 }}" value="{{ value }}"
+             class="form-control form-control-sm text-end" aria-label="{{ day.date|date:'l' }} hours, row {{ row.index|add:1 }}"
+             {% if not editable or not day.employed %}disabled{% endif %}>
+    </td>
+  {% endfor %}
+  <td>
+    <input type="text" name="row-{{ row.index }}-notes" value="{{ row.notes }}" maxlength="255" class="form-control form-control-sm"
+           aria-label="Notes, row {{ row.index|add:1 }}" {% if not editable %}disabled{% endif %}>
+  </td>
+</tr>

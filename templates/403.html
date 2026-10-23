@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Not allowed — Timesheets{% endblock %}
+
+{% block content %}
+<div class="alert alert-danger" role="alert">
+  <h1 class="h5">Not allowed</h1>
+  <p class="mb-0">{% if exception %}{{ exception }}{% else %}You don't have access to this page.{% endif %}</p>
+</div>
+<a href="{% url 'home' %}">Back to the dashboard</a>
+{% endblock %}

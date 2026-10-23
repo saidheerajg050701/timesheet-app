@@ -1,6 +1,6 @@
 """Shared fixtures (B.11): fixed clock and directory people. More arrive in later phases."""
 
-from datetime import datetime
+from datetime import date, datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -9,7 +9,13 @@ import time_machine
 from django.conf import settings
 
 from directory.models import User
-from tests.factories import EmployeeFactory, TeamFactory, UserFactory
+from tests.factories import (
+    EmployeeFactory,
+    ProjectFactory,
+    TeamFactory,
+    TimesheetFactory,
+    UserFactory,
+)
 
 
 @pytest.fixture
@@ -102,3 +108,14 @@ def login_as(client):
         return client
 
     return _login
+
+
+@pytest.fixture
+def project(db):
+    return ProjectFactory(code="PRJ-001", name="Customer Portal")
+
+
+@pytest.fixture
+def draft_sheet_week_of_oct_19(db):
+    """A DRAFT timesheet for the week of Monday 2026-10-19 (deadline Sat 24 Oct 12:00)."""
+    return TimesheetFactory(week_start=date(2026, 10, 19))

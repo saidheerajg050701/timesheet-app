@@ -1,0 +1,15 @@
+{% load timesheet_tags %}<tfoot id="totals"{% if state.editable %}
+  hx-post="{% url 'timesheet_totals' state.week_start %}" hx-include="#week-form" hx-swap="outerHTML"
+  hx-trigger="input delay:300ms from:#week-form, change from:#week-form"{% endif %}>
+  <tr class="fw-semibold">
+    <th scope="row">Day total</th>
+    {% for day, minutes in days|zip_with:per_day %}
+      <td class="text-center{% if day.weekend %} table-light{% endif %}{% if minutes > 1440 %} text-danger{% endif %}">{{ minutes|hm }}</td>
+    {% endfor %}
+    <td></td>
+  </tr>
+  <tr>
+    <th scope="row">Week</th>
+    <td colspan="8"><span id="week-total" class="fw-semibold">{{ week_total|hm }}</span> of {{ state.expected_minutes|hm }} expected</td>
+  </tr>
+</tfoot>

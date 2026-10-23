@@ -31,6 +31,12 @@ managers (anyone with reports) and directory admins; Payroll for payroll users a
 Admin only for directory admins. Every page also checks permissions on the server
 (`directory/services/permissions.py`). Pages from later build phases show a placeholder.
 
+## Timesheets
+`/timesheets/` lists your recent weeks; open one to fill in hours per project or category
+(15-minute steps, e.g. 7.25 or 7:15), then **Save draft** or **Submit**. The deadline is
+Saturday 12:00 company time; after that an unsubmitted week is locked and counted as missed.
+Only the current and past weeks open. All rules are checked on the server when you save.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

@@ -714,6 +714,11 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-64 | Layout | Menu for employee, manager, payroll user, admin | dev1: no Team/Approvals/Payroll/Admin; manager: Team + Approvals; payroll: Payroll; admin: Admin link; header shows name, Employee ID, job title, team (FR-4) |
 | T-65 | Profile | `/profile/` | Shows the directory details read-only (FR-4); no editable directory fields |
 | T-66 | Profile | Password change | Too short (<12) rejected; valid change keeps the user logged in, new password works, old does not; AuditLog row contains no password or hash |
+| T-67 | Validation | PROJECT entry without a project; MEETING/PTO entry with a project | Both rejected; PROJECT with an active project and other categories without one accepted (D-18) |
+| T-68 | Validation | Entry before `hire_date` or after `end_date` | Rejected; entries on employed days of the same week accepted (D-19) |
+| T-69 | Calendar | `expected_minutes_for` for hire mid-week, end mid-week, part-timer, and a week fully outside employment | Prorated by active weekdays (e.g. 2400 × 3/5 = 1440); 0 outside employment (D-19) |
+| T-70 | Timesheet | Unsubmitted past weeks before `hire_date` / after `end_date` vs partly employed weeks | Fully outside employment never missed; partly employed week missed if not submitted (D-19) |
+| T-71 | Timesheet | Submit a week | AuditLog SUBMIT row with the employee as actor, after = status SUBMITTED, submitted_at, is_late, total minutes |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -817,7 +822,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-31 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-34 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -852,6 +857,9 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-29 | Login | There is one login page, `/login/`. `/admin/login/` redirects there (keeping `?next=`); a logged-in employee without `is_admin` who opens `/admin/` gets 403. | B.8, C.4 P3/P11 |
 | D-30 | Layout | Menu items for pages built in later phases (Timesheets, Requests, Team, Approvals, Payroll) link to simple "coming in a later phase" placeholder pages that already enforce the correct permission on the server, so menus and 403s can be tested from Phase 4. Later phases replace the views but keep the URLs and URL names. | B.8, C.4 P4–P10 |
 | D-31 | Roles | Admins see **Team** (everyone) and **Approvals** (their direct reports plus employees with no manager, never themselves), even if they manage nobody. Managers see Team and Approvals for their own reports. Replaces "only for managers" in the C.4 Phase 4 prompt (B.1 row 14, B.3, D-11). | B.1, B.3, C.4 P4/P7/P10 |
+| D-32 | Timesheet | Submitting requires at least one entry ("Add at least one entry before submitting"); leave is entered as PTO, Sick or Holiday. | B.4 FR-8, C.4 P5 |
+| D-33 | Timesheet | Employees can open only the current week and earlier weeks; future weeks cannot be opened or saved. The current week can be submitted any time before Saturday 12:00, including weekend hours entered in advance (D-09). Future weeks are never counted as missed. | B.4 FR-8, B.8, C.4 P5 |
+| D-34 | Timesheet | LOCKED and "missed" are worked out when read (`effective_status`, `week_state`); opening a page never writes. The stored status changes only through actions (save, submit, and later unlock/approve), so a locked week may still be stored as DRAFT. | B.4 FR-8, B.5, B.9 #3, C.4 P5–P7 |
 
 ---
 

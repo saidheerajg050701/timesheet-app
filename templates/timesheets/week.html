@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}Week of {{ state.week_start|date:"M j, Y" }} — Timesheets{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <div>
+    <h1 class="h3 mb-1">Week of {{ state.week_start|date:"l, M j, Y" }}</h1>
+    <span class="badge {{ state.status|status_badge }}" id="week-status">{{ status_label }}</span>
+    {% if sheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
+    {% if state.is_missed %}<span class="badge text-bg-danger">Missed</span>{% endif %}
+  </div>
+  <nav aria-label="Weeks" class="btn-group">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheet_week' previous_week %}">&larr; Previous</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheets' %}">All weeks</a>
+    {% if next_week %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheet_week' next_week %}">Next &rarr;</a>{% endif %}
+  </nav>
+</div>
+
+<div class="alert {% if open_until %}alert-info{% elif state.status == 'LOCKED' %}alert-danger{% else %}alert-secondary{% endif %}" id="deadline" role="status">
+  {% if open_until %}
+    Submit by <strong>{{ open_until|date:"l, M j, g:i A" }}</strong> —
+    <span data-deadline="{{ open_until|date:'c' }}">{{ open_until|countdown:now }}</span> left.
+    Weekend hours can be entered in advance.
+  {% elif state.status == "SUBMITTED" or state.status == "APPROVED" %}
+    Submitted {{ sheet.submitted_at|date:"l, M j, g:i A" }}. This week is read-only; changes go through a change request.
+  {% elif state.status == "LOCKED" %}
+    The deadline ({{ state.deadline|date:"l, M j, g:i A" }}) passed without a submission, so this week is locked and counted as missed.
+  {% elif state.status == "OUTSIDE_EMPLOYMENT" %}
+    You were not employed this week.
+  {% endif %}
+</div>
+
+{% if errors %}
+  <div class="alert alert-danger" role="alert" id="errors">
+    <p class="fw-semibold mb-1">Nothing was saved. Please fix:</p>
+    <ul class="mb-0">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+
+<form method="post" id="week-form" novalidate>
+  {% csrf_token %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle bg-body" id="grid">
+      <thead>
+        <tr>
+          <th scope="col" style="min-width: 14rem">Project / category</th>
+          {% for day in days %}
+            <th scope="col" class="text-center{% if day.weekend %} table-light{% endif %}" style="min-width: 5rem">
+              {{ day.date|date:"D" }}<br><small class="fw-normal">{{ day.date|date:"M j" }}</small>
+            </th>
+          {% endfor %}
+          <th scope="col" style="min-width: 10rem">Notes</th>
+        </tr>
+      </thead>
+      <tbody id="grid-rows">
+        {% for row in rows %}{% include "timesheets/_row.html" with editable=state.editable %}{% empty %}
+          <tr><td colspan="9" class="text-body-secondary">No entries.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% include "timesheets/_totals.html" %}
+    </table>
+  </div>
+  {% if state.editable %}
+    <div class="d-flex flex-wrap gap-2">
+      <button type="button" class="btn btn-outline-secondary" id="add-row"
+              hx-get="{% url 'timesheet_row' state.week_start %}" hx-target="#grid-rows" hx-swap="beforeend"
+              hx-vals='js:{index: document.querySelectorAll("#grid-rows > tr").length}'>Add row</button>
+      <button type="submit" name="action" value="save" class="btn btn-outline-primary">Save draft</button>
+      <button type="submit" name="action" value="submit" class="btn btn-primary"
+              onclick="return confirm('Submit this week? It becomes read-only.')">Submit</button>
+    </div>
+    <p class="small text-body-secondary mt-2 mb-0">
+      Hours in 15-minute steps: 7.25 or 7:15 = 7 h 15 min. Totals update as you type; everything is checked again when you save.
+    </p>
+  {% endif %}
+</form>
+{% endblock %}
+
+{% block scripts %}<script src="{% static 'js/countdown.js' %}"></script>{% endblock %}
