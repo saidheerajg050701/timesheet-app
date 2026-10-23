@@ -32,6 +32,18 @@
   {% endif %}
 </div>
 
+{% if state.status == "REOPENED" and approval.status == "REJECTED" %}
+  <div class="alert alert-danger" role="status" id="approval-status">
+    Rejected by {{ approval.approver.first_name }} {{ approval.approver.last_name }} on {{ approval.decided_at|date:"M j, g:i A" }}: “{{ approval.comment }}”. Fix the week and resubmit.
+  </div>
+{% elif state.status == "APPROVED" and approval.status == "APPROVED" %}
+  <div class="alert alert-success" role="status" id="approval-status">
+    Approved by {{ approval.approver.first_name }} {{ approval.approver.last_name }} on {{ approval.decided_at|date:"M j, Y" }}.
+  </div>
+{% elif state.status == "SUBMITTED" %}
+  <p class="small text-body-secondary" id="approval-status">Waiting for approval{% if me.manager %} by {{ me.manager.first_name }} {{ me.manager.last_name }}{% endif %}.</p>
+{% endif %}
+
 {% if change_request %}
   <div class="alert alert-warning" role="status" id="change-request">
     You requested a change on {{ change_request.created_at|date:"M j, g:i A" }}: “{{ change_request.reason }}”.

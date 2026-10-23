@@ -2,7 +2,7 @@ from datetime import date
 
 from django.urls import path, register_converter
 
-from timesheets import request_views, views
+from timesheets import approval_views, request_views, views
 
 
 class IsoDateConverter:
@@ -28,7 +28,13 @@ urlpatterns = [
         name="request_change",
     ),
     path("requests/", views.request_list, name="requests"),
-    path("approvals/", views.approval_list, name="approvals"),
+    path("approvals/", approval_views.approval_list, name="approvals"),
+    path("approvals/bulk/", approval_views.approval_bulk, name="approval_bulk"),
+    path(
+        "approvals/<isodate:period>/<str:employee_code>/",
+        approval_views.approval_detail,
+        name="approval_detail",
+    ),
     path("approvals/requests/", request_views.request_inbox, name="request_inbox"),
     path("approvals/requests/<int:pk>/", request_views.request_detail, name="request_detail"),
     path("approvals/requests/<int:pk>/edit/", request_views.request_edit, name="request_edit"),

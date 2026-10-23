@@ -124,3 +124,26 @@ def week_state(employee, week_start: date, timesheet, now: datetime) -> WeekStat
         expected_minutes=expected_minutes_for(employee, week_start),
         timesheet=timesheet,
     )
+
+
+# --- pay periods for the approvals page (D-54) -------------------------------------------
+
+
+def period_start_for(day: date) -> date:
+    """Monday of week 1 of the 14-day pay period containing `day` (PAY_PERIOD_ANCHOR)."""
+    return pay_period_for(day, settings.PAY_PERIOD_ANCHOR)[0]
+
+
+def current_period(now: datetime) -> date:
+    return period_start_for(now.astimezone(company_tz()).date())
+
+
+def default_period(now: datetime) -> date:
+    """The most recent completed pay period."""
+    return current_period(now) - timedelta(weeks=2)
+
+
+def recent_periods(now: datetime, count: int = 13) -> list[date]:
+    """The current period and the `count - 1` before it, newest first."""
+    current = current_period(now)
+    return [current - timedelta(weeks=2 * i) for i in range(count)]

@@ -242,7 +242,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Hours by project across the team
 - Click anyone in the tree → read-only view of their analytics and timesheets
 
-**FR-7 Biweekly approvals page.** For managers (and Admins, for employees with no manager). Nobody sees their own row (D-11).
+**FR-7 Biweekly approvals page.** For managers (and Admins, for employees with no manager). Nobody sees their own row (D-11). Details settled in B.12 D-54–D-63 (rows and periods, flags, partial weeks, reject, open requests, unlock, resubmission, payroll hook, bulk approve).
 - Pick a pay period (default: most recent completed)
 - One row per direct report: week 1 and week 2 status, total hours, flags (late, overtime, missing days)
 - Open a row → both weeks' entries → **Approve** or **Reject** (comment required)
@@ -570,6 +570,7 @@ uv run python manage.py import_employees data/your_file.csv   # load a real dire
 | `/team/<employee_code>/` | Managers (own tree) | Read-only drill-down |
 | `/approvals/` | Managers | Biweekly approval list by period |
 | `/approvals/<period_start>/<employee_code>/` | Managers | Review both weeks; approve or reject; unlock a LOCKED week (D-06) |
+| `/approvals/bulk/` | Managers, admins | POST: approve the ticked clean rows of a period (D-63) |
 | `/approvals/requests/` | Managers | Change-request inbox |
 | `/approvals/requests/<id>/` | Handler (D-47) | Request detail: Reject / Unlock, optional note |
 | `/approvals/requests/<id>/edit/` | Handler (D-47) | Edit directly: the employee's rows, same rules as Phase 5b |
@@ -753,6 +754,17 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-89 | Timesheet | Save the week page or Edit directly with untouched blank rows (day pre-filled only) | Blank rows ignored, never validated; a row with only hours or only a reason is refused ("choose a category") |
 | T-90 | Timesheet | Save with an error, then again, on the week page and Edit directly | The form is shown with exactly the posted rows; no extra blank rows are added on re-render |
 | T-91 | Timesheet | Hours column on the week page and Edit directly | Calculated for every work/Break row from start/end (e.g. 08:30–12:00 → 3.50) on page load and after an error; read-only for timed rows, typed for leave |
+| T-92 | Approvals | Unlock a LOCKED week from the approval page (with and without an open employee request; missed week with no timesheet) | REOPENED per D-21; manager-authored UNLOCKED ChangeRequest or the open request resolved; UNLOCK audit (D-06, D-59) |
+| T-93 | Approvals | Reject with a comment, employee resubmits | Comment shown on the employee's week page; after resubmission the period is PENDING again (audited) and approvable once both weeks are submitted (D-07, D-60) |
+| T-94 | Approvals | Approve is one transaction with the payroll hook | Hook called once with the approval; if it fails, nothing changes (PeriodApproval, weeks, audit) (D-10, D-61) |
+| T-95 | Approvals | Who sees and approves which rows | Manager: direct reports only (not indirect, never self); HR admin: the CEO; CEO never sees own row; approving self or a non-direct report → 403 (D-11, D-54) |
+| T-96 | Approvals | Bulk approve | Only clean rows have a checkbox; posted ineligible rows are skipped with a reason; each eligible employee approved in its own transaction; summary of approved and skipped (D-63) |
+| T-97 | Approvals | Pay-period dates | 14-day periods from the anchor; default = most recent completed period; any date snaps to its period start; future periods refused; Previous/Next links (D-54) |
+| T-98 | Approvals | Flags | Late, overtime (Hours worked above prorated expected; Break never counts) and missing days (employed weekday with no entries; leave counts) per D-55 |
+| T-99 | Approvals | 403 cases | Non-manager on list, detail, bulk and POST actions; manager on someone not their direct report; admin on an employee who has a manager; anyone on themselves |
+| T-100 | Approvals | Period with one week outside employment (hired in week 2, or left in week 1) | Approvable when the employed week is SUBMITTED; the other week shows "not employed" (D-56) |
+| T-101 | Approvals | Open change request in the period | Approve/Reject blocked with the reason; row not bulk-eligible (D-58) |
+| T-102 | Timesheet | Employee week page approval status | "Approved by … on …", the rejection comment, or "Waiting for approval by …" |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -856,7 +868,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-53 on October 23, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -913,6 +925,16 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-51 | Timesheet | A reopened past week stays editable by its employee until `reopen_until`; D-33 only stops future weeks. Employee saves in a REOPENED week write an UPDATE audit row with before/after entries. | B.4 FR-8/FR-9 |
 | D-52 | Timesheet | `is_late` is decided by the first submission only: an on-time week reopened and resubmitted stays on time; a missed week submitted later is late and stays late (refines D-08). | B.4 FR-8, B.5 |
 | D-53 | Payroll | Payroll hook: `timesheets/services/approvals.py → supersede_payroll_week(timesheet, actor, at)` is called for every week that leaves APPROVED; it does nothing until Phase 8 calls `payroll/services/publish.py → supersede_week` (D-15). | B.9 #10/#13, C.4 P8 |
+| D-54 | Approvals | `/approvals/` lists the employees the viewer may approve — direct reports, plus no-manager employees for admins, never the viewer (D-11, D-31) — active employees employed on at least one day of the period, and inactive employees only if they have a timesheet in it (their existing timesheets can still be approved, D-19). Periods are 14 days from `PAY_PERIOD_ANCHOR`; default = the most recent completed period; the picker offers the current period and earlier; `?period=` takes any date and snaps to its period start. | B.4 FR-7, B.8 |
+| D-55 | Approvals | Flags: **late** = either week `is_late`; **overtime** = a week's Hours worked (Phase 5b `summarize`, Break excluded) above that week's prorated expected hours; **missing days** = an employed weekday (Mon–Fri, up to today) with no entries at all (leave counts as an entry). | B.4 FR-7 |
+| D-56 | Approvals | Only weeks with at least one employed day must be SUBMITTED; a week fully outside employment is not required (refines D-06 for D-19). | B.4 FR-7, B.5 |
+| D-57 | Approvals | Reject has the same precondition as Approve and needs a comment; the required weeks become REOPENED with `reopen_until` per D-21 (D-07); the comment is stored on the PeriodApproval and as `manager_note` on the weeks. | B.4 FR-7, B.5 |
+| D-58 | Approvals | An open change request on either week blocks Approve and Reject (and bulk approve skips the row) until it is handled. | B.4 FR-7/FR-9 |
+| D-59 | Approvals | Unlock on the approvals page reuses Phase 6 `approvals.unlock_week`: it resolves the employee's open request on that week if there is one, otherwise records a manager-authored ChangeRequest (requester = manager, UNLOCKED); a missed week with no timesheet is created as LOCKED first. Audited. | B.4 FR-7, D-06 |
+| D-60 | Approvals | Resubmitting a week of a REJECTED period sets the PeriodApproval back to PENDING (`approvals.period_resubmitted`, audited with the employee as actor). | B.4 FR-7, B.5 |
+| D-61 | Payroll | Payroll hook `approvals.publish_payroll_period(approval, actor, at)` runs inside the approve transaction; it does nothing until Phase 8 writes the PayrollWeek records. | B.9 #13, C.4 P8 |
+| D-62 | Data | One PeriodApproval per employee per period: unique constraint `one_approval_per_period` (migration `timesheets/0004`). | B.6 |
+| D-63 | Approvals | Bulk approve: only rows with the required weeks SUBMITTED, no flags, no open request and not yet decided can be ticked; the server re-checks every posted row, approves each employee in its own transaction and shows what was approved and what was skipped with reasons. | B.4 FR-7 |
 
 ---
 

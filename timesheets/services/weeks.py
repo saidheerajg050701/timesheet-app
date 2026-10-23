@@ -14,6 +14,7 @@ from django.db.models import Exists, OuterRef, Q, Sum
 from audit.models import AuditLog
 from audit.services.log import record
 from timesheets.models import ChangeRequest, TimeEntry, Timesheet
+from timesheets.services import approvals
 from timesheets.services.calendar import (
     NOT_STARTED,
     OUTSIDE_EMPLOYMENT,
@@ -79,6 +80,7 @@ def save_week(employee, week_start, entries, *, now, submit=False):
             )
         if submit:
             mark_submitted(sheet, now, state.deadline)
+            approvals.period_resubmitted(employee, week_start, at=now)  # D-60
             summary = summarize(entries, employee, week_start)
             record(
                 AuditLog.Action.SUBMIT,

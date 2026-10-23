@@ -181,3 +181,34 @@ def edit_directly(request, handler, entries, note="", *, now):
         )
         _resolve(request, handler, ChangeRequest.Status.EDITED, note, now)
     return request
+
+
+def unlock_from_approvals(manager, employee, week_start, *, now):
+    """The Unlock button on the approvals page, for a LOCKED week (D-06, D-59).
+
+    Resolves the employee's open request if there is one; otherwise records a
+    manager-authored request (status UNLOCKED). Either way the unlock is audited.
+    """
+    if not can_approve(manager, employee):
+        raise PermissionDenied("Only the employee's approver can unlock this week.")
+    sheet = load_sheet(employee, week_start)
+    if week_state(employee, week_start, sheet, now).status != Timesheet.Status.LOCKED:
+        raise ValidationError("Only a locked week can be unlocked here.")
+    with transaction.atomic():
+        if sheet is None:  # a missed week with no timesheet at all
+            sheet = Timesheet.objects.create(
+                employee=employee, week_start=week_start, status=Timesheet.Status.LOCKED
+            )
+        existing = open_request_for(sheet)
+        if existing:
+            return unlock_request(existing, manager, "Unlocked from the approvals page.", now=now)
+        request = ChangeRequest.objects.create(
+            timesheet=sheet,
+            requester=manager,
+            reason="Unlocked by the manager from the approvals page.",
+            status=ChangeRequest.Status.UNLOCKED,
+            reviewer=manager,
+            resolved_at=now,
+        )
+        approvals.unlock_week(sheet, actor=manager, change_request=request, at=now)
+    return request

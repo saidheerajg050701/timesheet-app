@@ -48,6 +48,13 @@ requests. Managers work through **Change requests** (`/approvals/requests/`): **
 12:00) or **Edit directly** (same rules as the timesheet page). Every step is in the audit log;
 changing an approved week puts its pay period back to pending.
 
+## Approvals
+Managers (and admins, for employees with no manager) open **Approvals** to pick a pay period
+(14 days, default: the most recent completed one) and review each direct report's two weeks:
+hours worked (Break never counts), leave, and Late / Overtime / Missing days flags. A period
+can be approved or rejected (with a comment) once its weeks are submitted; a locked week has an
+Unlock button. Clean rows can be bulk approved. Nobody approves their own timesheet.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

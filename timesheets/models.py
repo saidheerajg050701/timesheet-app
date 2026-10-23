@@ -100,6 +100,13 @@ class PeriodApproval(models.Model):  # one per employee per 2-week period
     decided_at = models.DateTimeField(null=True, blank=True)
     comment = models.TextField(blank=True)
 
+    class Meta:
+        constraints = [  # one decision record per employee and pay period (D-62)
+            models.UniqueConstraint(
+                fields=["employee", "period_start"], name="one_approval_per_period"
+            )
+        ]
+
     def __str__(self):
         return f"{self.employee.employee_code} period of {self.period_start}: {self.status}"
 

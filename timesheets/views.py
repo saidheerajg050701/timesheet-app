@@ -8,9 +8,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from directory.services.permissions import approvals_required
 from timesheets.forms import CATEGORY_GROUPS, day_choices, parse_entries, project_choices
 from timesheets.models import ChangeRequest, Timesheet
+from timesheets.services.approvals import approval_for_week
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.changes import can_request_change, open_request_for, raise_request
 from timesheets.services.summary import summarize
@@ -117,6 +117,7 @@ def _week_context(me, state, rows, entries, errors, now):
         "summary": summarize(entries, me, state.week_start),
         "summary_url": reverse("timesheet_totals", args=[state.week_start]),
         "change_request": open_request_for(sheet),
+        "approval": approval_for_week(sheet),
         "can_request_change": can_request_change(state, now),
         "errors": errors,
         "open_until": open_until,
@@ -185,8 +186,3 @@ def request_list(request):
         .order_by("-created_at")
     )
     return render(request, "timesheets/my_requests.html", {"requests": requests})
-
-
-@approvals_required
-def approval_list(request):
-    return placeholder(request, "Approvals", 7)
