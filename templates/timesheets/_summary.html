@@ -1,5 +1,5 @@
 {% load timesheet_tags %}<div id="day-summary" class="table-responsive"{% if live %}
-  hx-post="{% url 'timesheet_totals' summary.days.0.day %}" hx-include="#week-form" hx-swap="outerHTML"
+  hx-post="{{ summary_url }}" hx-include="#week-form" hx-swap="outerHTML"
   hx-trigger="input delay:300ms from:#week-form, change from:#week-form, rows-changed from:body"{% endif %}>
   <table class="table table-sm bg-body text-center align-middle mb-0" aria-label="Day summary">
     <thead>

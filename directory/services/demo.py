@@ -654,6 +654,25 @@ class _Seeder:
             open_week.submitted_at + timedelta(days=1), self.now - timedelta(hours=2)
         )
         backdate(ChangeRequest, "created_at", created_at)
+        raised = ChangeRequest.objects.filter(pk__in=created_at).select_related(
+            "timesheet", "requester"
+        )
+        for change in raised:  # raising a request is audited too (D-46)
+            self.audit.append(
+                build(
+                    AuditLog.Action.CREATE,
+                    "ChangeRequest",
+                    change.pk,
+                    actor=change.requester,
+                    after={
+                        "week_start": change.timesheet.week_start,
+                        "status": ChangeRequest.Status.OPEN,
+                        "reason": change.reason,
+                    },
+                    change_request=change,
+                    at=created_at[change.pk],
+                )
+            )
 
     def _summary(self):
         approvals = Counter(PeriodApproval.objects.values_list("status", flat=True))

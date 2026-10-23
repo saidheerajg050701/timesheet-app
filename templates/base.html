@@ -25,6 +25,7 @@
             <li class="nav-item"><a class="nav-link{% if current == 'requests' %} active{% endif %}" href="{% url 'requests' %}">Requests</a></li>
             {% if menu.team %}<li class="nav-item"><a class="nav-link{% if current == 'team' or current == 'team_member' %} active{% endif %}" href="{% url 'team' %}">Team</a></li>{% endif %}
             {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'approvals' %} active{% endif %}" href="{% url 'approvals' %}">Approvals</a></li>{% endif %}
+            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'request_inbox' or current == 'request_detail' or current == 'request_edit' %} active{% endif %}" href="{% url 'request_inbox' %}" id="menu-change-requests">Change requests{% if menu.open_requests %} <span class="badge text-bg-warning" title="Open change requests">{{ menu.open_requests }}</span>{% endif %}</a></li>{% endif %}
             {% if menu.payroll %}<li class="nav-item"><a class="nav-link{% if current == 'payroll' %} active{% endif %}" href="{% url 'payroll' %}">Payroll</a></li>{% endif %}
             {% if menu.admin %}<li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">Admin</a></li>{% endif %}
           </ul>

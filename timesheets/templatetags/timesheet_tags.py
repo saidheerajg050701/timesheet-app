@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django import template
 
+from timesheets.models import TimeEntry
 from timesheets.services.validation import CATEGORY_LABELS, day_label
 from timesheets.services.weeks import STATUS_LABELS
 
@@ -72,3 +73,9 @@ def iso_day(value):
         return day_label(date.fromisoformat(value))
     except (TypeError, ValueError):
         return value
+
+
+@register.filter
+def is_timed(category):
+    """Work and Break rows: hours come from start and end (D-37)."""
+    return category in TimeEntry.TIMED

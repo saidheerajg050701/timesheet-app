@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% load timesheet_tags %}
+
+{% block title %}My change requests — Timesheets{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">My change requests</h1>
+<p class="text-body-secondary small">Open a submitted, locked or approved week and use <strong>Request change</strong> to ask your manager for a correction.</p>
+<div class="table-responsive">
+  <table class="table align-middle bg-body" id="my-requests">
+    <thead><tr><th>Week</th><th>Requested</th><th>Reason</th><th>Status</th><th>Handled by</th><th>Note</th></tr></thead>
+    <tbody>
+      {% for change in requests %}
+        <tr data-request="{{ change.pk }}">
+          <td><a href="{% url 'timesheet_week' change.timesheet.week_start %}">{{ change.timesheet.week_start|date:"M j" }} – {{ change.timesheet.week_start|add_days:6|date:"M j, Y" }}</a></td>
+          <td>{{ change.created_at|date:"M j, g:i A" }}</td>
+          <td>{{ change.reason }}</td>
+          <td><span class="badge {% if change.status == 'OPEN' %}text-bg-warning{% elif change.status == 'REJECTED' %}text-bg-secondary{% else %}text-bg-success{% endif %}">{{ change.get_status_display|title }}</span></td>
+          <td>{% if change.reviewer %}{{ change.reviewer.first_name }} {{ change.reviewer.last_name }}<br><small class="text-body-secondary">{{ change.resolved_at|date:"M j, g:i A" }}</small>{% else %}—{% endif %}</td>
+          <td>{{ change.resolution|default:"—" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="6" class="text-body-secondary">You have not requested any changes.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

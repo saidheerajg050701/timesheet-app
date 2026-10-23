@@ -4,13 +4,15 @@ from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.http import Http404
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from directory.services.permissions import approvals_required
 from timesheets.forms import CATEGORY_GROUPS, day_choices, parse_entries, project_choices
-from timesheets.models import Timesheet
+from timesheets.models import ChangeRequest, Timesheet
 from timesheets.services.calendar import company_tz, week_start_for, week_state
+from timesheets.services.changes import can_request_change, open_request_for, raise_request
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import (
     STATUS_LABELS,
@@ -81,15 +83,27 @@ def timesheet_week(request, week):
     return render(request, "timesheets/week.html", context)
 
 
+def form_rows(sheet, posted_rows=None, *, editable=True):
+    """Rows for the entry form, shared by the week page and Edit directly.
+
+    After a failed save the rows are shown exactly as posted — no extra blank rows. A fresh
+    page shows the saved rows plus BLANK_ROWS empty ones (day pre-filled; ignored if unused).
+    """
+    if posted_rows is not None:
+        return posted_rows
+    rows = entry_rows(sheet)
+    if not editable:
+        return rows
+    start = max((r.index for r in rows), default=-1) + 1
+    default_day = rows[-1].work_date if rows else ""
+    return rows + [EntryRow(index=start + i, work_date=default_day) for i in range(BLANK_ROWS)]
+
+
 def _week_context(me, state, rows, entries, errors, now):
     sheet = state.timesheet
     if rows is None:
-        rows = entry_rows(sheet)
         entries = list(sheet.entries.all()) if sheet else []
-    if state.editable:
-        start = max((r.index for r in rows), default=-1) + 1
-        default_day = rows[-1].work_date if rows else ""
-        rows = rows + [EntryRow(index=start + i, work_date=default_day) for i in range(BLANK_ROWS)]
+    rows = form_rows(sheet, rows, editable=state.editable)
     open_until = None
     if state.editable:
         reopened = sheet and sheet.status == Timesheet.Status.REOPENED
@@ -101,6 +115,9 @@ def _week_context(me, state, rows, entries, errors, now):
         "sheet": sheet,
         "rows": rows,
         "summary": summarize(entries, me, state.week_start),
+        "summary_url": reverse("timesheet_totals", args=[state.week_start]),
+        "change_request": open_request_for(sheet),
+        "can_request_change": can_request_change(state, now),
         "errors": errors,
         "open_until": open_until,
         "now": now,
@@ -125,7 +142,11 @@ def timesheet_totals(request, week):
     """HTMX: the day summary recomputed on the server from the rows as typed. Never saves."""
     me, monday = _own_week(request, week)
     entries = parse_entries(request.POST, monday).entries
-    context = {"summary": summarize(entries, me, monday), "live": True}
+    context = {
+        "summary": summarize(entries, me, monday),
+        "summary_url": request.path,
+        "live": True,
+    }
     return render(request, "timesheets/_summary.html", context)
 
 
@@ -143,8 +164,27 @@ def timesheet_row(request, week):
     return render(request, "timesheets/_row.html", context)
 
 
+@require_POST
+def request_change(request, week):
+    """The employee asks their manager to change a submitted, locked or approved week."""
+    me, monday = _own_week(request, week)
+    try:
+        raise_request(me, monday, request.POST.get("reason", ""), now=timezone.now())
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+    else:
+        messages.success(request, "Change requested. Your manager will see it in their inbox.")
+    return redirect("timesheet_week", week=monday)
+
+
 def request_list(request):
-    return placeholder(request, "Change requests", 6)
+    """My change requests and how they were handled (FR-9)."""
+    requests = (
+        ChangeRequest.objects.filter(timesheet__employee=request.user.employee)
+        .select_related("timesheet", "reviewer")
+        .order_by("-created_at")
+    )
+    return render(request, "timesheets/my_requests.html", {"requests": requests})
 
 
 @approvals_required

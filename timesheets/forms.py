@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from timesheets.models import Project, TimeEntry
 from timesheets.services.calendar import week_days
 from timesheets.services.validation import CATEGORY_LABELS, EntryData, day_label, duration
-from timesheets.services.weeks import EntryRow
+from timesheets.services.weeks import EntryRow, minutes_to_hours_text
 
 ROW_FIELDS = ("date", "category", "project", "start", "end", "hours", "reason")
 ROW_KEY = re.compile(r"^entry-(\d+)-(?:" + "|".join(ROW_FIELDS) + r")$")
@@ -86,8 +86,10 @@ def parse_entries(post, week_start):
         )
         parsed.rows.append(row)
         if row.is_blank:
-            continue
+            continue  # nothing typed: ignored, never validated
         entry, problems = _read_row(row, days, projects)
+        if row.category in TimeEntry.TIMED:  # shown again after an error (D-37)
+            row.hours = _timed_hours_text(row)
         if problems:
             where = f"Row {number}" + (
                 f" ({day_label(days[row.work_date])})" if row.work_date in days else ""
@@ -96,6 +98,17 @@ def parse_entries(post, week_start):
         else:
             parsed.entries.append(entry)
     return parsed
+
+
+def _timed_hours_text(row):
+    """Hours from the row's start and end as typed; "" if they can't be read yet."""
+    try:
+        start, end = parse_time(row.start), parse_time(row.end)
+    except ValueError:
+        return ""
+    if start is None or end is None or end <= start:
+        return ""
+    return minutes_to_hours_text(duration(start, end))
 
 
 def _read_row(row, days, projects):

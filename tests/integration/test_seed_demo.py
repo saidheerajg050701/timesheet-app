@@ -162,6 +162,11 @@ def test_seed_audit_rows_name_the_right_actor(seeded):
         assert request.status == ChangeRequest.Status.UNLOCKED
         assert row.actor == request.reviewer == (request.requester.manager or hr)
 
+    raised = rows.filter(action=AuditLog.Action.CREATE, entity_type="ChangeRequest")
+    assert raised.count() == ChangeRequest.objects.count()
+    for row in raised:  # raising a request names the employee who raised it (D-46)
+        assert row.actor == row.change_request.requester and not row.system_actor
+
     edit = rows.get(action=AuditLog.Action.UPDATE)
     assert edit.actor.email == email("ops.manager")
     assert edit.change_request.status == ChangeRequest.Status.EDITED

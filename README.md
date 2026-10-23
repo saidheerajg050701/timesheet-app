@@ -40,6 +40,14 @@ expected hours and each day's first start and last end. **Save draft** or **Subm
 Saturday 12:00 company time; after that an unsubmitted week is locked and counted as missed.
 All rules are checked on the server when you save.
 
+## Change requests
+On a submitted, locked or approved week, **Request change** sends a reason to your manager
+(admins handle employees with no manager; nobody handles their own). `/requests/` shows your
+requests. Managers work through **Change requests** (`/approvals/requests/`): **Reject**,
+**Unlock** (the employee can edit until the later of 48 hours from now and the week's Saturday
+12:00) or **Edit directly** (same rules as the timesheet page). Every step is in the audit log;
+changing an approved week puts its pay period back to pending.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

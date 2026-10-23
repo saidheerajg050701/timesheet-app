@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from audit.models import AuditLog
 from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory
+from tests.forms import brk, form, leave, work
 from timesheets.models import TimeEntry, Timesheet
 from timesheets.services.calendar import week_state
 from timesheets.services.validation import EntryData
@@ -20,32 +21,6 @@ LAST_WEEK = date(2026, 10, 12)
 
 def week_url(week=WEEK, name="timesheet_week"):
     return reverse(name, args=[week])
-
-
-def work(day, start, end, project=None, category="PROJECT", reason="Feature development"):
-    return {
-        "date": day.isoformat(),
-        "category": category,
-        "project": str(project.pk) if project else "",
-        "start": start,
-        "end": end,
-        "reason": reason,
-    }
-
-
-def brk(day, start, end):
-    return work(day, start, end, category="BREAK", reason="Lunch break")
-
-
-def leave(day, hours, category="PTO", reason="Vacation"):
-    return {"date": day.isoformat(), "category": category, "hours": hours, "reason": reason}
-
-
-def form(*rows, action="save"):
-    data = {"action": action}
-    for index, row in enumerate(rows):
-        data.update({f"entry-{index}-{key}": value for key, value in row.items()})
-    return data
 
 
 def full_week(project):
@@ -240,7 +215,7 @@ def test_weekend_rows_and_leave_hour_formats(client_me, me, project):
     minutes = dict(TimeEntry.objects.values_list("work_date", "minutes"))
     assert minutes[WEEK] == minutes[TUESDAY] == 450 and minutes[date(2026, 10, 24)] == 240
     page = client_me.get(week_url()).content.decode()
-    assert 'value="7.5"' in page and 'value="10:00"' in page and "Release support" in page
+    assert 'value="7.50"' in page and 'value="10:00"' in page and "Release support" in page
 
 
 def test_only_own_timesheets(login_as, org, project, fixed_now):

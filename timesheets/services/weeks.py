@@ -9,11 +9,11 @@ from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Exists, OuterRef, Q, Sum
 
 from audit.models import AuditLog
 from audit.services.log import record
-from timesheets.models import TimeEntry, Timesheet
+from timesheets.models import ChangeRequest, TimeEntry, Timesheet
 from timesheets.services.calendar import (
     NOT_STARTED,
     OUTSIDE_EMPLOYMENT,
@@ -54,13 +54,8 @@ def save_week(employee, week_start, entries, *, now, submit=False):
         label = STATUS_LABELS[state.status].lower()
         raise WeekLocked(f"This week is {label} and can't be changed.")
     errors = validate_entries(employee, week_start, entries)
-    if submit and not entries:
-        errors.append("Add at least one entry before submitting.")  # D-32
-    elif submit and all(e.category == TimeEntry.Category.BREAK for e in entries):
-        errors.append(  # D-43
-            "Add at least one work or leave entry before submitting; "
-            "a week with only breaks can't be submitted."
-        )
+    if submit:
+        errors += submission_errors(entries)
     if errors:
         raise ValidationError(errors)
 
@@ -70,26 +65,21 @@ def save_week(employee, week_start, entries, *, now, submit=False):
         )
         if sheet.status not in (Timesheet.Status.DRAFT, Timesheet.Status.REOPENED):
             raise WeekLocked("This week was submitted meanwhile and can't be changed.")
-        sheet.entries.all().delete()
-        TimeEntry.objects.bulk_create(
-            TimeEntry(
-                timesheet=sheet,
-                work_date=e.work_date,
-                category=e.category,
-                project=e.project,
-                minutes=e.minutes,
-                reason=e.reason.strip(),
-                start_time=e.start_time,
-                end_time=e.end_time,
+        before = entries_snapshot(sheet.entries.select_related("project"))
+        replace_entries(sheet, entries)
+        after = entries_snapshot(entries)
+        if sheet.status == Timesheet.Status.REOPENED and before != after:  # D-51
+            record(
+                AuditLog.Action.UPDATE,
+                "Timesheet",
+                sheet.pk,
+                actor=employee,
+                before={"entries": before},
+                after={"entries": after},
             )
-            for e in entries
-        )
         if submit:
+            mark_submitted(sheet, now, state.deadline)
             summary = summarize(entries, employee, week_start)
-            sheet.status = Timesheet.Status.SUBMITTED
-            sheet.submitted_at = now
-            sheet.is_late = sheet.is_late or now > state.deadline  # stays True once late (D-08)
-            sheet.save(update_fields=["status", "submitted_at", "is_late"])
             record(
                 AuditLog.Action.SUBMIT,
                 "Timesheet",
@@ -106,6 +96,63 @@ def save_week(employee, week_start, entries, *, now, submit=False):
                 },
             )
     return sheet
+
+
+def submission_errors(entries):
+    """Rules for a week that is about to count as submitted (D-32, D-43)."""
+    if not entries:
+        return ["Add at least one entry before submitting."]
+    if all(e.category == TimeEntry.Category.BREAK for e in entries):
+        return [
+            "Add at least one work or leave entry before submitting; "
+            "a week with only breaks can't be submitted."
+        ]
+    return []
+
+
+def replace_entries(sheet, entries):
+    """Swap the week's rows for `entries` (already validated)."""
+    sheet.entries.all().delete()
+    TimeEntry.objects.bulk_create(
+        TimeEntry(
+            timesheet=sheet,
+            work_date=e.work_date,
+            category=e.category,
+            project=e.project,
+            minutes=e.minutes,
+            reason=e.reason.strip(),
+            start_time=e.start_time,
+            end_time=e.end_time,
+        )
+        for e in entries
+    )
+
+
+def mark_submitted(sheet, now, deadline):
+    """SUBMITTED now. is_late is decided by the first submission only (D-08, D-52)."""
+    if sheet.submitted_at is None:
+        sheet.is_late = now > deadline
+    sheet.status = Timesheet.Status.SUBMITTED
+    sheet.submitted_at = now
+    sheet.reopen_until = None
+    sheet.save(update_fields=["status", "submitted_at", "is_late", "reopen_until"])
+
+
+def entries_snapshot(entries):
+    """Rows as plain values for audit before/after, including times and reasons."""
+    rows = [
+        {
+            "work_date": e.work_date.isoformat(),
+            "category": e.category,
+            "project": e.project.code if e.project else None,
+            "start": e.start_time.strftime("%H:%M") if e.start_time else None,
+            "end": e.end_time.strftime("%H:%M") if e.end_time else None,
+            "minutes": e.minutes,
+            "reason": e.reason.strip(),
+        }
+        for e in entries
+    ]
+    return sorted(rows, key=lambda r: (r["work_date"], r["start"] or "", r["category"]))
 
 
 # --- reading --------------------------------------------------------------------------
@@ -127,22 +174,15 @@ class EntryRow:
 
     @property
     def is_blank(self):
+        """Nothing typed: the day alone doesn't count, since blank rows come with one pre-filled."""
         return not any(
-            (
-                self.work_date,
-                self.category,
-                self.project,
-                self.start,
-                self.end,
-                self.hours,
-                self.reason,
-            )
+            (self.category, self.project, self.start, self.end, self.hours, self.reason.strip())
         )
 
 
 def minutes_to_hours_text(minutes):
-    """450 → "7.5", 465 → "7.75", 480 → "8"."""
-    return f"{minutes / 60:.2f}".rstrip("0").rstrip(".") if minutes else ""
+    """210 → "3.50", 480 → "8.00"; 0 → ""."""
+    return f"{minutes / 60:.2f}" if minutes else ""
 
 
 def entry_rows(timesheet):
@@ -180,6 +220,9 @@ def my_weeks(employee, now, count=12):
         for s in Timesheet.objects.filter(employee=employee, week_start__in=starts).annotate(
             worked=Sum("entries__minutes", filter=Q(entries__category__in=TimeEntry.WORK)),
             leave=Sum("entries__minutes", filter=Q(entries__category__in=TimeEntry.LEAVE)),
+            has_open_request=Exists(
+                ChangeRequest.objects.filter(timesheet=OuterRef("pk"), status="OPEN")
+            ),
         )
     }
     weeks = []

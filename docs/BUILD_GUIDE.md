@@ -254,7 +254,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 
 **FR-8 Weekly timesheet and deadline.** Each week is a list of entry rows, as many as needed (D-35). Every row has a date, a category, a project (Project work only, D-18) and a required reason (D-36). Work rows (Project work, Meetings, Training, Other) and **Break** rows have a start and end time in 15-minute steps on the same day; the hours are calculated from the times (D-37). Timed rows on one day must not overlap (D-38). Leave rows (PTO, Sick, Holiday) have hours only (D-40). Break time is unpaid (D-39). **Hours worked** = work rows only; the page shows it per day and per week next to the expected hours, with separate Break and Leave totals and each day's first start and last end (D-41). Each day's work + Break + leave is at most 24 hours (D-42). A week needs at least one entry to be submitted, and a week with only Break rows cannot be submitted (D-32, D-43). Only the current week and earlier open (D-33). Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
 
-**FR-9 Manager changes on request.**
+**FR-9 Manager changes on request.** Rules settled in B.12 D-46–D-53 (which weeks, who handles, notes, edit/unlock behaviour, late flag, payroll hook).
 1. Employee opens a submitted or locked week → **Request change** → writes a reason.
 2. The manager's **Change Requests** page lists open requests (count shown in the menu).
 3. Manager chooses **Reject**, **Unlock for employee** (open until the later of +48 hours and the week's Saturday 12:00 deadline, D-21; if unused, the week becomes LOCKED — D-08), or **Edit directly**.
@@ -571,6 +571,8 @@ uv run python manage.py import_employees data/your_file.csv   # load a real dire
 | `/approvals/` | Managers | Biweekly approval list by period |
 | `/approvals/<period_start>/<employee_code>/` | Managers | Review both weeks; approve or reject; unlock a LOCKED week (D-06) |
 | `/approvals/requests/` | Managers | Change-request inbox |
+| `/approvals/requests/<id>/` | Handler (D-47) | Request detail: Reject / Unlock, optional note |
+| `/approvals/requests/<id>/edit/` | Handler (D-47) | Edit directly: the employee's rows, same rules as Phase 5b |
 | `/payroll/` | **Payroll, Admin** | Approved hours by period; filters; totals; Export CSV; Mark paid |
 | `/payroll/corrections/` | **Payroll, Admin** | Weeks changed after export/payment |
 | `/admin/` | Admins | Django Admin |
@@ -641,6 +643,7 @@ tests/
   integration/
     test_auth_views.py
     test_timesheet_flow.py
+    test_entry_form.py     # shared entry-row form: blank rows, re-render, hours (T-89–T-91)
     test_change_requests.py
     test_approvals.py
     test_payroll_publish.py
@@ -739,6 +742,17 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-78 | Timesheet | Submit a week whose only rows are Breaks | Refused; nothing submitted (D-43) |
 | T-79 | Timesheet | 20 rows on one day, plus rows on other days | All saved and shown; no row limit; the 24-hour rule still applies (D-35, D-42) |
 | T-80 | Seed | `seed_demo` history | Every week passes `validate_entries`; every row has a reason; timed rows have times; lunch breaks and leave rows exist; Break never has a project (D-44) |
+| T-81 | Change request | Request on DRAFT, NOT_STARTED, REOPENED or future week; second OPEN request on a week | Refused; first request on SUBMITTED/LOCKED/APPROVED (incl. a missed week with no timesheet) accepted (D-46) |
+| T-82 | Change request | Who handles: employee with a manager, the CEO (no manager), an admin's own request | Direct manager only; HR admin for the CEO; nobody handles their own; others get 403 on detail and actions (D-47) |
+| T-83 | Change request | Raise, reject, unlock, edit | Each writes one AuditLog row (CREATE / REJECT / UNLOCK / UPDATE) with the right actor, linked request and before/after (D-48–D-50) |
+| T-84 | Change request | Edit directly with an overlap, a missing reason, a Break with a project, a Break-only week, >24 h, no rows | Refused with the Phase 5b messages; nothing changed (D-49) |
+| T-85 | Change request | Edit or unlock a week in an APPROVED period | PeriodApproval → PENDING, both weeks leave APPROVED, `supersede_payroll_week` called for each, in one transaction (D-10, D-53) |
+| T-86 | Timesheet | Unlocked week from two weeks ago | Employee can open and save it until `reopen_until`; saves write an UPDATE audit with before/after; after the window → LOCKED (D-51) |
+| T-87 | Timesheet | Late flag after reopening | Missed week unlocked and submitted later → is_late True; on-time week reopened and resubmitted after Saturday → stays on time (D-08, D-52) |
+| T-88 | Layout | Open-request count in the menu | Handlers see "Change requests" with the count of open requests they may handle; employees without reports don't see it |
+| T-89 | Timesheet | Save the week page or Edit directly with untouched blank rows (day pre-filled only) | Blank rows ignored, never validated; a row with only hours or only a reason is refused ("choose a category") |
+| T-90 | Timesheet | Save with an error, then again, on the week page and Edit directly | The form is shown with exactly the posted rows; no extra blank rows are added on re-render |
+| T-91 | Timesheet | Hours column on the week page and Edit directly | Calculated for every work/Break row from start/end (e.g. 08:30–12:00 → 3.50) on page load and after an error; read-only for timed rows, typed for leave |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -842,7 +856,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-53 on October 23, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -891,6 +905,14 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-43 | Timesheet | D-32 stays, and a week containing only Break rows cannot be submitted either. | B.4 FR-8 |
 | D-44 | Data | `TimeEntry` gets `start_time`, `end_time` and `reason` (renamed from `notes`) plus the BREAK category in migration `timesheets/0002`. `seed_demo` creates realistic times, reasons and lunch breaks. Existing databases are migrated, never deleted, flushed or reseeded automatically; rebuild them with the D.3 "start over" steps. | B.6, B.7, D.3 |
 | D-45 | Payroll | Phase 8 `split_hours` excludes Break from regular hours and overtime. | B.1 row 16, B.9 #12, C.4 P8 |
+| D-46 | Change request | A change request can be raised only by the employee, on their own week, when its effective status is SUBMITTED, LOCKED or APPROVED — never DRAFT, NOT_STARTED, REOPENED or future weeks. At most one OPEN request per week (service check + partial unique constraint `one_open_request_per_week`). Raising on a missed week with no timesheet creates that week as LOCKED. | B.4 FR-9, B.6, C.4 P6 |
+| D-47 | Change request | Requests are handled by whoever `can_approve` the week's employee: the direct manager, or admins for employees with no manager; nobody handles their own (D-11, D-31). The inbox `/approvals/requests/` (`request_inbox`) is new — Phase 4 had no placeholder for it; `/requests/` (`requests`) lists the employee's own requests. | B.3, B.8, C.4 P6 |
+| D-48 | Change request | The handler's note is optional for Reject, Unlock and Edit directly. | B.4 FR-9 |
+| D-49 | Change request | **Edit directly** uses the Phase 5b validation for the week's employee (times, reason, no overlaps, Break rules, 24 h, employment dates, no Break-only/empty week). The week becomes SUBMITTED (first-time `submitted_at`/`is_late` only if never submitted). If it was in an APPROVED period, `approvals.reset_approval` sets the period to PENDING, its approved weeks to SUBMITTED and calls the payroll hook, in the same transaction (D-10). Audit UPDATE stores before/after status and entries with times and reasons. | B.4 FR-9, B.5, B.9 #10 |
+| D-50 | Change request | **Unlock** sets REOPENED with `reopen_until` = the later of now + 48 h and the week's Saturday 12:00 (D-21); an APPROVED week is first reset through `approvals.unlock_week`. An unused window makes the week LOCKED (read-time, D-08, D-34). | B.4 FR-9, B.5 |
+| D-51 | Timesheet | A reopened past week stays editable by its employee until `reopen_until`; D-33 only stops future weeks. Employee saves in a REOPENED week write an UPDATE audit row with before/after entries. | B.4 FR-8/FR-9 |
+| D-52 | Timesheet | `is_late` is decided by the first submission only: an on-time week reopened and resubmitted stays on time; a missed week submitted later is late and stays late (refines D-08). | B.4 FR-8, B.5 |
+| D-53 | Payroll | Payroll hook: `timesheets/services/approvals.py → supersede_payroll_week(timesheet, actor, at)` is called for every week that leaves APPROVED; it does nothing until Phase 8 calls `payroll/services/publish.py → supersede_week` (D-15). | B.9 #10/#13, C.4 P8 |
 
 ---
 

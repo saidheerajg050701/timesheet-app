@@ -20,7 +20,7 @@
 
 <div class="alert {% if open_until %}alert-info{% elif state.status == 'LOCKED' %}alert-danger{% else %}alert-secondary{% endif %}" id="deadline" role="status">
   {% if open_until %}
-    Submit by <strong>{{ open_until|date:"l, M j, g:i A" }}</strong> —
+    {% if state.status == "REOPENED" %}Reopened by your manager. Resubmit{% else %}Submit{% endif %} by <strong>{{ open_until|date:"l, M j, g:i A" }}</strong> —
     <span data-deadline="{{ open_until|date:'c' }}">{{ open_until|countdown:now }}</span> left.
     Weekend hours can be entered in advance.
   {% elif state.status == "SUBMITTED" or state.status == "APPROVED" %}
@@ -31,6 +31,23 @@
     You were not employed this week.
   {% endif %}
 </div>
+
+{% if change_request %}
+  <div class="alert alert-warning" role="status" id="change-request">
+    You requested a change on {{ change_request.created_at|date:"M j, g:i A" }}: “{{ change_request.reason }}”.
+    Waiting for your manager. <a href="{% url 'requests' %}">My requests</a>
+  </div>
+{% elif can_request_change %}
+  <details class="card card-body mb-3" id="request-change">
+    <summary class="fw-semibold">Request change</summary>
+    <form method="post" action="{% url 'request_change' state.week_start %}" class="mt-2">
+      {% csrf_token %}
+      <label for="id_reason" class="form-label">What needs to change, and why?</label>
+      <textarea name="reason" id="id_reason" rows="3" maxlength="2000" required class="form-control mb-2"></textarea>
+      <button type="submit" class="btn btn-outline-primary">Send to my manager</button>
+    </form>
+  </details>
+{% endif %}
 
 {% if errors %}
   <div class="alert alert-danger" role="alert" id="errors">

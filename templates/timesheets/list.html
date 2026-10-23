@@ -26,6 +26,7 @@
             <span class="badge {{ state.status|status_badge }}">{{ state.status|status_label }}</span>
             {% if state.timesheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
             {% if state.is_missed %}<span class="badge text-bg-danger">Missed</span>{% endif %}
+            {% if state.timesheet.has_open_request %}<span class="badge text-bg-warning">Change requested</span>{% endif %}
           </td>
           <td class="text-end">{{ worked|hm }}</td>
           <td class="text-end">{{ leave|hm }}</td>

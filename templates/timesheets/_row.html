@@ -24,7 +24,7 @@
   </td>
   <td><input type="time" step="900" name="entry-{{ row.index }}-start" value="{{ row.start }}" class="form-control form-control-sm" data-role="time" aria-label="Start time, row {{ row.index|add:1 }}"></td>
   <td><input type="time" step="900" name="entry-{{ row.index }}-end" value="{{ row.end }}" class="form-control form-control-sm" data-role="time" aria-label="End time, row {{ row.index|add:1 }}"></td>
-  <td><input type="text" inputmode="decimal" name="entry-{{ row.index }}-hours" value="{{ row.hours }}" class="form-control form-control-sm text-end" data-role="hours" aria-label="Hours (leave only), row {{ row.index|add:1 }}"></td>
+  <td><input type="text" inputmode="decimal" name="entry-{{ row.index }}-hours" value="{{ row.hours }}" class="form-control form-control-sm text-end" data-role="hours" aria-label="Hours, row {{ row.index|add:1 }} (typed for leave, calculated from the times otherwise)"{% if row.category|is_timed %} readonly tabindex="-1"{% endif %}></td>
   <td><input type="text" name="entry-{{ row.index }}-reason" value="{{ row.reason }}" maxlength="255" required class="form-control form-control-sm" aria-label="Reason, row {{ row.index|add:1 }}"></td>
   <td><button type="button" class="btn btn-sm btn-outline-danger" data-action="remove-row" aria-label="Remove row {{ row.index|add:1 }}">&times;</button></td>
 {% else %}

@@ -129,5 +129,12 @@ class ChangeRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
 
+    class Meta:
+        constraints = [  # at most one OPEN request per week (D-46)
+            models.UniqueConstraint(
+                fields=["timesheet"], condition=Q(status="OPEN"), name="one_open_request_per_week"
+            )
+        ]
+
     def __str__(self):
         return f"Change request #{self.pk} ({self.status})"

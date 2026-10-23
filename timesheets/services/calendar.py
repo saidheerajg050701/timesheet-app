@@ -27,6 +27,11 @@ def deadline_for(week_start: date, tz) -> datetime:
     return datetime.combine(saturday, DEADLINE_TIME, tzinfo=tz)
 
 
+def reopen_until_for(week_start: date, at: datetime) -> datetime:
+    """End of a reopen window: the later of `at` + 48 hours and the week's deadline (D-21)."""
+    return max(at + timedelta(hours=48), deadline_for(week_start, company_tz()))
+
+
 def pay_period_for(d: date, anchor: date) -> tuple[date, date, date]:
     """(period_start, week1, week2) of the 2-week pay period containing d.
 
