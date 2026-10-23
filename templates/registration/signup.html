@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Sign up — Timesheets{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-sm-10 col-md-7 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-1">Sign up</h1>
+        <p class="text-body-secondary small">Use the email address HR has on file for you.</p>
+        {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% include "includes/field.html" with field=form.email %}
+          {% include "includes/field.html" with field=form.password1 %}
+          {% include "includes/field.html" with field=form.password2 %}
+          <button type="submit" class="btn btn-primary w-100">Sign up</button>
+        </form>
+        <p class="small mt-3 mb-0">Already have an account? <a href="{% url 'login' %}">Log in</a>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

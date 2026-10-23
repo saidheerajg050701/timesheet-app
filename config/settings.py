@@ -1,6 +1,6 @@
 """Django settings for the timesheet app. Values come from .env (see .env.example)."""
 
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import environ
@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "axes",
     "timesheets",
     "audit",
     "payroll",
@@ -45,8 +46,11 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Login required everywhere except views marked @login_not_required (login, sign-up).
+    "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "axes.middleware.AxesMiddleware",  # must be last
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -83,6 +87,23 @@ DATABASES = {
 DATABASE_ROUTERS = ["payroll.routers.PayrollRouter"]
 
 AUTH_USER_MODEL = "directory.User"
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",  # lockout check first (FR-1)
+    "directory.backends.EmployeeBackend",  # email + password; ACTIVE employees only
+]
+LOGIN_URL = "login"
+LOGIN_REDIRECT_URL = "home"
+LOGOUT_REDIRECT_URL = "login"
+
+# django-axes (FR-1): 5 failed logins lock the account for 15 minutes (D-28).
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+AXES_LOCKOUT_PARAMETERS = ["username"]
+AXES_USERNAME_CALLABLE = "directory.services.login.lockout_username"
+AXES_RESET_ON_SUCCESS = True
+AXES_LOCKOUT_TEMPLATE = "registration/locked.html"
+# axes.W006 recommends adding ip_address to the lockout key; we lock the account itself (D-28).
+SILENCED_SYSTEM_CHECKS = ["axes.W006"]
 
 # Argon2 first: new and changed passwords are stored as Argon2 hashes (B.10).
 PASSWORD_HASHERS = [

@@ -14,7 +14,7 @@ class ProjectAdmin(ViewOnlyAdmin):
 class TimeEntryInline(ViewOnlyInline):
     model = TimeEntry
     verbose_name_plural = "time entries"
-    fields =("work_date", "category", "project", "minutes", "notes")
+    fields = ("work_date", "category", "project", "minutes", "notes")
     ordering = ("work_date", "category")
 
 

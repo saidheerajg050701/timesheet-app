@@ -20,6 +20,11 @@ uv run python manage.py migrate --database=payroll   # payroll database → payr
 uv run python manage.py runserver          # http://127.0.0.1:8000
 ```
 
+## Logging in
+Every page needs a login except `/login/` and `/signup/`. Sign-up only works for an ACTIVE
+employee in the directory, using their company email. Five wrong passwords lock that account
+for 15 minutes. There is no self-service password reset: ask an admin.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

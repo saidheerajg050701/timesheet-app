@@ -11,10 +11,26 @@
   <nav class="navbar navbar-expand-lg bg-dark" data-bs-theme="dark">
     <div class="container">
       <a class="navbar-brand" href="{% url 'home' %}">Timesheets</a>
-      {% block navbar %}{% endblock %}
+      {% block navbar %}
+      <div class="ms-auto d-flex align-items-center gap-2">
+        {% if user.is_authenticated %}
+          <span class="navbar-text small">{{ user.email }}</span>
+          <form method="post" action="{% url 'logout' %}" class="m-0">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-light btn-sm">Log out</button>
+          </form>
+        {% else %}
+          <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Log in</a>
+          <a class="btn btn-light btn-sm" href="{% url 'signup' %}">Sign up</a>
+        {% endif %}
+      </div>
+      {% endblock %}
     </div>
   </nav>
   <main class="container py-4">
+    {% for message in messages %}
+      <div class="alert alert-{% if message.level_tag == 'error' %}danger{% else %}{{ message.level_tag }}{% endif %}" role="alert">{{ message }}</div>
+    {% endfor %}
     {% block content %}{% endblock %}
   </main>
   <script src="{% static 'vendor/bootstrap/bootstrap.bundle.min.js' %}"></script>

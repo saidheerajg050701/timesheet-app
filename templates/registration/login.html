@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Log in — Timesheets{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-sm-10 col-md-7 col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3">Log in</h1>
+        {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{{ next }}">
+          {% include "includes/field.html" with field=form.username %}
+          {% include "includes/field.html" with field=form.password %}
+          <button type="submit" class="btn btn-primary w-100">Log in</button>
+        </form>
+        <p class="small text-body-secondary mt-3 mb-1">Forgot your password? Ask HR to reset it.</p>
+        <p class="small mb-0">No account yet? <a href="{% url 'signup' %}">Sign up with your company email</a>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

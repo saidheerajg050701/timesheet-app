@@ -65,8 +65,17 @@ def test_user_page_shows_masked_argon2_summary_only(admin_client):
 
 @pytest.mark.django_db
 def test_non_admin_cannot_open_admin(client, user):
-    """Helper check: an employee without is_admin is sent to the admin login page."""
+    """Helper check: a logged-in employee without is_admin is refused (403, no login loop)."""
     client.force_login(user)
     response = client.get(reverse("admin:index"))
     assert response.status_code == 302
     assert response.url.startswith(reverse("admin:login"))
+    assert client.get(response.url).status_code == 403
+
+
+@pytest.mark.django_db
+def test_admin_login_uses_the_app_login_page(client, user):
+    """Helper check: /admin/login/ sends anonymous users to /login/ and keeps ?next."""
+    response = client.get(reverse("admin:login") + "?next=/admin/directory/employee/")
+    assert response.url == "/login/?next=/admin/directory/employee/"
+    assert client.get(reverse("admin:login")).url == "/login/?next=/admin/"
