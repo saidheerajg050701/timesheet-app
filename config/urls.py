@@ -8,6 +8,9 @@ urlpatterns = [
     path("admin/login/", admin_login),  # one login page for the whole app
     path("admin/", admin.site.urls),
     path("", include("directory.urls")),
+    path("", include("timesheets.urls")),
+    path("", include("analytics.urls")),
+    path("", include("payroll.urls")),
     # Placeholder behind login (D-24) until the Phase 9 dashboard replaces it.
     path("", TemplateView.as_view(template_name="home.html"), name="home"),
 ]

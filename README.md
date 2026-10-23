@@ -25,6 +25,12 @@ Every page needs a login except `/login/` and `/signup/`. Sign-up only works for
 employee in the directory, using their company email. Five wrong passwords lock that account
 for 15 minutes. There is no self-service password reset: ask an admin.
 
+## Roles and menus
+Everyone gets Dashboard, Timesheets, Requests and Profile. Team and Approvals appear for
+managers (anyone with reports) and directory admins; Payroll for payroll users and admins;
+Admin only for directory admins. Every page also checks permissions on the server
+(`directory/services/permissions.py`). Pages from later build phases show a placeholder.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

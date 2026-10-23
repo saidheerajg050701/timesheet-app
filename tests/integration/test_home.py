@@ -7,7 +7,7 @@ def test_home_placeholder_renders_with_vendored_assets(client, user):
     response = client.get("/")
     assert response.status_code == 200
     html = response.content.decode()
-    assert "Employee Timesheets" in html and user.email in html
+    assert "Employee Timesheets" in html and user.employee.employee_code in html
     for asset in ("vendor/bootstrap/bootstrap.min.css", "vendor/htmx/htmx.min.js"):
         assert asset in html
         assert finders.find(asset)

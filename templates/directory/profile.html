@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Profile — Timesheets{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-4">Profile</h1>
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5">Directory details</h2>
+        <p class="small text-body-secondary">From the company employee directory. Ask HR if something is wrong.</p>
+        <dl class="row mb-0" id="directory-details">
+          <dt class="col-sm-4">Full name</dt><dd class="col-sm-8">{{ me.first_name }} {{ me.last_name }}</dd>
+          <dt class="col-sm-4">Employee ID</dt><dd class="col-sm-8">{{ me.employee_code }}</dd>
+          <dt class="col-sm-4">Email</dt><dd class="col-sm-8">{{ me.email }}</dd>
+          <dt class="col-sm-4">Job title</dt><dd class="col-sm-8">{{ me.job_title }}</dd>
+          <dt class="col-sm-4">Team</dt><dd class="col-sm-8">{{ me.team.name|default:"—" }}</dd>
+          <dt class="col-sm-4">Department</dt><dd class="col-sm-8">{{ me.team.department|default:"—" }}</dd>
+          <dt class="col-sm-4">Manager</dt><dd class="col-sm-8">{% if me.manager %}{{ me.manager.first_name }} {{ me.manager.last_name }} ({{ me.manager.employee_code }}){% else %}—{% endif %}</dd>
+          <dt class="col-sm-4">Location</dt><dd class="col-sm-8">{{ me.location|default:"—" }}</dd>
+          <dt class="col-sm-4">Hire date</dt><dd class="col-sm-8">{{ me.hire_date|date:"M j, Y"|default:"—" }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5">Change password</h2>
+        {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+        <form method="post" novalidate>
+          {% csrf_token %}
+          {% include "includes/field.html" with field=form.old_password %}
+          {% include "includes/field.html" with field=form.new_password1 %}
+          {% include "includes/field.html" with field=form.new_password2 %}
+          <button type="submit" class="btn btn-primary">Change password</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

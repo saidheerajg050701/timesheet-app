@@ -12,18 +12,40 @@
     <div class="container">
       <a class="navbar-brand" href="{% url 'home' %}">Timesheets</a>
       {% block navbar %}
-      <div class="ms-auto d-flex align-items-center gap-2">
-        {% if user.is_authenticated %}
-          <span class="navbar-text small">{{ user.email }}</span>
-          <form method="post" action="{% url 'logout' %}" class="m-0">
-            {% csrf_token %}
-            <button type="submit" class="btn btn-outline-light btn-sm">Log out</button>
-          </form>
-        {% else %}
+      {% if me %}
+        {% with current=request.resolver_match.url_name %}
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#main-menu"
+                aria-controls="main-menu" aria-expanded="false" aria-label="Toggle menu">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="main-menu">
+          <ul class="navbar-nav me-auto" aria-label="Main menu">
+            <li class="nav-item"><a class="nav-link{% if current == 'home' %} active{% endif %}" href="{% url 'home' %}">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link{% if current == 'timesheets' %} active{% endif %}" href="{% url 'timesheets' %}">Timesheets</a></li>
+            <li class="nav-item"><a class="nav-link{% if current == 'requests' %} active{% endif %}" href="{% url 'requests' %}">Requests</a></li>
+            {% if menu.team %}<li class="nav-item"><a class="nav-link{% if current == 'team' or current == 'team_member' %} active{% endif %}" href="{% url 'team' %}">Team</a></li>{% endif %}
+            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'approvals' %} active{% endif %}" href="{% url 'approvals' %}">Approvals</a></li>{% endif %}
+            {% if menu.payroll %}<li class="nav-item"><a class="nav-link{% if current == 'payroll' %} active{% endif %}" href="{% url 'payroll' %}">Payroll</a></li>{% endif %}
+            {% if menu.admin %}<li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">Admin</a></li>{% endif %}
+          </ul>
+          <div class="d-flex align-items-center gap-3">
+            <a class="navbar-text text-decoration-none small lh-sm text-end{% if current == 'profile' %} text-white{% endif %}" href="{% url 'profile' %}" id="who-am-i">
+              <span class="fw-semibold">{{ me.first_name }} {{ me.last_name }}</span> · {{ me.employee_code }}<br>
+              {{ me.job_title }}{% if me.team %} · {{ me.team.name }}{% endif %}
+            </a>
+            <form method="post" action="{% url 'logout' %}" class="m-0">
+              {% csrf_token %}
+              <button type="submit" class="btn btn-outline-light btn-sm">Log out</button>
+            </form>
+          </div>
+        </div>
+        {% endwith %}
+      {% else %}
+        <div class="ms-auto d-flex align-items-center gap-2">
           <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Log in</a>
           <a class="btn btn-light btn-sm" href="{% url 'signup' %}">Sign up</a>
-        {% endif %}
-      </div>
+        </div>
+      {% endif %}
       {% endblock %}
     </div>
   </nav>

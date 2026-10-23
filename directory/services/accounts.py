@@ -46,3 +46,19 @@ def superuser_candidate(employee_code):
         raise ValidationError(f"No employee with code {code}.") from None
     check_superuser_candidate(employee)
     return employee
+
+
+def change_password(user, new_password):
+    """Store a new Argon2 hash and audit the change. The audit row holds no password data."""
+    from audit.models import AuditLog  # imported here: this module loads with directory.models
+    from audit.services.log import record
+
+    user.set_password(new_password)
+    user.save(update_fields=["password"])
+    record(
+        AuditLog.Action.UPDATE,
+        "User",
+        user.email,
+        actor=user.employee,
+        after={"changed": ["password"]},
+    )

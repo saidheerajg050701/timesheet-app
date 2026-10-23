@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth import get_user_model
-from django.contrib.auth.forms import AuthenticationForm
+from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.password_validation import (
     password_validators_help_text_html,
     validate_password,
@@ -86,3 +86,14 @@ class SignupForm(BootstrapFormMixin, forms.Form):
             except ValidationError as exc:
                 self.add_error("password1", exc)
         return cleaned
+
+
+class ProfilePasswordForm(BootstrapFormMixin, PasswordChangeForm):
+    """Current password + new password twice; the validators apply (12+ characters, FR-2)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["old_password"].label = "Current password"
+        self.fields["new_password1"].label = "New password"
+        self.fields["new_password2"].label = "Confirm new password"
+        self.fields["old_password"].widget.attrs.pop("autofocus", None)
