@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import F, Q
 
 
 class Project(models.Model):
@@ -39,22 +40,42 @@ class Timesheet(models.Model):  # one per employee per week
 
 
 class TimeEntry(models.Model):
-    class Category(models.TextChoices):
-        PROJECT = "PROJECT"
-        MEETING = "MEETING"
-        TRAINING = "TRAINING"
-        PTO = "PTO"
-        SICK = "SICK"
-        HOLIDAY = "HOLIDAY"
-        OTHER = "OTHER"
+    class Category(models.TextChoices):  # B.1 row 15
+        PROJECT = "PROJECT", "Project work"
+        MEETING = "MEETING", "Meetings"
+        TRAINING = "TRAINING", "Training"
+        OTHER = "OTHER", "Other"
+        BREAK = "BREAK", "Break time"  # unpaid; never in hours worked or payroll (D-39)
+        PTO = "PTO", "PTO"
+        SICK = "SICK", "Sick"
+        HOLIDAY = "HOLIDAY", "Holiday"
+
+    WORK = frozenset({Category.PROJECT, Category.MEETING, Category.TRAINING, Category.OTHER})
+    TIMED = WORK | {Category.BREAK}  # start and end time required (D-37)
+    LEAVE = frozenset({Category.PTO, Category.SICK, Category.HOLIDAY})  # hours only (D-40)
 
     timesheet = models.ForeignKey(Timesheet, on_delete=models.CASCADE, related_name="entries")
     work_date = models.DateField()  # within the week and within hire_date…end_date (D-19)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.PROTECT)
     # PROJECT entries must have an active project; all other categories must have none (D-18)
     category = models.CharField(max_length=10, choices=Category.choices)
-    minutes = models.PositiveIntegerField()  # multiple of 15; daily total ≤ 1440
-    notes = models.CharField(max_length=255, blank=True)
+    start_time = models.TimeField(null=True, blank=True)  # work and Break rows (D-37)
+    end_time = models.TimeField(null=True, blank=True)
+    minutes = models.PositiveIntegerField()  # end − start, or leave hours; 15-min steps
+    reason = models.CharField(max_length=255)  # required (D-36)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(start_time__isnull=True, end_time__isnull=True)
+                | Q(start_time__isnull=False, end_time__isnull=False),
+                name="entry_times_paired",
+            ),
+            models.CheckConstraint(
+                condition=Q(start_time__isnull=True) | Q(end_time__gt=F("start_time")),
+                name="entry_end_after_start",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.work_date} {self.category} {self.minutes} min"

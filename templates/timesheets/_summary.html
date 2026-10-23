@@ -1,0 +1,45 @@
+{% load timesheet_tags %}<div id="day-summary" class="table-responsive"{% if live %}
+  hx-post="{% url 'timesheet_totals' summary.days.0.day %}" hx-include="#week-form" hx-swap="outerHTML"
+  hx-trigger="input delay:300ms from:#week-form, change from:#week-form, rows-changed from:body"{% endif %}>
+  <table class="table table-sm bg-body text-center align-middle mb-0" aria-label="Day summary">
+    <thead>
+      <tr>
+        <th scope="col" class="text-start">Day summary</th>
+        {% for d in summary.days %}<th scope="col"{% if d.day.weekday >= 5 %} class="table-light"{% endif %}>{{ d.day|date:"D j" }}</th>{% endfor %}
+        <th scope="col">Week</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row" class="text-start fw-normal">First start</th>
+        {% for d in summary.days %}<td>{{ d.first_start|time:"H:i"|default:"—" }}</td>{% endfor %}
+        <td></td>
+      </tr>
+      <tr>
+        <th scope="row" class="text-start fw-normal">Last end</th>
+        {% for d in summary.days %}<td>{{ d.last_end|time:"H:i"|default:"—" }}</td>{% endfor %}
+        <td></td>
+      </tr>
+      <tr class="fw-semibold">
+        <th scope="row" class="text-start">Hours worked</th>
+        {% for d in summary.days %}<td{% if d.total > 1440 %} class="text-danger"{% endif %}>{{ d.worked|hm }}</td>{% endfor %}
+        <td id="week-worked">{{ summary.worked|hm }}</td>
+      </tr>
+      <tr>
+        <th scope="row" class="text-start fw-normal">Expected</th>
+        {% for d in summary.days %}<td>{{ d.expected|hm }}</td>{% endfor %}
+        <td id="week-expected">{{ summary.expected|hm }}</td>
+      </tr>
+      <tr class="text-body-secondary">
+        <th scope="row" class="text-start fw-normal">Break (unpaid)</th>
+        {% for d in summary.days %}<td>{{ d.breaks|hm }}</td>{% endfor %}
+        <td id="week-break">{{ summary.breaks|hm }}</td>
+      </tr>
+      <tr>
+        <th scope="row" class="text-start fw-normal">Leave</th>
+        {% for d in summary.days %}<td>{{ d.leave|hm }}</td>{% endfor %}
+        <td id="week-leave">{{ summary.leave|hm }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>

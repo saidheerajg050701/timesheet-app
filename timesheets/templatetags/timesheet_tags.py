@@ -1,7 +1,8 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django import template
 
+from timesheets.services.validation import CATEGORY_LABELS, day_label
 from timesheets.services.weeks import STATUS_LABELS
 
 register = template.Library()
@@ -57,3 +58,17 @@ def countdown(deadline, now):
         parts.append(f"{hours} h")
     parts.append(f"{mins} min")
     return " ".join(parts)
+
+
+@register.filter
+def category_label(category):
+    return CATEGORY_LABELS.get(category, category)
+
+
+@register.filter
+def iso_day(value):
+    """ "2026-10-20" → "Tue 20 Oct"."""
+    try:
+        return day_label(date.fromisoformat(value))
+    except (TypeError, ValueError):
+        return value

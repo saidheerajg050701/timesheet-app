@@ -1,5 +1,5 @@
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from io import StringIO
 
 import pytest
@@ -10,6 +10,7 @@ from audit.models import AuditLog
 from directory.models import Employee, Team, User
 from directory.services.demo import us_holidays
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
+from timesheets.services.validation import validate_entries
 
 # fixed_now = Wednesday 2026-10-21, in week 2 of the pay period that starts 2026-10-12.
 CURRENT_PERIOD = date(2026, 10, 12)
@@ -169,20 +170,24 @@ def test_seed_audit_rows_name_the_right_actor(seeded):
     assert not rows.filter(actor__isnull=True, system_actor="").exists()
 
 
-def test_seeded_entries_follow_entry_rules(seeded):
-    """Helper check: 15-minute steps, ≤ 24 h a day, dates in week and employment, D-18."""
-    daily = defaultdict(int)
-    for entry in TimeEntry.objects.select_related("timesheet__employee", "project"):
-        sheet, employee = entry.timesheet, entry.timesheet.employee
-        assert entry.minutes > 0 and entry.minutes % 15 == 0
-        assert sheet.week_start <= entry.work_date <= sheet.week_start + timedelta(days=6)
-        assert employee.hire_date <= entry.work_date  # D-19
-        if entry.category == TimeEntry.Category.PROJECT:
-            assert entry.project and entry.project.active  # D-18
-        else:
-            assert entry.project is None
-        daily[(employee.pk, entry.work_date)] += entry.minutes
-    assert max(daily.values()) <= 24 * 60
+def test_seeded_entries_pass_the_entry_rules(seeded):
+    """T-80: every seeded week passes validate_entries, with reasons, times and lunch breaks."""
+    sheets = Timesheet.objects.select_related("employee").prefetch_related("entries__project")
+    for sheet in sheets:
+        entries = list(sheet.entries.all())
+        assert validate_entries(sheet.employee, sheet.week_start, entries) == [], sheet
+        for entry in entries:
+            assert entry.reason.strip()
+            timed = entry.category in TimeEntry.TIMED
+            assert (entry.start_time is not None) == timed == (entry.end_time is not None)
+    breaks = TimeEntry.objects.filter(category="BREAK")
+    assert breaks.count() > 1000 and not breaks.filter(project__isnull=False).exists()
+    assert set(breaks.values_list("reason", flat=True)) == {"Lunch break"}
+    assert TimeEntry.objects.filter(category__in=TimeEntry.LEAVE, start_time__isnull=True).exists()
+    holiday = TimeEntry.objects.filter(category="HOLIDAY").first()
+    assert holiday.reason == "Public holiday: Labor Day"
+    earliest = TimeEntry.objects.filter(start_time__isnull=False).order_by("start_time").first()
+    assert time(8, 0) <= earliest.start_time <= time(9, 30)
 
 
 def test_seed_history_includes_holidays_part_timers_and_new_hires(seeded):
@@ -205,7 +210,8 @@ def test_seed_history_includes_holidays_part_timers_and_new_hires(seeded):
 
 def test_us_holidays_2026():
     """Helper check: holiday dates for 2026."""
-    assert us_holidays(2026) == {
+    holidays = us_holidays(2026)
+    assert set(holidays) == {
         date(2026, 1, 1),
         date(2026, 1, 19),
         date(2026, 5, 25),
@@ -215,6 +221,7 @@ def test_us_holidays_2026():
         date(2026, 11, 26),
         date(2026, 12, 25),
     }
+    assert holidays[date(2026, 9, 7)] == "Labor Day"
 
 
 @pytest.mark.django_db

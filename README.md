@@ -32,10 +32,13 @@ Admin only for directory admins. Every page also checks permissions on the serve
 (`directory/services/permissions.py`). Pages from later build phases show a placeholder.
 
 ## Timesheets
-`/timesheets/` lists your recent weeks; open one to fill in hours per project or category
-(15-minute steps, e.g. 7.25 or 7:15), then **Save draft** or **Submit**. The deadline is
+`/timesheets/` lists your recent weeks; open one and add as many rows as you need. Each row has
+a day, category, project (Project work only) and a reason. Work and Break rows use start and end
+times (15-minute steps, same day, no overlaps); leave (PTO, Sick, Holiday) uses hours. Break time
+is unpaid and not counted in Hours worked. The day summary shows Hours worked, Break, Leave,
+expected hours and each day's first start and last end. **Save draft** or **Submit** before
 Saturday 12:00 company time; after that an unsubmitted week is locked and counted as missed.
-Only the current and past weeks open. All rules are checked on the server when you save.
+All rules are checked on the server when you save.
 
 ## Demo data and the employee directory
 ```bash

@@ -85,6 +85,23 @@ STAFF = (
 )
 LOCATIONS = ("Dallas", "Frisco", "Remote", "Austin")
 REJECT_COMMENT = "Please split Wednesday's hours between Customer Portal and Mobile App."
+REASONS = {  # every row needs a reason (D-36)
+    TimeEntry.Category.PROJECT: (
+        "Feature development",
+        "Code review",
+        "Bug fixes",
+        "Customer follow-up",
+        "Planning and estimates",
+        "Testing",
+    ),
+    TimeEntry.Category.MEETING: ("Team stand-up and planning", "Client meeting", "One-to-one"),
+    TimeEntry.Category.TRAINING: ("Security awareness course", "Internal workshop"),
+    TimeEntry.Category.OTHER: ("Admin and email", "Recruiting interview"),
+    TimeEntry.Category.BREAK: ("Lunch break",),
+    TimeEntry.Category.PTO: ("Vacation", "Personal day"),
+    TimeEntry.Category.SICK: ("Sick day", "Doctor's appointment"),
+}
+WEEKEND_REASON = "Release support (weekend)"
 
 
 class DemoDataExists(Exception):
@@ -118,7 +135,7 @@ def seed_demo(*, now, password, large=False):
 
 
 def us_holidays(year):
-    """US federal holidays on their calendar dates (weekend ones are simply skipped)."""
+    """US federal holidays {date: name} on their calendar dates (weekend ones are skipped)."""
 
     def nth_weekday(month, weekday, n):
         first = date(year, month, 1)
@@ -126,14 +143,14 @@ def us_holidays(year):
 
     last_may_monday = nth_weekday(6, 0, 1) - timedelta(weeks=1)
     return {
-        date(year, 1, 1),
-        nth_weekday(1, 0, 3),  # Martin Luther King Jr. Day
-        last_may_monday,  # Memorial Day
-        date(year, 6, 19),
-        date(year, 7, 4),
-        nth_weekday(9, 0, 1),  # Labor Day
-        nth_weekday(11, 3, 4),  # Thanksgiving
-        date(year, 12, 25),
+        date(year, 1, 1): "New Year's Day",
+        nth_weekday(1, 0, 3): "Martin Luther King Jr. Day",
+        last_may_monday: "Memorial Day",
+        date(year, 6, 19): "Juneteenth",
+        date(year, 7, 4): "Independence Day",
+        nth_weekday(9, 0, 1): "Labor Day",
+        nth_weekday(11, 3, 4): "Thanksgiving",
+        date(year, 12, 25): "Christmas Day",
     }
 
 
@@ -160,7 +177,7 @@ class _Seeder:
             self.week_starts.append(current_period)
         self.last_completed = self.periods[-1]
         years = {self.week_starts[0].year, today.year}
-        self.holidays = set().union(*(us_holidays(y) for y in years))
+        self.holidays = {d: name for y in sorted(years) for d, name in us_holidays(y).items()}
 
     # --- orchestration ---------------------------------------------------------------------
 
@@ -362,49 +379,73 @@ class _Seeder:
         return week
 
     def _entries(self, employee, days, team_projects, *, weekend):
-        """Unsaved TimeEntry rows: 15-minute steps, well under 24 h a day (B.1 row 17)."""
+        """Unsaved rows with times, reasons and lunch breaks; nothing overlaps (D-35–D-44)."""
         daily = employee.expected_weekly_minutes // 5
         overtime_week = daily >= 480 and self.rng.random() < 0.15
         entries = []
-
-        def add(day, category, minutes, project=None):
-            if minutes > 0:
-                entries.append(
-                    TimeEntry(work_date=day, category=category, minutes=minutes, project=project)
-                )
-
         for day in days:
             if day in self.holidays:
-                add(day, TimeEntry.Category.HOLIDAY, daily)
+                reason = f"Public holiday: {self.holidays[day]}"
+                entries.append(self._leave(day, TimeEntry.Category.HOLIDAY, daily, reason))
                 continue
             roll = self.rng.random()
             if roll < 0.03:
-                add(day, TimeEntry.Category.PTO, daily)
+                entries.append(self._leave(day, TimeEntry.Category.PTO, daily))
                 continue
             if roll < 0.05:
-                add(day, TimeEntry.Category.SICK, daily)
+                entries.append(self._leave(day, TimeEntry.Category.SICK, daily))
                 continue
             extra = self.rng.choice((60, 90, 120)) if overtime_week and roll < 0.75 else 0
-            meeting = self.rng.choice((0, 30, 60, 60, 90)) if daily >= 240 else 0
-            training = 60 if self.rng.random() < 0.05 else 0
-            other = 30 if self.rng.random() < 0.05 else 0
-            project_minutes = daily + extra - meeting - training - other
-            if len(team_projects) > 1 and self.rng.random() < 0.4:
-                first = 15 * round(project_minutes * self.rng.uniform(0.3, 0.7) / 15)
-                add(day, TimeEntry.Category.PROJECT, first, team_projects[0])
-                add(day, TimeEntry.Category.PROJECT, project_minutes - first, team_projects[1])
-            else:
-                add(
-                    day, TimeEntry.Category.PROJECT, project_minutes, self.rng.choice(team_projects)
-                )
-            add(day, TimeEntry.Category.MEETING, meeting)
-            add(day, TimeEntry.Category.TRAINING, training)
-            add(day, TimeEntry.Category.OTHER, other)
+            entries.extend(self._workday(day, daily + extra, team_projects))
         if weekend and days and self.rng.random() < 0.03:  # weekend hours entered in advance (D-09)
             saturday = days[0] - timedelta(days=days[0].weekday()) + timedelta(days=5)
             minutes = self.rng.choice((120, 180, 240))
-            add(saturday, TimeEntry.Category.PROJECT, minutes, team_projects[0])
+            entries.append(
+                _timed(
+                    saturday,
+                    TimeEntry.Category.PROJECT,
+                    10 * 60,
+                    minutes,
+                    WEEKEND_REASON,
+                    team_projects[0],
+                )
+            )
         return entries
+
+    def _leave(self, day, category, minutes, reason=None):
+        """Leave rows are hours only, without times (D-40)."""
+        reason = reason or self.rng.choice(REASONS[category])
+        return TimeEntry(work_date=day, category=category, minutes=minutes, reason=reason)
+
+    def _workday(self, day, work_minutes, team_projects):
+        """Back-to-back blocks from a start between 08:00 and 09:30, with a lunch break."""
+        meeting = self.rng.choice((0, 30, 60, 60, 90)) if work_minutes >= 240 else 0
+        training = 60 if self.rng.random() < 0.05 else 0
+        other = 30 if self.rng.random() < 0.05 else 0
+        project_minutes = work_minutes - meeting - training - other
+        second = team_projects[1] if len(team_projects) > 1 and self.rng.random() < 0.4 else None
+        first = team_projects[0] if second else self.rng.choice(team_projects)
+        morning = project_minutes
+        if project_minutes > 15:
+            morning = 15 * round(project_minutes * self.rng.uniform(0.4, 0.6) / 15)
+            morning = min(max(morning, 15), project_minutes - 15)
+        lunch = self.rng.choice((30, 45, 60)) if work_minutes >= 360 else 0
+        blocks = (
+            (TimeEntry.Category.PROJECT, morning, first),
+            (TimeEntry.Category.MEETING, meeting, None),
+            (TimeEntry.Category.BREAK, lunch, None),  # unpaid (D-39)
+            (TimeEntry.Category.PROJECT, project_minutes - morning, second or first),
+            (TimeEntry.Category.TRAINING, training, None),
+            (TimeEntry.Category.OTHER, other, None),
+        )
+        cursor = 8 * 60 + 15 * self.rng.randint(0, 6)
+        rows = []
+        for category, minutes, project in blocks:
+            if minutes > 0:
+                reason = self.rng.choice(REASONS[category])
+                rows.append(_timed(day, category, cursor, minutes, reason, project))
+                cursor += minutes
+        return rows
 
     def _manager_edit(self, weeks, projects):
         """ops.manager moves a mis-logged project entry on request, before approval (B.7)."""
@@ -634,13 +675,30 @@ def _days(start, count):
     return [start + timedelta(days=i) for i in range(count)]
 
 
+def _timed(day, category, start_minute, minutes, reason, project=None):
+    """A row with start and end times on `day`; minutes = end − start (D-37)."""
+    end_minute = start_minute + minutes
+    return TimeEntry(
+        work_date=day,
+        category=category,
+        project=project,
+        minutes=minutes,
+        reason=reason,
+        start_time=time(start_minute // 60, start_minute % 60),
+        end_time=time(end_minute // 60, end_minute % 60),
+    )
+
+
 def _entry_snapshot(entries):
     return [
         {
             "work_date": e.work_date.isoformat(),
             "category": e.category,
             "project": e.project.code if e.project else None,
+            "start": e.start_time.strftime("%H:%M") if e.start_time else None,
+            "end": e.end_time.strftime("%H:%M") if e.end_time else None,
             "minutes": e.minutes,
+            "reason": e.reason,
         }
         for e in entries
     ]

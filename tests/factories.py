@@ -1,6 +1,6 @@
 """factory_boy factories (B.11)."""
 
-from datetime import date
+from datetime import date, time
 
 import factory
 import factory.random
@@ -76,4 +76,7 @@ class TimeEntryFactory(DjangoModelFactory):
     work_date = factory.LazyAttribute(lambda o: o.timesheet.week_start)
     category = TimeEntry.Category.PROJECT
     project = factory.SubFactory(ProjectFactory)
+    start_time = time(9, 0)
+    end_time = time(17, 0)
     minutes = 480
+    reason = "Feature development"

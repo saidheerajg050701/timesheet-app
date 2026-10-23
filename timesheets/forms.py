@@ -1,21 +1,28 @@
-"""Reading the weekly grid from a POST. The rules themselves live in services/validation.py."""
+"""Reading the entry rows from a POST. The rules themselves live in services/validation.py."""
 
 import re
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import time
 from decimal import Decimal, InvalidOperation
 
 from timesheets.models import Project, TimeEntry
-from timesheets.services.validation import CATEGORY_LABELS, EntryData, day_label
-from timesheets.services.weeks import GridRow
+from timesheets.services.calendar import week_days
+from timesheets.services.validation import CATEGORY_LABELS, EntryData, day_label, duration
+from timesheets.services.weeks import EntryRow
 
-ROW_KEY = re.compile(r"^row-(\d+)-kind$")
+ROW_FIELDS = ("date", "category", "project", "start", "end", "hours", "reason")
+ROW_KEY = re.compile(r"^entry-(\d+)-(?:" + "|".join(ROW_FIELDS) + r")$")
+CATEGORY_GROUPS = (  # the row's category menu
+    ("Work", [(c, CATEGORY_LABELS[c]) for c in ("PROJECT", "MEETING", "TRAINING", "OTHER")]),
+    ("Break (unpaid)", [("BREAK", CATEGORY_LABELS["BREAK"])]),
+    ("Leave (hours only)", [(c, CATEGORY_LABELS[c]) for c in ("PTO", "SICK", "HOLIDAY")]),
+)
 
 
 @dataclass
-class ParsedGrid:
-    entries: list = field(default_factory=list)  # EntryData
-    rows: list = field(default_factory=list)  # GridRow, as typed, to show the form again
+class ParsedEntries:
+    entries: list = field(default_factory=list)  # EntryData that could be read
+    rows: list = field(default_factory=list)  # EntryRow, as typed, to show the form again
     errors: list = field(default_factory=list)
 
 
@@ -39,72 +46,82 @@ def parse_hours(text):
     return int(value)
 
 
-def kind_choices(extra_project_ids=()):
-    """Options for a row: active projects, then the other categories (D-18)."""
-    projects = Project.objects.filter(active=True) | Project.objects.filter(
-        pk__in=extra_project_ids
-    )
-    options = [
-        (f"{TimeEntry.Category.PROJECT}:{p.pk}", f"{p.code} {p.name}")
-        for p in projects.order_by("code")
-    ]
-    options += [
-        (c, label) for c, label in CATEGORY_LABELS.items() if c != TimeEntry.Category.PROJECT
-    ]
-    return options
+def parse_time(text):
+    """ "HH:MM" (or "HH:MM:SS") → time; None if blank; ValueError if unreadable."""
+    text = (text or "").strip()
+    return time.fromisoformat(text) if text else None
 
 
-def parse_grid(post, week_start):
-    parsed = ParsedGrid()
+def project_choices(extra_ids=()):
+    """Active projects, plus any already used on this week's rows (shown, then rejected)."""
+    projects = Project.objects.filter(active=True) | Project.objects.filter(pk__in=extra_ids)
+    return [(str(p.pk), f"{p.code} {p.name}") for p in projects.order_by("code")]
+
+
+def day_choices(week_start):
+    return [(d.isoformat(), day_label(d)) for d in week_days(week_start)]
+
+
+def parse_entries(post, week_start):
+    """Every row in the POST, any number of them (D-35). Completely blank rows are ignored.
+
+    Problems reading a row (unknown day, bad time…) are reported here; the business rules
+    are checked by validate_entries when saving.
+    """
+    parsed = ParsedEntries()
     projects = {str(p.pk): p for p in Project.objects.all()}
-    indexes = sorted(int(m.group(1)) for key in post if (m := ROW_KEY.match(key)))
-    seen = set()
-    for index in indexes:
-        kind = post.get(f"row-{index}-kind", "").strip()
-        notes = post.get(f"row-{index}-notes", "").strip()[:255]
-        cells = [post.get(f"row-{index}-d{d}", "").strip() for d in range(7)]
-        parsed.rows.append(GridRow(index=index, kind=kind, label="", notes=notes, cells=cells))
-        if not kind and not any(cells):
-            continue  # an unused blank row
-        category, project, label = _read_kind(kind, projects)
-        if category is None:
-            parsed.errors.append(f"Row {index + 1}: choose a project or category.")
+    days = {d.isoformat(): d for d in week_days(week_start)}
+    indexes = sorted({int(m.group(1)) for key in post if (m := ROW_KEY.match(key))})
+    for number, index in enumerate(indexes, start=1):
+        values = {name: post.get(f"entry-{index}-{name}", "").strip() for name in ROW_FIELDS}
+        row = EntryRow(
+            index=index,
+            work_date=values["date"],
+            category=values["category"],
+            project=values["project"],
+            start=values["start"],
+            end=values["end"],
+            hours=values["hours"],
+            reason=values["reason"],
+        )
+        parsed.rows.append(row)
+        if row.is_blank:
             continue
-        if kind in seen:
-            parsed.errors.append(f"{label}: this row appears twice; use one row per item.")
-            continue
-        seen.add(kind)
-        for offset, text in enumerate(cells):
-            day = week_start + timedelta(days=offset)
-            try:
-                minutes = parse_hours(text)
-            except ValueError:
-                parsed.errors.append(
-                    f"{day_label(day)}, {label}: {text!r} is not a number of hours."
-                )
-                continue
-            if minutes:
-                parsed.entries.append(EntryData(day, category, project, minutes, notes))
+        entry, problems = _read_row(row, days, projects)
+        if problems:
+            where = f"Row {number}" + (
+                f" ({day_label(days[row.work_date])})" if row.work_date in days else ""
+            )
+            parsed.errors.extend(f"{where}: {problem}" for problem in problems)
+        else:
+            parsed.entries.append(entry)
     return parsed
 
 
-def _read_kind(kind, projects):
-    category, _, project_id = kind.partition(":")
-    if category == TimeEntry.Category.PROJECT:
-        project = projects.get(project_id)
-        return (category, project, project.code) if project else (None, None, "")
-    if category in CATEGORY_LABELS and not project_id:
-        return category, None, CATEGORY_LABELS[category]
-    return None, None, ""
-
-
-def row_totals(rows):
-    """Minutes per day (Monday → Sunday) and for the week, from the grid as typed."""
-    per_day = [0] * 7
-    for row in rows:
-        for offset, text in enumerate(row.cells):
-            try:
-                per_day[offset] += parse_hours(text)
-            except ValueError:
-                pass  # reported when saving
-    return per_day, sum(per_day)
+def _read_row(row, days, projects):
+    problems = []
+    work_date = days.get(row.work_date)
+    if work_date is None:
+        problems.append("choose a day of this week.")
+    if row.category not in CATEGORY_LABELS:
+        problems.append("choose a category.")
+    project = projects.get(row.project) if row.project else None
+    if row.project and project is None:
+        problems.append("unknown project.")
+    try:
+        start, end = parse_time(row.start), parse_time(row.end)
+    except ValueError:
+        start = end = None
+        problems.append("times must look like 08:30.")
+    minutes = 0
+    if row.category in TimeEntry.TIMED:
+        if start and end:  # minutes come from the times; typed hours are ignored (D-37)
+            minutes = duration(start, end)
+    elif row.category in CATEGORY_LABELS:
+        try:
+            minutes = parse_hours(row.hours)
+        except ValueError:
+            problems.append(f"{row.hours!r} is not a number of hours.")
+    if problems:
+        return None, problems
+    return EntryData(work_date, row.category, project, minutes, row.reason, start, end), []

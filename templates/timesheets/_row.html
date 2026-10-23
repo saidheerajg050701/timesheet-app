@@ -1,21 +1,40 @@
-{% load timesheet_tags %}<tr id="row-{{ row.index }}">
+{% load timesheet_tags %}<tr id="row-{{ row.index }}" data-index="{{ row.index }}">
+{% if editable %}
   <td>
-    {% if editable %}
-      <select name="row-{{ row.index }}-kind" class="form-select form-select-sm" aria-label="Project or category, row {{ row.index|add:1 }}">
-        <option value="">Choose…</option>
-        {% for value, label in kinds %}<option value="{{ value }}"{% if value == row.kind %} selected{% endif %}>{{ label }}</option>{% endfor %}
-      </select>
-    {% else %}{{ row.label }}{% endif %}
+    <select name="entry-{{ row.index }}-date" class="form-select form-select-sm" aria-label="Day, row {{ row.index|add:1 }}">
+      <option value="">Day…</option>
+      {% for value, label in day_choices %}<option value="{{ value }}"{% if value == row.work_date %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
   </td>
-  {% for day, value in days|zip_with:row.cells %}
-    <td class="{% if day.weekend %}table-light{% endif %}">
-      <input type="text" inputmode="decimal" name="row-{{ row.index }}-d{{ forloop.counter0 }}" value="{{ value }}"
-             class="form-control form-control-sm text-end" aria-label="{{ day.date|date:'l' }} hours, row {{ row.index|add:1 }}"
-             {% if not editable or not day.employed %}disabled{% endif %}>
-    </td>
-  {% endfor %}
   <td>
-    <input type="text" name="row-{{ row.index }}-notes" value="{{ row.notes }}" maxlength="255" class="form-control form-control-sm"
-           aria-label="Notes, row {{ row.index|add:1 }}" {% if not editable %}disabled{% endif %}>
+    <select name="entry-{{ row.index }}-category" class="form-select form-select-sm" data-role="category" aria-label="Category, row {{ row.index|add:1 }}">
+      <option value="">Category…</option>
+      {% for group, options in category_groups %}
+        <optgroup label="{{ group }}">
+          {% for value, label in options %}<option value="{{ value }}"{% if value == row.category %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </optgroup>
+      {% endfor %}
+    </select>
   </td>
+  <td>
+    <select name="entry-{{ row.index }}-project" class="form-select form-select-sm" data-role="project" aria-label="Project, row {{ row.index|add:1 }}">
+      <option value="">—</option>
+      {% for value, label in project_choices %}<option value="{{ value }}"{% if value == row.project %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </td>
+  <td><input type="time" step="900" name="entry-{{ row.index }}-start" value="{{ row.start }}" class="form-control form-control-sm" data-role="time" aria-label="Start time, row {{ row.index|add:1 }}"></td>
+  <td><input type="time" step="900" name="entry-{{ row.index }}-end" value="{{ row.end }}" class="form-control form-control-sm" data-role="time" aria-label="End time, row {{ row.index|add:1 }}"></td>
+  <td><input type="text" inputmode="decimal" name="entry-{{ row.index }}-hours" value="{{ row.hours }}" class="form-control form-control-sm text-end" data-role="hours" aria-label="Hours (leave only), row {{ row.index|add:1 }}"></td>
+  <td><input type="text" name="entry-{{ row.index }}-reason" value="{{ row.reason }}" maxlength="255" required class="form-control form-control-sm" aria-label="Reason, row {{ row.index|add:1 }}"></td>
+  <td><button type="button" class="btn btn-sm btn-outline-danger" data-action="remove-row" aria-label="Remove row {{ row.index|add:1 }}">&times;</button></td>
+{% else %}
+  <td>{{ row.work_date|iso_day }}</td>
+  <td>{{ row.category|category_label }}</td>
+  <td>{% if row.project %}{{ row.label }}{% else %}—{% endif %}</td>
+  <td>{{ row.start|default:"—" }}</td>
+  <td>{{ row.end|default:"—" }}</td>
+  <td class="text-end">{{ row.hours }}</td>
+  <td>{{ row.reason }}</td>
+  <td></td>
+{% endif %}
 </tr>

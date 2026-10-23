@@ -146,8 +146,8 @@ What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew
 | 12 | Biweekly period | 2 weeks, anchored on Monday `2026-01-05` — `.env` → `PAY_PERIOD_ANCHOR` | Default |
 | 13 | Approver | **Direct manager**; higher managers view only. Employees with **no manager** are approved by an Admin. **Nobody ever approves their own timesheet** (D-11) | **Decided** |
 | 14 | Analytics visibility | Roles add up (D-12). Everyone: own. Manager: + whole reporting tree. Admin: everyone. Payroll flag: adds payroll pages only | **Decided** |
-| 15 | Time categories | Project work, Meetings, Training, PTO, Sick, Holiday, Other | Default |
-| 16 | Overtime rule (payroll) | Worked hours (Project, Meetings, Training, Other) above the employee's expected weekly hours = overtime. PTO, Sick and Holiday are paid separately and never count as overtime | Default — confirm with payroll; real overtime rules depend on law and contracts |
+| 15 | Time categories | **Work** (start/end times): Project work, Meetings, Training, Other. **Break time** (start/end times, unpaid, D-39). **Leave** (hours only): PTO, Sick, Holiday (D-37, D-40) | Default |
+| 16 | Overtime rule (payroll) | Worked hours (Project, Meetings, Training, Other) above the employee's expected weekly hours = overtime. PTO, Sick and Holiday are paid separately and never count as overtime. **Break time is unpaid and never counts as regular hours or overtime** (D-45) | Default — confirm with payroll; real overtime rules depend on law and contracts |
 | 17 | Hours granularity | 15-minute steps; max 24 h/day; stored as whole minutes | Default |
 | 18 | Expected hours | 40 h/week, can differ per employee. Partial weeks (hire / end date) are prorated by active weekdays (D-19) | Default |
 | 19 | Email verification at sign-up | Off (directory check only) | Default |
@@ -252,7 +252,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Reject → both weeks become REOPENED with `reopen_until` set per D-21, and the manager's comment is shown to the employee (D-07)
 - **Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline
 
-**FR-8 Weekly deadline.** Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
+**FR-8 Weekly timesheet and deadline.** Each week is a list of entry rows, as many as needed (D-35). Every row has a date, a category, a project (Project work only, D-18) and a required reason (D-36). Work rows (Project work, Meetings, Training, Other) and **Break** rows have a start and end time in 15-minute steps on the same day; the hours are calculated from the times (D-37). Timed rows on one day must not overlap (D-38). Leave rows (PTO, Sick, Holiday) have hours only (D-40). Break time is unpaid (D-39). **Hours worked** = work rows only; the page shows it per day and per week next to the expected hours, with separate Break and Leave totals and each day's first start and last end (D-41). Each day's work + Break + leave is at most 24 hours (D-42). A week needs at least one entry to be submitted, and a week with only Break rows cannot be submitted (D-32, D-43). Only the current week and earlier open (D-33). Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
 
 **FR-9 Manager changes on request.**
 1. Employee opens a submitted or locked week → **Request change** → writes a reason.
@@ -366,17 +366,27 @@ class Timesheet(models.Model):             # one per employee per week
     class Meta:
         constraints = [models.UniqueConstraint(fields=["employee", "week_start"], name="one_sheet_per_week")]
 
-class TimeEntry(models.Model):
+class TimeEntry(models.Model):            # one row = one entry; no row limit (D-35)
     class Category(models.TextChoices):
-        PROJECT="PROJECT"; MEETING="MEETING"; TRAINING="TRAINING"; PTO="PTO"
-        SICK="SICK"; HOLIDAY="HOLIDAY"; OTHER="OTHER"
+        PROJECT="PROJECT","Project work"; MEETING="MEETING","Meetings"; TRAINING="TRAINING","Training"
+        OTHER="OTHER","Other"; BREAK="BREAK","Break time"          # Break: unpaid (D-39)
+        PTO="PTO","PTO"; SICK="SICK","Sick"; HOLIDAY="HOLIDAY","Holiday"
+    WORK = {PROJECT, MEETING, TRAINING, OTHER}; TIMED = WORK | {BREAK}; LEAVE = {PTO, SICK, HOLIDAY}
     timesheet = models.ForeignKey(Timesheet, on_delete=models.CASCADE, related_name="entries")
     work_date = models.DateField()         # within the week and within hire_date…end_date (D-19)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.PROTECT)
-    # PROJECT entries must have an active project; all other categories must have none (D-18)
+    # PROJECT entries must have an active project; all other categories (Break too) none (D-18, D-39)
     category = models.CharField(max_length=10, choices=Category.choices)
-    minutes = models.PositiveIntegerField()    # multiple of 15; daily total ≤ 1440
-    notes = models.CharField(max_length=255, blank=True)
+    start_time = models.TimeField(null=True, blank=True)   # work and Break rows only (D-37)
+    end_time = models.TimeField(null=True, blank=True)     # after start, same day; leave has none (D-40)
+    minutes = models.PositiveIntegerField()    # end − start, or leave hours; 15-min steps; day ≤ 1440 (D-42)
+    reason = models.CharField(max_length=255)  # required (D-36); was "notes" before Phase 5b
+    class Meta:
+        constraints = [  # both times or neither; end after start
+            models.CheckConstraint(condition=Q(start_time__isnull=True, end_time__isnull=True)
+                                   | Q(start_time__isnull=False, end_time__isnull=False), name="entry_times_paired"),
+            models.CheckConstraint(condition=Q(start_time__isnull=True) | Q(end_time__gt=F("start_time")),
+                                   name="entry_end_after_start")]
 
 class PeriodApproval(models.Model):        # one per employee per 2-week period
     class Status(models.TextChoices):
@@ -490,7 +500,7 @@ Design notes:
 | Generated employees | ~37 (Faker, fixed seed), placed under the core managers |
 | Login accounts already created | **All active employees except 3** sign-up test people (password = `DEMO_PASSWORD` from `.env`, stored as Argon2 hashes) |
 | Projects | 8 (one inactive) |
-| Timesheet history | **12 weeks** for every employee with an account: mostly on time, some late, a few missed, one rejected period, one open change request |
+| Timesheet history | **12 weeks** (period-aligned, D-27) for every employee with an account: mostly on time, some late, a few missed, one rejected period, one open change request. Work rows have realistic start/end times (first start 08:00–09:30), a reason, and a 30–60 min **lunch Break**; leave days are hours only, holidays named ("Public holiday: Labor Day") (D-44) |
 | Approved periods | All completed periods whose two weeks are both SUBMITTED are approved, except the most recent period (left **pending** to test approvals). Periods containing a missed (LOCKED) week stay **pending** (D-06) |
 | Payroll database | Pre-filled with every approved week (some marked EXPORTED and PAID for older periods, one SUPERSEDED correction) |
 | Audit log | Entries for the seeded approvals, rejection and manager edit. Rows the seed itself creates use `system_actor="seed_demo"`; seeded human decisions name the manager as `actor` (D-14) |
@@ -554,7 +564,7 @@ uv run python manage.py import_employees data/your_file.csv   # load a real dire
 | `/` | All | Dashboard: personal analytics + current-week card + countdown |
 | `/profile/` | All | Directory details; change password |
 | `/timesheets/` | All | My weeks and their status |
-| `/timesheets/<YYYY-MM-DD>/` | All | Weekly grid; Save draft / Submit / Request change |
+| `/timesheets/<YYYY-MM-DD>/` | All | Week entry rows and day summary; Save draft / Submit / Request change |
 | `/requests/` | All | My change requests |
 | `/team/` | Managers | Hierarchy analytics + this week's compliance |
 | `/team/<employee_code>/` | Managers (own tree) | Read-only drill-down |
@@ -581,13 +591,14 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 6 | `reporting_tree(employee)` → all reports, cycle-safe | `directory/services/permissions.py` |
 | 7 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` — `can_approve` = direct manager, or Admin for employees with no manager, never self (D-11); payroll flag grants nothing beyond `/payroll/` (D-12) | same |
 | 8 | `sync_account(employee)` → copies is_admin → is_staff/is_superuser, status → is_active, email (lower-cased) → User (D-13, D-20) | `directory/services/accounts.py` |
-| 9 | `validate_entries(...)` → 15-min steps, ≤ 24 h/day, dates in week and within hire_date…end_date (D-19), PROJECT ⇔ active project (D-18) | `timesheets/services/validation.py` |
+| 9 | `validate_entries(...)` → required reason ≤ 255 (D-36); work and Break rows: start/end in 15-min steps, end after start, same day (D-37), no overlaps (D-38); leave: hours only (D-40); dates in week and within hire_date…end_date (D-19); PROJECT ⇔ active project, Break never a project (D-18, D-39); work + Break + leave ≤ 24 h/day (D-42) | `timesheets/services/validation.py` |
 | 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `timesheets/services/approvals.py` |
 | 11 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
-| 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday | `payroll/services/hours.py` |
+| 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `payroll/services/hours.py` |
 | 13 | `publish_period(approval)`, `supersede_week(...)` | `payroll/services/publish.py` |
 | 14 | `export_period(...)`, `mark_paid(...)` — forward-only status changes (D-15) | `payroll/services/export.py` |
 | 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks) | `analytics/services/metrics.py` |
+| 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
 
 ## B.10 Quality rules
 
@@ -664,8 +675,8 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-14 | Calendar | Deadline at Saturday 12:00:00 | Locked |
 | T-15 | Calendar | Week containing daylight-saving change (March and November) | Deadline still 12:00 local |
 | T-16 | Calendar | `pay_period_for` across year boundary | Correct 2-week period |
-| T-17 | Validation | Minutes not multiple of 15 | Rejected |
-| T-18 | Validation | Day total over 24 h | Rejected |
+| T-17 | Validation | Times or leave hours not in 15-minute steps | Rejected |
+| T-18 | Validation | Day total (work + Break + leave) over 24 h | Rejected (D-42) |
 | T-19 | Validation | Entry date outside the week / inactive project | Rejected |
 | T-20 | Timesheet | Save draft then submit before deadline | SUBMITTED, not late |
 | T-21 | Timesheet | Employee edits after submitting | Forbidden |
@@ -718,7 +729,16 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-68 | Validation | Entry before `hire_date` or after `end_date` | Rejected; entries on employed days of the same week accepted (D-19) |
 | T-69 | Calendar | `expected_minutes_for` for hire mid-week, end mid-week, part-timer, and a week fully outside employment | Prorated by active weekdays (e.g. 2400 × 3/5 = 1440); 0 outside employment (D-19) |
 | T-70 | Timesheet | Unsubmitted past weeks before `hire_date` / after `end_date` vs partly employed weeks | Fully outside employment never missed; partly employed week missed if not submitted (D-19) |
-| T-71 | Timesheet | Submit a week | AuditLog SUBMIT row with the employee as actor, after = status SUBMITTED, submitted_at, is_late, total minutes |
+| T-71 | Timesheet | Submit a week | AuditLog SUBMIT row with the employee as actor, after = status SUBMITTED, week_start, submitted_at, is_late, worked/break/leave minutes |
+| T-72 | Validation | Work/Break row with end before or equal to start, or times not on 15-minute steps | Rejected (D-37) |
+| T-73 | Validation | Overlapping timed rows on one day, including a Break inside a work row | Rejected; back-to-back rows (12:00–12:30, 12:30–13:00) accepted (D-38) |
+| T-74 | Validation | Row with an empty reason or a reason over 255 characters | Rejected (D-36) |
+| T-75 | Validation | Break with a project, or Break without times | Rejected (D-39) |
+| T-76 | Validation | PTO/Sick/Holiday with a start or end time; work row without times | Rejected (D-37, D-40) |
+| T-77 | Timesheet | Day with work, a Break and leave | Hours worked counts only work rows; Break and Leave shown separately; first start/last end; per-day and week totals (D-41) |
+| T-78 | Timesheet | Submit a week whose only rows are Breaks | Refused; nothing submitted (D-43) |
+| T-79 | Timesheet | 20 rows on one day, plus rows on other days | All saved and shown; no row limit; the 24-hour rule still applies (D-35, D-42) |
+| T-80 | Seed | `seed_demo` history | Every week passes `validate_entries`; every row has a reason; timed rows have times; lunch breaks and leave rows exist; Break never has a project (D-44) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -822,7 +842,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-34 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -860,6 +880,17 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-32 | Timesheet | Submitting requires at least one entry ("Add at least one entry before submitting"); leave is entered as PTO, Sick or Holiday. | B.4 FR-8, C.4 P5 |
 | D-33 | Timesheet | Employees can open only the current week and earlier weeks; future weeks cannot be opened or saved. The current week can be submitted any time before Saturday 12:00, including weekend hours entered in advance (D-09). Future weeks are never counted as missed. | B.4 FR-8, B.8, C.4 P5 |
 | D-34 | Timesheet | LOCKED and "missed" are worked out when read (`effective_status`, `week_state`); opening a page never writes. The stored status changes only through actions (save, submit, and later unlock/approve), so a locked week may still be stored as DRAFT. | B.4 FR-8, B.5, B.9 #3, C.4 P5–P7 |
+| D-35 | Timesheet | Unlimited rows: **Add row** (HTMX) adds as many rows as needed on any day of the week, and rows of an editable (draft) week can be removed. There is no row limit; the time rules and the 24-hour rule are the only limits. | B.4 FR-8, C.4 P5 |
+| D-36 | Timesheet | Every row has a date, category, project (Project work only, D-18) and a **required reason** (max 255 characters). `TimeEntry.notes` is renamed to `reason`. | B.4 FR-8, B.6 |
+| D-37 | Timesheet | Work rows (Project work, Meetings, Training, Other) and Break rows have a start and end time ("login to logout" for that row) in 15-minute steps; end must be after start and the row cannot cross midnight (latest end 23:45). Hours are calculated from the times and stored as whole minutes. | B.1 row 15, B.4 FR-8, B.6, B.9 |
+| D-38 | Timesheet | Rows with times on the same day must not overlap, breaks included; back-to-back rows (end = next start) are fine. | B.4 FR-8, B.9 |
+| D-39 | Timesheet | New category **BREAK** ("Break time"): needs start and end times, never a project, and is unpaid — never counted in Hours worked, overtime or payroll. | B.1 rows 15–16, B.4 FR-8, B.6 |
+| D-40 | Timesheet | Leave rows (PTO, Sick, Holiday) have hours only, without start or end times. | B.1 row 15, B.4 FR-8, B.6 |
+| D-41 | Timesheet | Hours worked = the sum of work rows, excluding Break and leave. Shown per day and per week next to the expected hours, with separate Break and Leave totals and each day's first start and last end time. | B.4 FR-8, B.9 #16 |
+| D-42 | Timesheet | The 24-hour limit per day counts work, Break and leave rows together. | B.4 FR-8, B.9, B.11 T-18 |
+| D-43 | Timesheet | D-32 stays, and a week containing only Break rows cannot be submitted either. | B.4 FR-8 |
+| D-44 | Data | `TimeEntry` gets `start_time`, `end_time` and `reason` (renamed from `notes`) plus the BREAK category in migration `timesheets/0002`. `seed_demo` creates realistic times, reasons and lunch breaks. Existing databases are migrated, never deleted, flushed or reseeded automatically; rebuild them with the D.3 "start over" steps. | B.6, B.7, D.3 |
+| D-45 | Payroll | Phase 8 `split_hours` excludes Break from regular hours and overtime. | B.1 row 16, B.9 #12, C.4 P8 |
 
 ---
 
@@ -1035,8 +1066,9 @@ only for employees with no manager); roles add up and the payroll flag grants no
 
 ### Phase 5 — Weekly timesheet & deadline
 ```
-Implement FR-8 and /timesheets/ and /timesheets/<YYYY-MM-DD>/: rows by project/category, Mon–Sun
-columns, 15-minute steps, live totals with HTMX, Save draft, Submit, deadline countdown.
+Implement FR-8 and /timesheets/ and /timesheets/<YYYY-MM-DD>/: one row per entry (date, category,
+project, start/end time or leave hours, reason; unlimited rows, D-35–D-43), 15-minute steps, live
+day summary with HTMX, Save draft, Submit, deadline countdown.
 Calendar logic in timesheets/services/calendar.py, validation in timesheets/services/validation.py.
 Weekend hours can be entered in advance (D-09). PROJECT entries need an active project, other
 categories none (D-18). Entries only within hire_date…end_date; expected_minutes_for prorates
@@ -1072,7 +1104,8 @@ weeks to/from APPROVED (D-10). Tests: T-29 to T-32, plus new catalogued tests fo
 ### Phase 8 — Payroll database (NEW)
 ```
 Implement FR-11 and the payroll app (models only in the payroll database, as in B.6):
-- payroll/services/ package (D-04): hours.py split_hours (overtime rule from B.1 row 16);
+- payroll/services/ package (D-04): hours.py split_hours (overtime rule from B.1 row 16; Break time
+  excluded from regular hours and overtime, D-45);
   publish.py publish_period (idempotent), supersede_week; export.py export_period (CSV + batch number),
   mark_paid. Call publish_period after approval; call supersede_week from the Phase 6 hook.
 - Append-only per D-15: frozen snapshot/hours fields, forward-only status changes, enforced in code.
@@ -1174,7 +1207,7 @@ Use the demo logins from B.7 (password = `DEMO_PASSWORD`).
 | 2 | (none) | Sign up `qa1@yourcompany.com` | Account created; header shows Ravi Kumar, EMP-0006, QA Engineer, Platform |
 | 3 | hr | Open the new user in /admin/ | Password shown only as an Argon2 hash |
 | 4 | dev2 | Wrong password 5 times | Locked for 15 minutes |
-| 5 | dev1 | Save draft, then submit before Saturday 12:00 | SUBMITTED, read-only |
+| 5 | dev1 | Add rows with start/end times and a reason, Save draft, then submit before Saturday 12:00 | SUBMITTED, read-only |
 | 6 | dev1 | Look at a past unsubmitted week | LOCKED; counted as missed on dashboard |
 | 7 | dev1 → eng.manager | Request change → manager unlocks | dev1 can edit for at least 48 hours (until the later of +48 h and Saturday 12:00, D-21) |
 | 8 | eng.manager | Edit a report's week | Audit log entry with before/after values |
@@ -1185,6 +1218,7 @@ Use the demo logins from B.7 (password = `DEMO_PASSWORD`).
 | 13 | eng.manager | Reject a period with a comment | Both weeks REOPENED; comment visible to the employee |
 | 14 | eng.director | Open Team | Sees Priya and her reports |
 | 15 | dev1 | Open /team/ and /payroll/ | Forbidden |
+| 16 | dev1 | Add a work row 09:00–17:00 and a Break 12:00–12:30 the same day; then make them back-to-back | First refused as overlapping; then saved, and Hours worked excludes the Break (D-38, D-39, D-41) |
 
 ## D.2 Daily commands
 
