@@ -1,5 +1,6 @@
 import logging
 import sqlite3
+from contextlib import closing
 from datetime import date, datetime, time, timedelta
 from io import StringIO
 from unittest import mock
@@ -328,10 +329,10 @@ def test_backup_db_copies_both_databases(tmp_path, org):
     payroll = sorted(tmp_path.glob("payroll-*.sqlite3"))
     assert len(main) == len(payroll) == 1
     assert main[0].name.removeprefix("db-") == payroll[0].name.removeprefix("payroll-")  # same time
-    tables = {
-        path: {name for (name,) in sqlite3.connect(path).execute("select name from sqlite_master")}
-        for path in (main[0], payroll[0])
-    }
+    tables = {}
+    for path in (main[0], payroll[0]):
+        with closing(sqlite3.connect(path)) as copy:
+            tables[path] = {name for (name,) in copy.execute("select name from sqlite_master")}
     assert "directory_employee" in tables[main[0]] and "payroll_payrollweek" not in tables[main[0]]
     assert "payroll_payrollweek" in tables[payroll[0]]
     assert "Both databases backed up" in out.getvalue()

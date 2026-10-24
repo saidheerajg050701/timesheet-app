@@ -227,7 +227,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 
 **FR-4 Profile from directory.** Header and Profile page show full name, Employee ID, job title, team, department, manager, location, hire date — read-only, from the directory.
 
-**FR-5 Personal analytics (Dashboard).** Range filter (last 4 / 12 / 26 weeks):
+**FR-5 Personal analytics (Dashboard).** Rules in B.12 D-74–D-80. Range filter (last 4 / 12 / 26 weeks):
 - Hours per week vs expected (bar chart with target line)
 - On-time submission rate
 - Hours by project and by category
@@ -605,7 +605,7 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `payroll/services/hours.py` |
 | 13 | `publish_period(approval, …)` (idempotent, D-66), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` repairs (`payroll/services/sync.py`) | `payroll/services/publish.py` |
 | 14 | `export_period(...)` (whole period, batch `EXP-0001`…, D-68), `batch_csv(...)` (spreadsheet-safe), `mark_paid(...)` (per batch, D-69), `corrections()` (D-70) — forward-only status changes (D-15) | `payroll/services/export.py` |
-| 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks) | `analytics/services/metrics.py` |
+| 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks): `dashboard_for`, `punctuality`, `overtime`, `hours_by_project`, `hours_by_category`, `approval_outcomes` — built on `week_state`, `summarize` and `split_hours` (D-74–D-79) | `analytics/services/metrics.py` |
 | 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
 
 ## B.10 Quality rules
@@ -646,6 +646,7 @@ tests/
     test_audit.py          # exactly one of actor / system_actor (D-14)
     test_validation.py
     test_payroll_split.py
+    test_metrics.py        # dashboard helpers (range, rate, totals)
   integration/
     test_auth_views.py
     test_timesheet_flow.py
@@ -783,6 +784,14 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-112 | Payroll | Mark as paid | EXPORTED → PAID for that batch only; CURRENT and later records untouched; PAY audit; repeating does nothing (D-69) |
 | T-113 | Payroll | `backup_db` | Timestamped copies of both databases (same timestamp) that open with their tables (D-72) |
 | T-114 | Seed | Payroll part of `seed_demo` | Every approved week has a live record; older periods EXPORTED/PAID with batches EXP-0001…; exactly one SUPERSEDED correction with its v2; EXPORT/PAY by payroll@ (D-73) |
+| T-115 | Analytics | Range filter 4 / 12 / 26 weeks and an invalid value | Weeks end with the current week; counts change with the range; invalid → 12 (D-74) |
+| T-116 | Analytics | On-time / late / missed edge cases: draft past deadline, no timesheet, late, reopened-and-resubmitted on-time week, missed week reopened and resubmitted, re-locked submitted week, missed week reopened but not resubmitted, current week | Classified per D-75 (first submission decides; never submitted = missed); current week not counted; the `/timesheets/` Missed badge agrees |
+| T-117 | Analytics | New hire mid-range and a deactivated employee (end_date) | Weeks outside employment never shown, counted or missed; partial weeks prorated (D-19) |
+| T-118 | Analytics | Overtime vs payroll | Dashboard overtime per approved week equals PayrollWeek.overtime_minutes; drafts excluded (D-76) |
+| T-119 | Analytics | Own data only | `/` always shows the logged-in user's numbers; query parameters can't select another employee |
+| T-120 | Analytics | Empty state (new hire, no timesheets) | Friendly messages instead of charts; page renders 200 (D-80) |
+| T-121 | Analytics | Viewing the dashboard | No INSERT/UPDATE/DELETE; the same number of queries for 4 and 26 weeks (D-34, D-80) |
+| T-122 | Analytics | Hours by category with Break and leave, approval outcomes, current-week card | Break shown apart and never in totals; outcomes per period with "in progress"; card shows the effective status and the server's deadline; chart data via `json_script` (D-77, D-78) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -886,7 +895,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-73 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-80 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -963,6 +972,13 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-71 | Payroll | The snapshot's `expected_weekly_minutes` is that week's prorated expected minutes (D-19). Deactivated employees' approved weeks are published, exported and paid like anyone else's. | B.6, B.4 FR-11 |
 | D-72 | Ops | `backup_db` copies both databases with SQLite's online backup API through a separate read-only connection (safe while the app runs) to `backups/db-YYYYmmdd-HHMMSS.sqlite3` and `backups/payroll-…` with the same timestamp; `--dir` chooses another folder. | D.2, D.3 |
 | D-73 | Data | `seed_demo` fills payroll after the main seed commits (publish every approved period; oldest periods EXPORTED and PAID, next EXPORTED, newest CURRENT; one correction). If the payroll part fails, the main data stays and `sync_payroll` completes it; seed_demo still refuses when data exists. | B.7 |
+| D-74 | Analytics | Dashboard range = the last N weeks ending with the current week (N = 4, 12 or 26; default 12; anything else → 12). The current week shows in the hours chart but counts for on-time / late / missed only after its Saturday 12:00 deadline. | B.4 FR-5 |
+| D-75 | Analytics | A week counts when its deadline has passed and the person was employed on at least one weekday of it (D-19). **On time** = submitted, first submission on time (`is_late` False, D-52); **late** = submitted with `is_late`; **missed** = never submitted (no timesheet or no `submitted_at`). On-time rate = on time ÷ (on time + late + missed). `week_state().is_missed` uses the same rule, so `/timesheets/` and the dashboard agree: a re-locked week counts by its first submission; a missed week reopened but not yet resubmitted stays missed. | B.4 FR-5/FR-8, B.9 #3, #15 |
+| D-76 | Analytics | Dashboard overtime = payroll `split_hours` per week (prorated expected) summed over SUBMITTED and APPROVED weeks in the range, so approved weeks match the payroll records exactly. | B.4 FR-5 |
+| D-77 | Analytics | The hours charts use every saved entry in the range (drafts and the current week included): Hours worked = work rows; by project = Project work rows; by category = work categories plus leave; Break is listed separately as unpaid and excluded from every total. | B.4 FR-5 |
+| D-78 | Analytics | Approval outcomes: every pay period overlapping the range in which the person was employed, with its PeriodApproval status (no record = pending); the current, unfinished period is shown as "in progress" and not counted. | B.4 FR-5 |
+| D-79 | Analytics | The dashboard is built by `analytics/services/metrics.py → dashboard_for(employee, weeks, now)` and rendered by `templates/analytics/_dashboard.html` plus `parts/*.html`, which take that object (and `own`) — Phase 10 reuses them read-only for a team member. | C.4 P9/P10 |
+| D-80 | Analytics | Charts use the vendored Chart.js with data only through `json_script`; every chart has a table or text with the same numbers; friendly empty states. Viewing never writes (D-34) and uses a fixed number of queries whatever the range. | B.4 FR-5, B.10 |
 
 ---
 

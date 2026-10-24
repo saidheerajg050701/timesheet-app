@@ -1,0 +1,20 @@
+<div class="card h-100 shadow-sm" id="punctuality">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">On-time submission</h2>
+    {% with p=dash.punctuality %}
+      {% if p.counted %}
+        <p class="fs-4 fw-semibold mb-1" id="on-time-rate">{{ p.rate }}%</p>
+        <table class="table table-sm mb-0 small" aria-label="Submission outcomes">
+          <tbody>
+            <tr><th scope="row" class="fw-normal">On time</th><td class="text-end" id="on-time-count">{{ p.on_time }}</td></tr>
+            <tr><th scope="row" class="fw-normal">Late</th><td class="text-end" id="late-count">{{ p.late }}</td></tr>
+            <tr><th scope="row" class="fw-normal">Missed</th><td class="text-end" id="missed-count">{{ p.missed }}</td></tr>
+          </tbody>
+        </table>
+        <p class="small text-body-secondary mt-2 mb-0">Weeks whose Saturday 12:00 deadline has passed; the first submission counts.</p>
+      {% else %}
+        <p class="text-body-secondary mb-0" id="on-time-empty">No finished weeks in this range yet.</p>
+      {% endif %}
+    {% endwith %}
+  </div>
+</div>

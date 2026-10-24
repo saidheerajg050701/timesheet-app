@@ -1,0 +1,28 @@
+{% comment %}
+  Reusable dashboard body (D-79). Context: `dash` (analytics.services.metrics.Dashboard) and
+  `own` (True on the person's own dashboard: shows links to edit their week).
+  Phase 10 can include this for a team member with own=False (read-only).
+{% endcomment %}
+<div id="dashboard" data-employee="{{ dash.employee.employee_code }}">
+  {% if dash.employee.hire_date and dash.employee.hire_date > dash.starts.0 %}
+    <p class="text-body-secondary small" id="started-on">Started on {{ dash.employee.hire_date|date:"M j, Y" }} — earlier weeks aren't counted.</p>
+  {% endif %}
+  <div class="row g-3 mb-3">
+    <div class="col-lg-4">{% include "analytics/parts/_current_week.html" %}</div>
+    <div class="col-sm-6 col-lg-4">{% include "analytics/parts/_punctuality.html" %}</div>
+    <div class="col-sm-6 col-lg-4">{% include "analytics/parts/_overtime.html" %}</div>
+  </div>
+  {% if dash.is_empty %}
+    <div class="alert alert-light border" role="status" id="dashboard-empty">
+      No timesheets in this range yet. Charts appear once {% if own %}you save your first week{% else %}the first week is saved{% endif %}.
+    </div>
+  {% else %}
+    <div class="row g-3 mb-3">
+      <div class="col-12">{% include "analytics/parts/_hours_chart.html" %}</div>
+      <div class="col-lg-6">{% include "analytics/parts/_projects.html" %}</div>
+      <div class="col-lg-6">{% include "analytics/parts/_categories.html" %}</div>
+    </div>
+  {% endif %}
+  {% include "analytics/parts/_approvals.html" %}
+  {{ dash.chart_data|json_script:"dashboard-data" }}
+</div>

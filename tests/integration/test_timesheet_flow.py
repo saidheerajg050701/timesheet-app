@@ -293,7 +293,10 @@ def test_current_week_submits_with_weekend_hours_before_noon_saturday(client_me,
 
 def test_list_shows_weeks_status_and_late(client_me, me):
     """Helper check: /timesheets/ lists recent weeks with status, late and missed badges."""
-    TimesheetFactory(employee=me, week_start=LAST_WEEK, status="SUBMITTED", is_late=True)
+    late = datetime(2026, 10, 18, 9, 0, tzinfo=TZ)  # after Saturday's deadline
+    TimesheetFactory(
+        employee=me, week_start=LAST_WEEK, status="SUBMITTED", is_late=True, submitted_at=late
+    )
     html = client_me.get(reverse("timesheets")).content.decode()
     assert html.count("<tr data-week=") == 12
     assert 'data-week="2026-10-19"' in html and "Not started" in html

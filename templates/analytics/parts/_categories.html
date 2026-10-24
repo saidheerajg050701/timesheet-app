@@ -1,0 +1,20 @@
+{% load timesheet_tags %}
+<div class="card h-100 shadow-sm" id="by-category">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">Hours by category</h2>
+    {% if dash.categories.rows %}
+      <div style="height: 220px"><canvas id="categories-chart" role="img" aria-label="Bar chart of hours per category including leave; Break is listed separately; the same numbers are in the table below"></canvas></div>
+      <table class="table table-sm small mb-0 mt-2" id="categories-table">
+        <tbody>
+          {% for label, minutes in dash.categories.rows %}
+            <tr><th scope="row" class="fw-normal">{{ label }}</th><td class="text-end">{{ minutes|hours2 }}</td></tr>
+          {% endfor %}
+          <tr class="fw-semibold"><th scope="row">Total (work + leave)</th><td class="text-end" id="categories-total">{{ dash.categories.total|hours2 }}</td></tr>
+          <tr class="text-body-secondary"><th scope="row" class="fw-normal">Break (unpaid, not in the total)</th><td class="text-end" id="break-hours">{{ dash.categories.break_minutes|hours2 }}</td></tr>
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-body-secondary mb-0">No entries in this range.</p>
+    {% endif %}
+  </div>
+</div>

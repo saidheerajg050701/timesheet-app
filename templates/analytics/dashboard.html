@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Dashboard — Timesheets{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <h1 class="h3 mb-0">Dashboard</h1>
+  <nav aria-label="Range" class="btn-group" id="range-picker">
+    {% for n in ranges %}
+      <a class="btn btn-sm {% if n == dash.weeks %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+         href="?weeks={{ n }}"{% if n == dash.weeks %} aria-current="page"{% endif %}>Last {{ n }} weeks</a>
+    {% endfor %}
+  </nav>
+</div>
+{% include "analytics/_dashboard.html" with dash=dash own=True %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/countdown.js' %}"></script>
+<script src="{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

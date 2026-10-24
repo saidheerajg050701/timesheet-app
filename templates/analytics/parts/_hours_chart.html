@@ -1,0 +1,18 @@
+{% load timesheet_tags %}
+<div class="card shadow-sm" id="hours-per-week">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">Hours worked per week vs expected</h2>
+    <div style="height: 260px"><canvas id="hours-chart" role="img" aria-label="Bar chart of hours worked per week with the expected hours as a dashed line; the same numbers are in the table below"></canvas></div>
+    <details class="mt-2">
+      <summary class="small">Show the numbers</summary>
+      <table class="table table-sm small mb-0 mt-2" id="hours-table">
+        <thead><tr><th scope="col">Week</th><th scope="col" class="text-end">Hours worked</th><th scope="col" class="text-end">Expected</th><th scope="col" class="text-end">Break (unpaid)</th><th scope="col" class="text-end">Leave</th></tr></thead>
+        <tbody>
+          {% for row in dash.rows %}
+            <tr><td>{{ row.week_start|date:"M j" }}</td><td class="text-end">{{ row.summary.worked|hours2 }}</td><td class="text-end">{{ row.summary.expected|hours2 }}</td><td class="text-end">{{ row.summary.breaks|hours2 }}</td><td class="text-end">{{ row.summary.leave|hours2 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </div>
+</div>

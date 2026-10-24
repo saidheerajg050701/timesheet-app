@@ -1,0 +1,15 @@
+{% load timesheet_tags %}
+<div class="card h-100 shadow-sm" id="current-week">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">This week · {{ dash.current.state.week_start|date:"M j" }} – {{ dash.current.state.week_start|add_days:6|date:"M j" }}</h2>
+    <p class="mb-2"><span class="badge {{ dash.current.state.status|status_badge }}" id="current-status">{{ dash.current.state.status|status_label }}</span></p>
+    <p class="mb-2"><span class="fs-4 fw-semibold">{{ dash.current.summary.worked|hours2 }}</span> of {{ dash.current.summary.expected|hours2 }} hours worked</p>
+    {% if dash.current.open_until %}
+      <p class="small mb-2">Submit by {{ dash.current.open_until|date:"D M j, g:i A" }} —
+        <span data-deadline="{{ dash.current.open_until|date:'c' }}" id="countdown">{{ dash.current.open_until|countdown:dash.now }}</span> left</p>
+    {% elif dash.current.state.status == "SUBMITTED" or dash.current.state.status == "APPROVED" %}
+      <p class="small text-body-secondary mb-2">Submitted — nothing more to do this week.</p>
+    {% endif %}
+    {% if own %}<a class="btn btn-sm btn-outline-primary" href="{% url 'timesheet_week' dash.current.state.week_start %}">Open this week</a>{% endif %}
+  </div>
+</div>

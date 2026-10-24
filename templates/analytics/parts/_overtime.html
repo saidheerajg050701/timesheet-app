@@ -1,0 +1,9 @@
+{% load timesheet_tags %}
+<div class="card h-100 shadow-sm" id="overtime">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">Overtime</h2>
+    <p class="fs-4 fw-semibold mb-1"><span id="overtime-hours">{{ dash.overtime.minutes|hours2 }}</span> h</p>
+    <p class="small mb-1">in {{ dash.overtime.weeks }} week{{ dash.overtime.weeks|pluralize }} · Hours worked {{ dash.worked|hours2 }} of {{ dash.expected|hours2 }} expected</p>
+    <p class="small text-body-secondary mb-0">Submitted and approved weeks, same rule as payroll: hours worked above the week's expected hours. Break never counts.</p>
+  </div>
+</div>

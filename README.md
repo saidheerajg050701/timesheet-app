@@ -31,6 +31,13 @@ managers (anyone with reports) and directory admins; Payroll for payroll users a
 Admin only for directory admins. Every page also checks permissions on the server
 (`directory/services/permissions.py`). Pages from later build phases show a placeholder.
 
+## Dashboard
+The home page shows your own last 4, 12 or 26 weeks: this week's status with a live countdown
+to Saturday 12:00, hours worked per week against expected hours, on-time / late / missed
+weeks, overtime (same rule as payroll), hours by project and by category (Break shown
+separately, unpaid), and the approval outcome of each pay period. Every chart also lists its
+numbers.
+
 ## Timesheets
 `/timesheets/` lists your recent weeks; open one and add as many rows as you need. Each row has
 a day, category, project (Project work only) and a reason. Work and Break rows use start and end

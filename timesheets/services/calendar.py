@@ -119,8 +119,11 @@ def week_state(employee, week_start: date, timesheet, now: datetime) -> WeekStat
         status=status,
         deadline=deadline,
         editable=editable,
-        # Missed: locked without a submission while employed on a weekday (D-19).
-        is_missed=status == Timesheet.Status.LOCKED and weekdays > 0,
+        # Missed: deadline passed, employed on a weekday (D-19), and never submitted (D-75).
+        # A re-locked week counts by its first submission instead.
+        is_missed=now >= deadline
+        and weekdays > 0
+        and (timesheet is None or timesheet.submitted_at is None),
         expected_minutes=expected_minutes_for(employee, week_start),
         timesheet=timesheet,
     )
