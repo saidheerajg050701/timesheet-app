@@ -235,7 +235,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Approval outcomes (approved / rejected / pending)
 - **Current-week card** with status and a live countdown to Saturday 12:00 noon
 
-**FR-6 Team analytics (hierarchy).** For managers; filters: direct reports vs whole tree, team, date range.
+**FR-6 Team analytics (hierarchy).** Rules in B.12 D-81–D-86. For managers (admins: everyone); filters: direct reports vs whole tree, team, date range.
 - Team hours per week, average utilization
 - Per-employee table: hours, utilization %, on-time rate, late/missed weeks, pending approvals
 - This week's compliance: who hasn't submitted yet
@@ -596,7 +596,7 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 3 | `effective_status(timesheet, now)` → DRAFT becomes LOCKED after deadline; REOPENED becomes LOCKED after `reopen_until` (D-08, D-21) | same |
 | 4 | `pay_period_for(d, anchor)` → `(period_start, week1, week2)` | same |
 | 5 | `expected_minutes_for(employee, week_start)` → `expected_weekly_minutes × active weekdays (Mon–Fri, within hire_date…end_date) / 5`; 0 for weeks fully outside employment (D-19) | same |
-| 6 | `reporting_tree(employee)` → all reports, cycle-safe | `directory/services/permissions.py` |
+| 6 | `reporting_tree(employee)` → all reports, cycle-safe; built in memory from one `(id, manager_id)` query (D-86); `team_scope(viewer, scope)` → whole tree (everyone for admins) or direct reports, never the viewer (D-81) | `directory/services/permissions.py` |
 | 7 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` — `can_approve` = direct manager, or Admin for employees with no manager, never self (D-11); payroll flag grants nothing beyond `/payroll/` (D-12) | same |
 | 8 | `sync_account(employee)` → copies is_admin → is_staff/is_superuser, status → is_active, email (lower-cased) → User (D-13, D-20) | `directory/services/accounts.py` |
 | 9 | `validate_entries(...)` → required reason ≤ 255 (D-36); work and Break rows: start/end in 15-min steps, end after start, same day (D-37), no overlaps (D-38); leave: hours only (D-40); dates in week and within hire_date…end_date (D-19); PROJECT ⇔ active project, Break never a project (D-18, D-39); work + Break + leave ≤ 24 h/day (D-42) | `timesheets/services/validation.py` |
@@ -647,6 +647,7 @@ tests/
     test_validation.py
     test_payroll_split.py
     test_metrics.py        # dashboard helpers (range, rate, totals)
+    test_team_metrics.py   # team helpers (utilization, sorting, one-query tree)
   integration/
     test_auth_views.py
     test_timesheet_flow.py
@@ -656,6 +657,7 @@ tests/
     test_payroll_publish.py
     test_payroll_pages.py  # /payroll/, export CSV, corrections, 403s (T-37–T-39, T-110, T-111)
     test_analytics.py
+    test_team.py           # /team/, drill-down, week view, large-data query count (T-123–T-132)
     test_admin.py
     test_import_employees.py
     test_layout.py         # menus, header, placeholder pages, profile (FR-4, D-30)
@@ -792,6 +794,16 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-120 | Analytics | Empty state (new hire, no timesheets) | Friendly messages instead of charts; page renders 200 (D-80) |
 | T-121 | Analytics | Viewing the dashboard | No INSERT/UPDATE/DELETE; the same number of queries for 4 and 26 weeks (D-34, D-80) |
 | T-122 | Analytics | Hours by category with Break and leave, approval outcomes, current-week card | Break shown apart and never in totals; outcomes per period with "in progress"; card shows the effective status and the server's deadline; chart data via `json_script` (D-77, D-78) |
+| T-123 | Team | Team metrics for known data | Exact hours worked, utilization, on-time rate, late/missed, overtime and pending approvals per person; team hours and expected per week; hours by project; numbers on the page (D-82, D-84) |
+| T-124 | Team | Utilization | Worked ÷ (expected − leave) over finished weeks; leave doesn't lower it; Break never counts; the current week is excluded; "—" when nothing is available; team average weighted by available hours (D-82) |
+| T-125 | Team | Whole tree vs direct reports, team filter | Director: tree = manager + manager's reports; direct = manager only; team filter narrows; a bad team value = all teams; the viewer is never listed (D-81) |
+| T-126 | Team | Access and 403s | Employee and payroll-only user → 403 on /team/, drill-down and week view; manager → 403 outside own tree, 404 for an unknown code; viewer can open own drill-down; payroll user who manages sees only their own tree (D-12, D-85) |
+| T-127 | Team | Admin sees everyone | Admin's whole-tree list = every employee except themselves; direct = own direct reports only (empty state if none); admin can drill into anyone (D-81) |
+| T-128 | Team | This week's compliance | Before Saturday 12:00 "Not submitted yet", after it "Missed"; people who submitted and people not employed this week are not listed (D-83) |
+| T-129 | Team | Inactive employees | Shown only with a timesheet in the range, marked "inactive" (D-81) |
+| T-130 | Team | Read-only drill-down and week view | Phase 9 parts for that person; no form, edit, submit, approve or "Open this week" controls; week view shows the rows read-only with status badges; non-Monday redirects, future week 404 (D-85) |
+| T-131 | Team | Viewing writes nothing | No INSERT/UPDATE/DELETE on the team page, drill-down and week view (D-34) |
+| T-132 | Team | Fixed query count with large data | ~500 employees over 4 levels with 12 weeks of entries in the test DB: CEO (everyone), a director (125) and a manager (24) cost the same number of queries for 4 and 26 weeks (an admin one fewer: no "manages anyone?" check); `time_team_page` prints time, people, queries and 0 writes (D-86) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -895,7 +907,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-80 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-86 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -979,6 +991,12 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-78 | Analytics | Approval outcomes: every pay period overlapping the range in which the person was employed, with its PeriodApproval status (no record = pending); the current, unfinished period is shown as "in progress" and not counted. | B.4 FR-5 |
 | D-79 | Analytics | The dashboard is built by `analytics/services/metrics.py → dashboard_for(employee, weeks, now)` and rendered by `templates/analytics/_dashboard.html` plus `parts/*.html`, which take that object (and `own`) — Phase 10 reuses them read-only for a team member. | C.4 P9/P10 |
 | D-80 | Analytics | Charts use the vendored Chart.js with data only through `json_script`; every chart has a table or text with the same numbers; friendly empty states. Viewing never writes (D-34) and uses a fixed number of queries whatever the range. | B.4 FR-5, B.10 |
+| D-81 | Team | Who is on `/team/`: **whole tree** = the viewer's reporting tree, or **everyone** for an admin; **direct reports** = only people whose manager is the viewer. The viewer is never listed; the payroll flag adds nothing (D-12). An optional team filter narrows the list (an unknown value = all teams). People with no employed day in the range are left out; inactive employees appear only with a timesheet in the range (as D-54). | B.4 FR-6, B.3 |
+| D-82 | Team | **Utilization** = hours worked ÷ available hours, where available = prorated expected (D-19) − leave hours, summed over weeks in the range whose deadline has passed (the current week is not counted). Break never counts. "—" when nothing is available. Team average = total worked ÷ total available (weighted by available hours, not a mean of percentages). | B.4 FR-6 |
+| D-83 | Team | **This week's compliance** lists everyone selected who is employed in the current week and hasn't submitted it (not SUBMITTED/APPROVED): "Not submitted yet" before Saturday 12:00, then "Missed" (never submitted, D-75), or "Reopened"/"Locked" for a week reopened after a submission. | B.4 FR-6 |
+| D-84 | Team | Per-employee table: hours worked (all weeks, D-77), utilization (D-82), on-time rate, late and missed weeks (Phase 9 `punctuality`, D-75), overtime (Phase 9 `overtime` = payroll split, D-76), and **pending approvals** = finished pay periods in the range still PENDING (Phase 9 `approval_outcomes`, D-78). Sorted on the server with `?sort=<column>&dir=asc|desc`, ties by name; unknown columns sort by name. | B.4 FR-6 |
+| D-85 | Team | **Drill-down is read-only.** `/team/<code>/` reuses `_dashboard.html` with `own=False` (no "Open this week") plus that person's timesheets list; each week opens `/team/<code>/weeks/<YYYY-MM-DD>/`, which shows the rows, day summary and status with no edit, submit or approve controls (those stay on `/approvals/` and change requests). Access = `can_access_team` + `can_view` (403 otherwise; unknown code 404); a viewer may open their own drill-down. | B.8, D-30 |
+| D-86 | Team | **Performance.** The reporting tree is built in memory from one `(id, manager_id)` query (cycle-safe; T-27/T-28 unchanged). The team page and dashboard load people, timesheets, entries (as light read-only `EntryFacts` records via `values_list`, not model objects), projects and approvals in a fixed number of queries, whatever the tree size or range (T-132); measured in the test DB with ~500 people and 26 weeks of entries: CEO 0.3 s (12 weeks) / 0.6 s (26 weeks). `uv run python manage.py time_team_page <email> [--weeks 4|12|26] [--direct]` renders `/team/` in memory (no session, no writes) and prints the time and query count. | B.9 #6, B.10 |
 
 ---
 

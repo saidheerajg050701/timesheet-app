@@ -162,4 +162,4 @@ def test_team_member_page_rules(org, login_as):
     assert status_of(client, "team_member", "NOPE-0000") == 404
     client = login_as(org.hr)
     assert status_of(client, "team_member", org.ops1.employee_code) == 200
-    assert "Coming in a later phase (Phase 10)" in client.get(reverse("team")).content.decode()
+    assert 'id="team-filters"' in client.get(reverse("team")).content.decode()  # the real page

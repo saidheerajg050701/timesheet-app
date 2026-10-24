@@ -10,10 +10,8 @@ with payroll. load() runs a fixed number of queries whatever the range; the rest
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
-from django.db.models import Prefetch
-
 from payroll.services.hours import HoursSplit, split_hours
-from timesheets.models import PeriodApproval, TimeEntry, Timesheet
+from timesheets.models import PeriodApproval, Project, TimeEntry, Timesheet
 from timesheets.services.calendar import (
     OUTSIDE_EMPLOYMENT,
     WeekState,
@@ -70,7 +68,7 @@ def week_rows(employee, starts, sheets, now):
         state = week_state(employee, start, sheet, now)
         if state.status == OUTSIDE_EMPLOYMENT:
             continue
-        entries = list(sheet.entries.all()) if sheet else []
+        entries = sheet.loaded_entries if sheet else []
         summary = summarize(entries, employee, start)
         submitted = sheet is not None and sheet.status in SUBMITTED_STATUSES
         split = split_hours(entries, summary.expected) if submitted else None
@@ -205,7 +203,7 @@ def current_week(employee, sheet, now):
     if state.editable:
         reopened = sheet is not None and sheet.status == Timesheet.Status.REOPENED
         open_until = sheet.reopen_until if reopened else state.deadline
-    entries = list(sheet.entries.all()) if sheet else []
+    entries = sheet.loaded_entries if sheet else []
     return CurrentWeek(state, summarize(entries, employee, start), open_until)
 
 
@@ -264,24 +262,59 @@ class Dashboard:
         }
 
 
-def load(employee, starts):
-    """Two database reads, whatever the range: the weeks (with entries) and the approvals."""
-    sheets = {
-        s.week_start: s
-        for s in Timesheet.objects.filter(
-            employee=employee, week_start__in=starts
-        ).prefetch_related(
-            Prefetch("entries", queryset=TimeEntry.objects.select_related("project"))
+@dataclass(frozen=True, slots=True)
+class EntryFacts:
+    """The parts of a TimeEntry the metrics read (summarize, split_hours, by project)."""
+
+    FIELDS = ("work_date", "category", "start_time", "end_time", "minutes")
+
+    project: object  # Project or None
+    work_date: date
+    category: str
+    start_time: object
+    end_time: object
+    minutes: int
+
+
+def load_many(employees, starts):
+    """Four database reads, whatever the range or the number of people (D-80, D-86):
+    the weeks, their entries, the projects and the approvals.
+
+    Each loaded Timesheet carries its entries as `sheet.loaded_entries`: a list of read-only
+    EntryFacts sharing one Project object per project — far cheaper than model instances
+    and a per-sheet prefetch for a large team (D-86).
+
+    Returns ({employee id: {week_start: Timesheet}}, {employee id: {period: PeriodApproval}}).
+    """
+    ids = [e.pk for e in employees]
+    sheets, approvals, by_id = {}, {}, {}
+    for sheet in Timesheet.objects.filter(employee_id__in=ids, week_start__in=starts):
+        sheet.loaded_entries = []
+        sheets.setdefault(sheet.employee_id, {})[sheet.week_start] = sheet
+        by_id[sheet.pk] = sheet
+    if by_id:
+        projects = Project.objects.in_bulk()
+        entries = (
+            TimeEntry.objects.filter(
+                timesheet__employee_id__in=ids, timesheet__week_start__in=starts
+            )
+            .order_by("pk")
+            .values_list("timesheet_id", "project_id", *EntryFacts.FIELDS)
         )
-    }
+        for sheet_id, project_id, *facts in entries:
+            by_id[sheet_id].loaded_entries.append(EntryFacts(projects.get(project_id), *facts))
     periods = {period_start_for(start) for start in starts}
-    approvals = {
-        a.period_start: a
-        for a in PeriodApproval.objects.filter(
-            employee=employee, period_start__in=periods
-        ).select_related("approver")
-    }
+    decisions = PeriodApproval.objects.filter(
+        employee_id__in=ids, period_start__in=periods
+    ).select_related("approver")
+    for approval in decisions:
+        approvals.setdefault(approval.employee_id, {})[approval.period_start] = approval
     return sheets, approvals
+
+
+def load(employee, starts):
+    sheets, approvals = load_many([employee], starts)
+    return sheets.get(employee.pk, {}), approvals.get(employee.pk, {})
 
 
 def dashboard_for(employee, weeks, now):

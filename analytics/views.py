@@ -1,22 +1,98 @@
-from django.shortcuts import get_object_or_404, render
+from django.http import Http404
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from analytics.services.metrics import RANGES, dashboard_for, range_weeks
+from analytics.services.team import SORT_KEYS, team_dashboard
 from directory.models import Employee
 from directory.services.permissions import can_view, ensure, team_required
-from timesheets.views import placeholder
+from timesheets.services.calendar import company_tz, week_start_for, week_state
+from timesheets.services.summary import summarize
+from timesheets.services.weeks import entry_rows, load_sheet, my_weeks
 
 
 @team_required
 def team(request):
-    return placeholder(request, "Team", 10)
+    """FR-6: the people under the viewer (D-81–D-84). Every person comes from team_scope."""
+    try:
+        team_id = int(request.GET.get("team", "")) or None
+    except ValueError:
+        team_id = None
+    board = team_dashboard(
+        request.user.employee,
+        scope=request.GET.get("scope", "tree"),
+        team_id=team_id,
+        weeks=range_weeks(request.GET.get("weeks")),
+        sort=request.GET.get("sort", "name"),
+        direction=request.GET.get("dir", "asc"),
+        now=timezone.now(),
+    )
+    return render(
+        request,
+        "analytics/team.html",
+        {"board": board, "ranges": RANGES, "sort_urls": _sort_urls(request, board)},
+    )
+
+
+def _sort_urls(request, board):
+    """Header links: same filters, this column; clicking the sorted column flips direction."""
+    urls = {}
+    for column in SORT_KEYS:
+        query = request.GET.copy()
+        query["sort"] = column
+        flip = board.sort == column and board.direction == "asc"
+        query["dir"] = "desc" if flip else "asc"
+        urls[column] = f"?{query.urlencode()}"
+    return urls
+
+
+def _visible_member(request, employee_code):
+    """A person the viewer may see (can_view on every drill-down, D-85); 404 if unknown."""
+    target = get_object_or_404(
+        Employee.objects.select_related("team", "manager"), employee_code=employee_code
+    )
+    ensure(can_view(request.user.employee, target))  # managers: own tree; admins: everyone
+    return target
 
 
 @team_required
 def team_member(request, employee_code):
-    target = get_object_or_404(Employee, employee_code=employee_code)
-    ensure(can_view(request.user.employee, target))  # managers: own tree only; admins: all
-    return placeholder(request, f"Team — {target.first_name} {target.last_name}", 10)
+    """Read-only view of one person's dashboard and timesheets (D-85)."""
+    target = _visible_member(request, employee_code)
+    weeks = range_weeks(request.GET.get("weeks"))
+    now = timezone.now()
+    return render(
+        request,
+        "analytics/team_member.html",
+        {
+            "target": target,
+            "dash": dashboard_for(target, weeks, now),
+            "timesheets": my_weeks(target, now, count=weeks),
+            "ranges": RANGES,
+        },
+    )
+
+
+@team_required
+def team_member_week(request, employee_code, week):
+    """One of their weeks, read-only: rows, day summary, status (D-85)."""
+    target = _visible_member(request, employee_code)
+    if week_start_for(week) != week:
+        return redirect("team_member_week", employee_code=employee_code, week=week_start_for(week))
+    now = timezone.now()
+    if week > week_start_for(now.astimezone(company_tz()).date()):
+        raise Http404("Future weeks have no timesheet yet.")
+    sheet = load_sheet(target, week)
+    return render(
+        request,
+        "analytics/team_week.html",
+        {
+            "target": target,
+            "state": week_state(target, week, sheet, now),
+            "rows": entry_rows(sheet),
+            "summary": summarize(list(sheet.entries.all()) if sheet else [], target, week),
+        },
+    )
 
 
 def dashboard(request):

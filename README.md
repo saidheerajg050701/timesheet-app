@@ -38,6 +38,19 @@ weeks, overtime (same rule as payroll), hours by project and by category (Break 
 separately, unpaid), and the approval outcome of each pay period. Every chart also lists its
 numbers.
 
+## Team
+
+Managers open **Team** (`/team/`) to see the people under them; admins see everyone. Filters: whole tree or direct reports, team, last 4 / 12 / 26 weeks.
+The page shows team hours per week against expected, average utilization (hours worked ÷ (expected − leave), finished weeks), a sortable table per person,
+who hasn't submitted this week, and hours by project. Click a name for a read-only view of that person's dashboard and timesheets.
+
+Measure how fast the page is for someone (read-only, prints seconds and query count):
+
+```bash
+uv run python manage.py time_team_page ceo@yourcompany.com
+uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
+```
+
 ## Timesheets
 `/timesheets/` lists your recent weeks; open one and add as many rows as you need. Each row has
 a day, category, project (Project work only) and a reason. Work and Break rows use start and end

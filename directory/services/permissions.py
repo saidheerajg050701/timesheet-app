@@ -11,21 +11,53 @@ from django.core.exceptions import PermissionDenied
 from directory.models import Employee
 
 
-def reporting_tree_ids(employee):
+def manager_map():
+    """{employee id: manager id} for everyone — one query (D-86)."""
+    return dict(Employee.objects.values_list("pk", "manager_id"))
+
+
+def reports_index(managers):
+    """{manager id: [direct report ids]} from a manager_map()."""
+    index = {}
+    for pk, manager_id in managers.items():
+        if manager_id is not None:
+            index.setdefault(manager_id, []).append(pk)
+    return index
+
+
+def reporting_tree_ids(employee, managers=None):
     """Ids of everyone reporting to `employee`, directly or indirectly.
 
-    One query per level. Cycle-safe: bad data such as A→B→A never loops, and nobody is
-    ever part of their own tree.
+    Walks an in-memory map from one query (D-86). Cycle-safe: bad data such as A→B→A never
+    loops, and nobody is ever part of their own tree.
     """
+    index = reports_index(managers if managers is not None else manager_map())
     visited = {employee.pk}
     tree = set()
-    frontier = {employee.pk}
+    frontier = [employee.pk]
     while frontier:
-        reports = set(Employee.objects.filter(manager_id__in=frontier).values_list("pk", flat=True))
-        frontier = reports - visited
-        visited |= frontier
-        tree |= frontier
+        reports = {r for pk in frontier for r in index.get(pk, ())} - visited
+        visited |= reports
+        tree |= reports
+        frontier = list(reports)
     return tree
+
+
+def team_scope(viewer, scope="tree"):
+    """Ids the viewer's team page covers (D-81): never the viewer themselves.
+
+    "tree" = whole reporting tree, or everyone for an admin; "direct" = direct reports only.
+    The payroll flag adds nothing (D-12).
+    """
+    managers = manager_map()
+    if scope == "direct":
+        ids = {pk for pk, manager_id in managers.items() if manager_id == viewer.pk}
+    elif viewer.is_admin:
+        ids = set(managers)
+    else:
+        ids = reporting_tree_ids(viewer, managers)
+    ids.discard(viewer.pk)
+    return ids
 
 
 def reporting_tree(employee):
