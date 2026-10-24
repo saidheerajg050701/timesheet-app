@@ -3,15 +3,12 @@ from django.urls import reverse
 
 from audit.models import AuditLog
 from audit.services.log import record
-from directory.models import Employee, Team, User
+from directory.models import User
 from tests.factories import TimeEntryFactory, UserFactory
-from timesheets.models import ChangeRequest, PeriodApproval, Project, Timesheet
+from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 
-VIEW_ONLY_MODELS = (
-    Team,
-    Employee,
+VIEW_ONLY_MODELS = (  # Team, Employee and Project became editable in Phase 11 (D-87)
     User,
-    Project,
     Timesheet,
     PeriodApproval,
     ChangeRequest,
@@ -34,7 +31,7 @@ def admin_url(model, view, *args):
 
 
 def test_every_model_is_browsable_but_view_only(admin_client, sample_data):
-    """Helper check: all models are listed and viewable, but cannot be added or changed (D-26)."""
+    """Helper check: workflow models are listed and viewable, but never added or changed (D-87)."""
     for model in VIEW_ONLY_MODELS:
         assert admin_client.get(admin_url(model, "changelist")).status_code == 200
         assert admin_client.get(admin_url(model, "add")).status_code == 403
@@ -65,12 +62,10 @@ def test_user_page_shows_masked_argon2_summary_only(admin_client):
 
 @pytest.mark.django_db
 def test_non_admin_cannot_open_admin(client, user):
-    """Helper check: a logged-in employee without is_admin is refused (403, no login loop)."""
+    """Helper check: a logged-in employee without is_admin gets 403 at once, no login loop."""
     client.force_login(user)
-    response = client.get(reverse("admin:index"))
-    assert response.status_code == 302
-    assert response.url.startswith(reverse("admin:login"))
-    assert client.get(response.url).status_code == 403
+    assert client.get(reverse("admin:index")).status_code == 403
+    assert client.get(reverse("admin:login")).status_code == 403
 
 
 @pytest.mark.django_db

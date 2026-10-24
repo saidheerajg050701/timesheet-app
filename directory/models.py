@@ -53,6 +53,9 @@ class User(AbstractUser):  # login account — exists before the first migrate (
     employee = models.OneToOneField(Employee, on_delete=models.PROTECT, related_name="account")
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
+    # Set by an HR password reset; every page sends the person to Profile until they pick a
+    # new password (D-91).
+    must_change_password = models.BooleanField(default=False)
     objects = UserManager()
     # The inherited "password" field stores only the Argon2 hash, e.g. "argon2$argon2id$v=19$..."
 

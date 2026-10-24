@@ -88,6 +88,22 @@ uv run python manage.py sync_payroll       # safe to repeat
 ```
 Back up both databases (safe while the app runs): `uv run python manage.py backup_db`.
 
+## Admin (HR)
+
+Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every change is written to the audit log with the admin's name.
+
+- **Employees, teams, projects:** add and edit. Nothing can be deleted: deactivate employees and clear *Active* on projects instead.
+- **Deactivate / Reactivate:** select employees in the list and choose the action. Deactivate asks for the end date (today by default) and logs the person out; their history stays and their submitted weeks can still be approved and paid.
+- **Reset password:** on an employee's page. HR types a temporary password; the person must choose a new one at their next login. Any login lockout is cleared.
+- **Import CSV / Export CSV:** on the employee list. Export uses the same columns as import, so you can edit the file and import it again; you always see a summary (or the errors with line numbers) before anything changes.
+- Timesheets, approvals, change requests, payroll records and the audit log are read-only here.
+
+After updating to Phase 11, apply the new migration (main database only):
+
+```bash
+uv run python manage.py migrate
+```
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

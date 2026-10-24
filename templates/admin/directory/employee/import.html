@@ -1,0 +1,46 @@
+{% extends "admin/directory/employee/_page.html" %}
+{% block content %}
+{% if errors %}
+  <div class="errornote" id="import-errors">
+    <p>Nothing was imported. Fix {{ errors|length }} problem{{ errors|length|pluralize }} and upload the file again:</p>
+    <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+{% if preview %}
+  <div id="import-preview">
+    <p><strong>Nothing has changed yet.</strong> This file will create {{ preview.created }}, update {{ preview.updated }} and leave {{ preview.unchanged }} unchanged; {{ preview.teams_created }} new team{{ preview.teams_created|pluralize }}.</p>
+    {% if preview.changes %}
+      <table>
+        <thead><tr><th scope="col">Employee</th><th scope="col">Change</th><th scope="col">Fields</th></tr></thead>
+        <tbody>
+          {% for code, kind, fields in preview.changes %}
+            <tr><td>{{ code }}</td><td>{{ kind }}</td><td>{% for name, values in fields.items %}{{ name }}: {{ values.0|default:"—" }} → {{ values.1|default:"—" }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="payload" value="{{ payload }}">
+      <div class="submit-row">
+        <input type="submit" name="confirm" value="Confirm import" class="default"{% if not preview.changes %} disabled{% endif %}>
+        <a href="{% url 'admin:directory_employee_import' %}" class="button cancel-link">Cancel</a>
+      </div>
+    </form>
+  </div>
+{% else %}
+  <p>Upload a CSV with the same columns as <strong>Export CSV</strong> (employee_code, email, first_name, last_name, job_title, team, department, manager_code, location, hire_date, is_admin, is_payroll, status, end_date). Employees are matched by employee_code. The whole file is checked first and you see a summary before anything changes; any error means nothing is imported.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+      <div class="form-row">
+        {{ form.file.errors }}
+        <label for="{{ form.file.id_for_label }}" class="required">{{ form.file.label }}:</label>
+        {{ form.file }}
+        <div class="help">{{ form.file.help_text }}</div>
+      </div>
+    </fieldset>
+    <div class="submit-row"><input type="submit" value="Check file" class="default"></div>
+  </form>
+{% endif %}
+{% endblock %}

@@ -4,12 +4,11 @@ Columns: employee_code, email, first_name, last_name, job_title, team, departmen
 manager_code, location, hire_date, is_admin, is_payroll, status, and optionally end_date.
 """
 
-import csv
 from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from directory.services.importer import EmployeeImportError, import_employees
+from directory.services.importer import EmployeeImportError, import_employees, read_csv
 
 
 class Command(BaseCommand):
@@ -22,11 +21,7 @@ class Command(BaseCommand):
         path = options["csv_path"]
         if not path.is_file():
             raise CommandError(f"File not found: {path}")
-        with path.open(newline="", encoding="utf-8-sig") as handle:  # utf-8-sig: Excel files
-            reader = csv.DictReader(handle)
-            columns = [c.strip() for c in reader.fieldnames or []]
-            reader.fieldnames = columns
-            rows = list(reader)
+        columns, rows = read_csv(path.read_text(encoding="utf-8-sig"))  # utf-8-sig: Excel
         try:
             result = import_employees(rows, columns=columns, system_actor="import_employees")
         except EmployeeImportError as exc:

@@ -2,10 +2,13 @@
 
 Upsert by employee_code, create teams, link managers in a second pass, and write one audit
 row per created or changed employee or team. The whole file is validated first; any error
-means nothing is imported.
+means nothing is imported. Admin uploads run it twice: a dry run for the preview, then the
+real import with the admin as actor and the D-89 rules for that admin (D-92).
 """
 
-from dataclasses import dataclass
+import csv
+import io
+from dataclasses import dataclass, field
 from datetime import date
 
 from django.core.exceptions import ValidationError
@@ -15,6 +18,8 @@ from django.db import transaction
 from audit.models import AuditLog
 from audit.services.log import record
 from directory.models import Employee, Team
+from directory.services.rules import cycle_members, domain_error, in_company_domain
+from payroll.services.export import FORMULA_STARTS
 
 REQUIRED_COLUMNS = (
     "employee_code",
@@ -49,6 +54,7 @@ class ImportResult:
     updated: int = 0
     unchanged: int = 0
     teams_created: int = 0
+    changes: list = field(default_factory=list)  # [(code, "created"|"updated", {f: (old, new)})]
 
 
 @dataclass
@@ -70,17 +76,33 @@ class _Row:
     status: str
 
 
-def import_employees(rows, *, columns, system_actor):
-    """Validate and import rows (dicts keyed by column name). Raises EmployeeImportError."""
+def read_csv(text):
+    """(columns, rows) from CSV text; a leading BOM (Excel) is ignored."""
+    reader = csv.DictReader(io.StringIO(text.removeprefix("\ufeff")))
+    columns = [c.strip() for c in reader.fieldnames or []]
+    reader.fieldnames = columns
+    return columns, list(reader)
+
+
+def import_employees(rows, *, columns, actor=None, system_actor="", dry_run=False):
+    """Validate and import rows (dicts keyed by column name). Raises EmployeeImportError.
+
+    `actor` (an admin Employee) adds that admin's rules (D-89); `dry_run` does everything,
+    audit rows included, and then rolls it all back — the result is the preview.
+    """
+    who = {"actor": actor, "system_actor": system_actor}
     has_end_date = "end_date" in columns
     parsed = _validate(list(rows), columns)
     result = ImportResult()
     with transaction.atomic():
         existing = {e.employee_code: e for e in Employee.objects.select_related("team", "manager")}
-        before = {code: _snapshot(e) for code, e in existing.items()}
+        before = {code: employee_snapshot(e) for code, e in existing.items()}
+        had_admin = any(
+            b["is_admin"] and b["status"] == Employee.Status.ACTIVE for b in before.values()
+        )
         employees = {}
         for row in parsed:  # pass 1: people and teams
-            team = _upsert_team(row, result, system_actor) if row.team else None
+            team = _upsert_team(row, result, who) if row.team else None
             employee = existing.get(row.code) or Employee(employee_code=row.code)
             employee.email = row.email
             employee.first_name = row.first_name
@@ -102,15 +124,17 @@ def import_employees(rows, *, columns, system_actor):
             if employee.manager_id != (manager.pk if manager else None):
                 employee.manager = manager
                 employee.save()
+        problems = _rule_errors(parsed, before, employees, actor, had_admin)
+        if problems:
+            raise EmployeeImportError(problems)
         for code, employee in employees.items():
-            after = _snapshot(employee)
+            after = employee_snapshot(employee)
             if code not in before:
-                record(
-                    AuditLog.Action.CREATE, "Employee", code, system_actor=system_actor, after=after
-                )
+                record(AuditLog.Action.CREATE, "Employee", code, after=after, **who)
                 result.created += 1
+                result.changes.append((code, "created", {}))
                 continue
-            changed = [field for field in after if after[field] != before[code][field]]
+            changed = [f for f in after if after[f] != before[code][f]]
             if not changed:
                 result.unchanged += 1
                 continue
@@ -118,15 +142,56 @@ def import_employees(rows, *, columns, system_actor):
                 AuditLog.Action.UPDATE,
                 "Employee",
                 code,
-                system_actor=system_actor,
-                before={field: before[code][field] for field in changed},
-                after={field: after[field] for field in changed},
+                before={f: before[code][f] for f in changed},
+                after={f: after[f] for f in changed},
+                **who,
             )
             result.updated += 1
+            result.changes.append(
+                (code, "updated", {f: (before[code][f], after[f]) for f in changed})
+            )
+        if dry_run:
+            transaction.set_rollback(True)
     return result
 
 
-def _upsert_team(row, result, system_actor):
+def _rule_errors(parsed, before, employees, actor, had_admin):
+    """Checks on the imported result, before anything is committed (D-89, D-90)."""
+    errors = []
+    looping = cycle_members(dict(Employee.objects.values_list("pk", "manager_id")))
+    active = Employee.Status.ACTIVE
+    for row in parsed:
+        employee = employees[row.code]
+        old = before.get(row.code)
+        if employee.pk in looping:
+            errors.append(
+                f"Line {row.line}: manager_code {row.manager_code} makes a reporting loop."
+            )
+        if actor is None:
+            continue
+        if old is None or row.email != old["email"]:
+            if not in_company_domain(row.email):
+                errors.append(f"Line {row.line}: {domain_error(row.email)}")
+        if row.manager_code and (old is None or row.manager_code != old["manager_code"]):
+            if employee.manager.status != active:
+                errors.append(f"Line {row.line}: manager {row.manager_code} is inactive.")
+        if row.code == actor.employee_code and old is not None:
+            if old["is_admin"] and not row.is_admin:
+                errors.append(f"Line {row.line}: you cannot remove your own admin flag.")
+            if row.status != active:
+                errors.append(f"Line {row.line}: you cannot deactivate yourself.")
+        if old is not None and old["status"] == active and row.status != active:
+            if employee.reports.filter(status=active).exists():
+                errors.append(
+                    f"Line {row.line}: {row.code} still manages active people; "
+                    "reassign their reports first."
+                )
+    if had_admin and not Employee.objects.filter(is_admin=True, status=active).exists():
+        errors.append("The file would leave no active admin; at least one must remain.")
+    return errors
+
+
+def _upsert_team(row, result, who):
     team, created = Team.objects.get_or_create(
         name=row.team, defaults={"department": row.department}
     )
@@ -136,8 +201,8 @@ def _upsert_team(row, result, system_actor):
             AuditLog.Action.CREATE,
             "Team",
             team.name,
-            system_actor=system_actor,
             after={"department": team.department},
+            **who,
         )
     elif team.department != row.department:
         old = team.department
@@ -147,9 +212,9 @@ def _upsert_team(row, result, system_actor):
             AuditLog.Action.UPDATE,
             "Team",
             team.name,
-            system_actor=system_actor,
             before={"department": old},
             after={"department": team.department},
+            **who,
         )
     return team
 
@@ -158,7 +223,7 @@ def _find_employee(code, employees):
     return employees.get(code) or Employee.objects.get(employee_code=code)
 
 
-def _snapshot(employee):
+def employee_snapshot(employee):
     return {
         "email": employee.email,
         "first_name": employee.first_name,
@@ -199,7 +264,10 @@ def _validate(rows, columns):
 
 def _parse(raw, line, errors):
     def text(column):
-        return (raw.get(column) or "").strip()
+        value = (raw.get(column) or "").strip()
+        if value[:1] == "'" and value[1:2] in FORMULA_STARTS:  # a formula-safe export (D-92)
+            value = value[1:]
+        return value
 
     def required(column):
         value = text(column)

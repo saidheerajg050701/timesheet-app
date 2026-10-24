@@ -49,12 +49,16 @@ def superuser_candidate(employee_code):
 
 
 def change_password(user, new_password):
-    """Store a new Argon2 hash and audit the change. The audit row holds no password data."""
+    """Store a new Argon2 hash and audit the change. The audit row holds no password data.
+
+    Used by the profile page; clears a pending forced change after an HR reset (D-91).
+    """
     from audit.models import AuditLog  # imported here: this module loads with directory.models
     from audit.services.log import record
 
     user.set_password(new_password)
-    user.save(update_fields=["password"])
+    user.must_change_password = False  # an HR reset is done once they pick their own (D-91)
+    user.save(update_fields=["password", "must_change_password"])
     record(
         AuditLog.Action.UPDATE,
         "User",

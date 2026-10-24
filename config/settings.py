@@ -27,7 +27,7 @@ INSTALLED_APPS = [
     # "directory" comes before django.contrib.auth so its createsuperuser command
     # (employee_code flow, D-02) replaces Django's built-in one.
     "directory",
-    "django.contrib.admin",
+    "directory.admin_site.CompanyAdminConfig",  # directory admins only (D-93)
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -49,6 +49,7 @@ MIDDLEWARE = [
     # Login required everywhere except views marked @login_not_required (login, sign-up).
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "directory.middleware.PasswordChangeRequiredMiddleware",  # after an HR reset (D-91)
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must be last
 ]

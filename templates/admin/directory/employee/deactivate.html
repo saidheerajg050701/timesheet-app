@@ -1,0 +1,25 @@
+{% extends "admin/directory/employee/_page.html" %}
+{% block content %}
+<p>These employees become <strong>inactive</strong>: they are logged out on their next page and can no longer log in. Their timesheets, approvals and payroll records are kept, and weeks already submitted can still be approved and paid.</p>
+<ul id="deactivate-list">
+  {% for employee in employees %}<li>{{ employee }}</li>{% endfor %}
+</ul>
+<form method="post">
+  {% csrf_token %}
+  {% for employee in employees %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ employee.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="deactivate">
+  {{ form.non_field_errors }}
+  <fieldset class="module aligned">
+    <div class="form-row">
+      {{ form.end_date.errors }}
+      <label for="{{ form.end_date.id_for_label }}" class="required">{{ form.end_date.label }}:</label>
+      {{ form.end_date }}
+      <div class="help">{{ form.end_date.help_text }}</div>
+    </div>
+  </fieldset>
+  <div class="submit-row">
+    <input type="submit" name="apply" value="Deactivate" class="default">
+    <a href="" class="button cancel-link">Cancel</a>
+  </div>
+</form>
+{% endblock %}

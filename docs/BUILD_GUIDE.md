@@ -261,7 +261,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 4. Every manager/admin change creates an **Audit Log** entry: who, when, before and after values, linked request.
 5. Editing a week in an approved period sets that approval back to PENDING — done only through `timesheets/services/approvals.py`, in the same transaction (D-10) — and the payroll record for that week is marked **superseded** (see FR-11).
 
-**FR-10 Admin (HR).** Through Django Admin at `/admin/`: manage employees (CSV import, deactivate, set Payroll/Admin flags), teams, projects; read-only audit log; view all timesheets; reset passwords.
+**FR-10 Admin (HR).** Rules in B.12 D-87–D-93. Through Django Admin at `/admin/` (directory admins only): manage employees (CSV import, deactivate, set Payroll/Admin flags), teams, projects; read-only audit log; view all timesheets; reset passwords.
 
 **FR-11 Payroll database (NEW).**
 1. When a manager **approves** a biweekly period, the app writes **one payroll record per approved week** into the **separate payroll database**.
@@ -339,6 +339,7 @@ class User(AbstractUser):                  # login account — MUST exist before
     employee = models.OneToOneField(Employee, on_delete=models.PROTECT, related_name="account")
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
+    must_change_password = models.BooleanField(default=False)       # set by an HR reset (D-91), migration 0002
     objects = UserManager()                # custom manager, email login (D-02) — directory/managers.py
     # The inherited "password" field stores only the Argon2 hash, e.g. "argon2$argon2id$v=19$..."
 ```
@@ -648,6 +649,7 @@ tests/
     test_payroll_split.py
     test_metrics.py        # dashboard helpers (range, rate, totals)
     test_team_metrics.py   # team helpers (utilization, sorting, one-query tree)
+    test_directory_rules.py # reporting loops, company email domain (D-89)
   integration/
     test_auth_views.py
     test_timesheet_flow.py
@@ -659,6 +661,8 @@ tests/
     test_analytics.py
     test_team.py           # /team/, drill-down, week view, large-data query count (T-123–T-132)
     test_admin.py
+    test_admin_edit.py     # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
+    test_admin_csv.py      # employee CSV import preview/confirm and export round-trip (T-142, T-143)
     test_import_employees.py
     test_layout.py         # menus, header, placeholder pages, profile (FR-4, D-30)
     test_seed_demo.py
@@ -804,6 +808,19 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-130 | Team | Read-only drill-down and week view | Phase 9 parts for that person; no form, edit, submit, approve or "Open this week" controls; week view shows the rows read-only with status badges; non-Monday redirects, future week 404 (D-85) |
 | T-131 | Team | Viewing writes nothing | No INSERT/UPDATE/DELETE on the team page, drill-down and week view (D-34) |
 | T-132 | Team | Fixed query count with large data | ~500 employees over 4 levels with 12 weeks of entries in the test DB: CEO (everyone), a director (125) and a manager (24) cost the same number of queries for 4 and 26 weeks (an admin one fewer: no "manages anyone?" check); `time_team_page` prints time, people, queries and 0 writes (D-86) |
+| T-133 | Admin | Edit an employee in Admin (details, team, manager, expected hours, flags) | Saved; one UPDATE audit row, actor = the admin, before/after only for the changed fields; an unchanged save writes nothing; a failing audit write rolls back the edit (D-88) |
+| T-134 | Admin | Add and edit a team and a project; add an employee | CREATE/UPDATE audit rows with the admin as actor; project code fixed after creation; employee code, status and end date not editable in the form; Import/Export/Reset password buttons shown (D-87, D-88) |
+| T-135 | Admin | Read-only workflow records | Timesheet, ChangeRequest, PeriodApproval, AuditLog, PayrollWeek, User and axes AccessAttempt: add → 403, change POST → 403; Group is not registered (D-87) |
+| T-136 | Admin | No delete anywhere | No registered model allows delete; delete URLs → 403 (GET and POST); "delete selected" never offered (D-87) |
+| T-137 | Admin | Deactivate | Confirmation page with today as the default end date; INACTIVE + chosen end date, User inactive; their open session ends on the next request; timesheets kept; their SUBMITTED period can still be approved and published to payroll; audited (D-90, D-19) |
+| T-138 | Admin | Deactivate and reactivate rules | Refused for yourself, someone still managing ACTIVE people, the last active admin, a future end date, a date before the hire date or the last entry — nothing changes; a manager together with all their reports is fine; reactivate → ACTIVE with end date cleared, audited; reactivating an active employee refused (D-90) |
+| T-139 | Admin | Email and flag sync | Email change trimmed and lower-cased into Employee and User; other domain or an existing email (any case) refused; is_admin on/off → User is_staff/is_superuser follow (D-13, D-20, D-89) |
+| T-140 | Admin | Directory safety rules | Removing your own admin flag, leaving no active admin, own manager, a manager loop and a new inactive manager are all refused with field errors; nothing saved (D-89) |
+| T-141 | Admin | Password reset by HR | Weak password refused; Argon2 hash stored; audit row with no password or hash; the person's open session ends; axes lockout cleared; at next login every page leads to Profile until a new password is chosen, which clears the flag; own reset and no-account cases refused; `/admin/password_change/` → Profile (D-91) |
+| T-142 | Admin | Employee CSV import in Admin | Errors listed with line numbers and nothing changes; a valid file shows a summary (created/updated with fields) and changes nothing until Confirm; a tampered confirmation is refused; Confirm imports with the admin as actor; a loop, self-demotion, self-deactivation, deactivating someone who still manages active people or an outside email in the file → nothing imported (D-89, D-92) |
+| T-143 | Admin | Employee CSV export round-trip | Import columns + end_date; formula cells exported as `'=…` and read back unchanged; exporting then importing changes nothing; list filters apply; EXPORT audit row (D-92) |
+| T-144 | Admin | Admin access 403s | Employee, manager, payroll-only and payroll+manager users → 403 on `/admin/`, model pages, import, export, reset password and actions; anonymous → `/login/`; a deactivated admin's session ends (D-93, D-29) |
+| T-145 | Admin | Search and filters | Employees by name, manager, payroll flag, status, department; teams by name; timesheets by status; AuditLog by action, actor, entity type and date range (D-93) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -907,7 +924,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-86 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-93 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -936,7 +953,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-23 | Setup | `createsuperuser` refuses employees whose `is_admin` is off (in addition to unknown, not ACTIVE, or already having an account), so the superuser flags always match the directory (D-13). Set `is_admin` on the employee first. Tested by T-46/T-47. | B.6, C.4 P1 |
 | D-24 | Setup | Until Phase 3, `/` is a public static placeholder page that shows no data. Phase 3 puts it behind login; Phase 9 replaces it with the dashboard. | B.8, C.4 P1/P3/P9 |
 | D-25 | Setup | `week_start_for`, `deadline_for` and `pay_period_for` are built in Phase 2 (seed_demo needs them), with tests T-12, T-15 and T-16. Phase 5 adds `effective_status`, `expected_minutes_for` and the other calendar tests. | B.9, C.4 P2/P5 |
-| D-26 | Setup | Until Phase 11, Django Admin is view-only for every model (passwords shown only as a masked Argon2 summary). Phase 11 adds editing, deactivate and password reset together with their audit rows. | B.4 FR-10, C.4 P2/P11 |
+| D-26 | Setup | Until Phase 11, Django Admin is view-only for every model (passwords shown only as a masked Argon2 summary). Phase 11 adds editing, deactivate and password reset together with their audit rows — ended for directory data by D-87. | B.4 FR-10, C.4 P2/P11 |
 | D-27 | Data | Seed history is aligned to pay periods: the 6 completed periods before the current one (26 with `--large`), plus week 1 of the current period when today is in its week 2 — 12 or 13 weeks. The current week is left empty. | B.7, C.4 P2 |
 | D-28 | Login | django-axes locks by **account (email)**: 5 failed attempts lock that email for 15 minutes from any computer; `uv run python manage.py axes_reset` clears it (it clears all lockouts; `axes_reset_username <email>` clears just one). The email is trimmed and lower-cased before counting, the 5th failure already shows the locked page, and `axes.W006` (which recommends adding the IP address) is silenced for this reason. | B.4 FR-1, C.4 P3, D.1 |
 | D-29 | Login | There is one login page, `/login/`. `/admin/login/` redirects there (keeping `?next=`); a logged-in employee without `is_admin` who opens `/admin/` gets 403. | B.8, C.4 P3/P11 |
@@ -997,6 +1014,13 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-84 | Team | Per-employee table: hours worked (all weeks, D-77), utilization (D-82), on-time rate, late and missed weeks (Phase 9 `punctuality`, D-75), overtime (Phase 9 `overtime` = payroll split, D-76), and **pending approvals** = finished pay periods in the range still PENDING (Phase 9 `approval_outcomes`, D-78). Sorted on the server with `?sort=<column>&dir=asc|desc`, ties by name; unknown columns sort by name. | B.4 FR-6 |
 | D-85 | Team | **Drill-down is read-only.** `/team/<code>/` reuses `_dashboard.html` with `own=False` (no "Open this week") plus that person's timesheets list; each week opens `/team/<code>/weeks/<YYYY-MM-DD>/`, which shows the rows, day summary and status with no edit, submit or approve controls (those stay on `/approvals/` and change requests). Access = `can_access_team` + `can_view` (403 otherwise; unknown code 404); a viewer may open their own drill-down. | B.8, D-30 |
 | D-86 | Team | **Performance.** The reporting tree is built in memory from one `(id, manager_id)` query (cycle-safe; T-27/T-28 unchanged). The team page and dashboard load people, timesheets, entries (as light read-only `EntryFacts` records via `values_list`, not model objects), projects and approvals in a fixed number of queries, whatever the tree size or range (T-132); measured in the test DB with ~500 people and 26 weeks of entries: CEO 0.3 s (12 weeks) / 0.6 s (26 weeks). `uv run python manage.py time_team_page <email> [--weeks 4|12|26] [--direct]` renders `/team/` in memory (no session, no writes) and prints the time and query count. | B.9 #6, B.10 |
+| D-87 | Admin | **D-26 ends for directory data only.** Editable in Admin: **Employee** (first/last name, job title, location, email, team, manager, hire date, expected weekly hours typed as hours and stored as minutes, is_admin, is_payroll; new employees can be added), **Team** (name, department; add), **Project** (name, active; code only when adding). Not in the employee form: `employee_code` after creation, `status` and `end_date` (Deactivate/Reactivate only). Read-only: Timesheet, TimeEntry, PeriodApproval, ChangeRequest, AuditLog, PayrollWeek, User (masked password) and the django-axes records; Django's `Group` is unregistered (access comes from is_admin, D-13). **Nothing can be deleted in Admin** (no delete permission, no "delete selected"); retire a project by clearing Active, an employee by deactivating. A changed expected weekly hours value applies to every week computed afterwards (no per-week history). | B.4 FR-10 |
+| D-88 | Admin | Every Admin add/change goes through `directory/services/directory_admin.py` (`save_employee`, `save_team`, `save_project`; actions call `deactivate`, `reactivate`, `reset_password`, `export_employees`), which checks the rules, saves and writes the CREATE/UPDATE audit row with the admin as actor in one transaction; before/after hold only the changed fields and a save with no changes writes nothing. Audit `entity_id` as before: employee code, team name (before a rename), project code. | B.10, CLAUDE.md |
+| D-89 | Admin | Directory safety rules (`check_employee`, and the same checks in the CSV import): nobody is their own manager; a manager change that makes a reporting loop is refused; a newly assigned manager must be ACTIVE; you cannot remove your own admin flag; at least one ACTIVE admin always remains; a new or changed email is lower-cased, unique across Employee and User (any case) and must end in `COMPANY_EMAIL_DOMAIN`; a changed hire date may not be after the person's first saved entry or after their end date. The command-line import and `seed_demo` keep the Phase 2 rules plus the loop and last-admin checks; the domain and "your own" rules apply when an admin imports. | B.4 FR-10, B.9 |
+| D-90 | Admin | **Deactivate** (admin action with a confirmation page; all or nothing for the selection): status INACTIVE and `end_date` (default today; allowed from the hire date and the last saved entry up to today, never in the future). The User becomes inactive (D-13), so an open session ends on the next request; history stays and existing timesheets can still be approved and paid (D-19). Refused for yourself, for someone who still manages ACTIVE people outside the selection ("reassign their reports first"), and when no ACTIVE admin would remain. **Reactivate**: ACTIVE with `end_date` cleared, hire date unchanged. Both write an UPDATE audit row. | B.4 FR-10, D-19 |
+| D-91 | Admin | **Password reset by HR** from the employee's admin page: a temporary password typed twice that passes `AUTH_PASSWORD_VALIDATORS`; Argon2 hash stored and `User.must_change_password` set (migration `directory/0002`). The person's other sessions end (session hash), their axes lockout is cleared, and the UPDATE audit row holds only `{"changed": ["password"], "must_change_password": true, "lockout_cleared": n}`. While the flag is set every page except Profile, logout and static files redirects to Profile; the profile password change clears it. Not for yourself (use Profile) or people without an account. `/admin/password_change/` redirects to Profile so every change is audited. Passwords are never shown. | B.4 FR-2/FR-10, B.6 |
+| D-92 | Admin | **Employee CSV in Admin** (own views; django-import-export stays installed but unused because its admin would bypass `import_employees` and the audit log). Import: upload (≤ 1 MB, UTF-8) → `import_employees(..., actor=admin, dry_run=True)` (same code, rolled back) → every error with its line, or a summary of created/updated (with changed fields)/unchanged/new teams → **Confirm** re-runs it for real on exactly that file (signed, valid 1 hour); all or nothing; audited with the admin as actor. Export (current list filters): the import columns plus `end_date`, formula-safe via payroll `safe_cell` (D-68) — the importer strips that leading `'` again, so an exported file re-imports with no changes; an EXPORT audit row records the row count. | B.4 FR-10, B.7 |
+| D-93 | Admin | **Admin access**: a custom default admin site admits only logged-in ACTIVE employees with is_admin; anyone else logged in gets 403 straight away, anonymous users go to `/login/` (refines D-29). Search and filters: employees by name, code, email, job title, team, department and manager name, filtered by status, team, department, is_admin, is_payroll and manager (managers only); teams by name/department; projects by code/name/active; timesheets by status, week, team and employee; AuditLog by action, entity type, actor, system actor and date (plus date hierarchy). | B.4 FR-10, B.8 |
 
 ---
 

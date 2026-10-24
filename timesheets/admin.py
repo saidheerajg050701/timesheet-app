@@ -1,14 +1,21 @@
 from django.contrib import admin
 
-from directory.admin_base import ViewOnlyAdmin, ViewOnlyInline
+from directory.admin_base import AuditedAdmin, ViewOnlyAdmin, ViewOnlyInline
+from directory.services.directory_admin import save_project
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
 
 
 @admin.register(Project)
-class ProjectAdmin(ViewOnlyAdmin):
+class ProjectAdmin(AuditedAdmin):
+    """Add and edit (audited, D-88); retire a project by clearing Active, never delete."""
+
     list_display = ("code", "name", "active")
     list_filter = ("active",)
     search_fields = ("code", "name")
+    save_service = staticmethod(save_project)
+
+    def get_readonly_fields(self, request, obj=None):
+        return ("code",) if obj else ()  # entries and audit rows refer to the code
 
 
 class TimeEntryInline(ViewOnlyInline):
@@ -21,8 +28,13 @@ class TimeEntryInline(ViewOnlyInline):
 @admin.register(Timesheet)
 class TimesheetAdmin(ViewOnlyAdmin):
     list_display = ("employee", "week_start", "status", "is_late", "submitted_at", "reopen_until")
-    list_filter = ("status", "is_late", "week_start")
-    search_fields = ("employee__employee_code", "employee__first_name", "employee__last_name")
+    list_filter = ("status", "is_late", "week_start", "employee__team")
+    search_fields = (
+        "employee__employee_code",
+        "employee__first_name",
+        "employee__last_name",
+        "employee__email",
+    )
     list_select_related = ("employee",)
     date_hierarchy = "week_start"
     ordering = ("-week_start", "employee__employee_code")
