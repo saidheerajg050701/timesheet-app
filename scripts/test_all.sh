@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Runs every check from docs/BUILD_GUIDE.md B.11, in order, stopping at the first failure.
+# Usage: bash scripts/test_all.sh [extra pytest arguments for the e2e step]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -16,15 +17,10 @@ echo "==> 4/5 Unit + integration tests with coverage"
 uv run pytest -m "not e2e" --cov --cov-fail-under=80
 
 echo "==> 5/5 End-to-end browser tests"
-# D-01: until Phase 12, "no tests collected" (pytest exit code 5) counts as success for this
-# step only. Phase 12 removes this rule and makes e2e mandatory.
-status=0
-uv run pytest -m e2e || status=$?
-if [ "$status" -eq 5 ]; then
-  echo "e2e: skipped - no e2e tests yet"
-elif [ "$status" -ne 0 ]; then
-  exit "$status"
-fi
+# Mandatory since Phase 12 (D-95): no tests collected (exit code 5) fails like any other error.
+# Needs Chromium once: uv run playwright install chromium. Extra arguments go to this step,
+# e.g. bash scripts/test_all.sh --browser-channel chrome (use the installed Google Chrome).
+uv run pytest -m e2e "$@"
 
 echo
 echo "All checks passed."

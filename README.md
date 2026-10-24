@@ -3,22 +3,55 @@
 A local-only Django web app for weekly timesheets, biweekly approvals and a separate payroll
 database. The full specification is [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md).
 
-## Requirements
-macOS with the tools from the guide's Part A. Check them with `bash scripts/doctor.sh`.
+## Setup on a new Mac
+1. Install the tools from the guide's Part A (Homebrew, uv, Git) and check them:
+   ```bash
+   bash scripts/doctor.sh                     # until it says "Ready to build"
+   ```
+2. Get the code into `~/Documents/timesheet-app` (keep it out of iCloud-synced folders, see D.2) and install the packages:
+   ```bash
+   cd ~/Documents/timesheet-app
+   uv python install 3.13                     # if doctor.sh says Python 3.13 is missing
+   uv sync                                    # Python packages into .venv
+   uv run playwright install chromium         # browser for the end-to-end tests (once)
+   ```
+3. Create your private settings file (never commit it):
+   ```bash
+   cp .env.example .env
+   uv run python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste as DJANGO_SECRET_KEY
+   ```
+   Then edit `.env`: the secret key, `DEMO_PASSWORD` (12+ characters), `COMPANY_EMAIL_DOMAIN`,
+   `COMPANY_TZ`, and keep `DJANGO_DEBUG=False` for daily use (error pages then never show code
+   or settings).
+4. Create both databases and, if you want, the demo company:
+   ```bash
+   uv run python manage.py migrate                      # main database  → db.sqlite3
+   uv run python manage.py migrate --database=payroll   # payroll database → payroll.sqlite3
+   uv run python manage.py seed_demo                    # optional demo data (refuses if data exists)
+   ```
 
-## First-time setup
-```bash
-uv sync                                    # installs Python 3.13 packages into .venv
-cp .env.example .env                       # then edit .env (never commit it)
-uv run python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste as DJANGO_SECRET_KEY
-uv run python manage.py migrate                      # main database  → db.sqlite3
-uv run python manage.py migrate --database=payroll   # payroll database → payroll.sqlite3
-```
+After pulling new code later, run `uv sync` and both `migrate` commands again.
 
 ## Run
 ```bash
-uv run python manage.py runserver          # http://127.0.0.1:8000
+uv run python manage.py runserver          # http://127.0.0.1:8000 — stop with Control + C
 ```
+
+## Demo logins
+After `seed_demo`, these accounts exist; all use the `DEMO_PASSWORD` you put in `.env`.
+
+| Email | What to try |
+|---|---|
+| `hr@yourcompany.com` | Admin: Django Admin, everyone's team view |
+| `ceo@yourcompany.com` | Admin and top-level manager |
+| `eng.director@yourcompany.com` | Manager of managers (Team shows indirect reports) |
+| `eng.manager@yourcompany.com` | Manager: approvals and change requests |
+| `dev1@yourcompany.com`, `dev2@yourcompany.com` | Employees |
+| `ops.manager@yourcompany.com` | Manager of a second team |
+| `payroll@yourcompany.com` | Payroll only |
+| `finance.manager@yourcompany.com` | Payroll and manager |
+
+`qa1@`, `ops1@` and `ops2@yourcompany.com` have no account yet: use them to try **Sign up**.
 
 ## Logging in
 Every page needs a login except `/login/` and `/signup/`. Sign-up only works for an ACTIVE
@@ -29,7 +62,7 @@ for 15 minutes. There is no self-service password reset: ask an admin.
 Everyone gets Dashboard, Timesheets, Requests and Profile. Team and Approvals appear for
 managers (anyone with reports) and directory admins; Payroll for payroll users and admins;
 Admin only for directory admins. Every page also checks permissions on the server
-(`directory/services/permissions.py`). Pages from later build phases show a placeholder.
+(`directory/services/permissions.py`).
 
 ## Dashboard
 The home page shows your own last 4, 12 or 26 weeks: this week's status with a live countdown
@@ -86,7 +119,6 @@ new version is written after re-approval. If the page says payroll is out of syn
 ```bash
 uv run python manage.py sync_payroll       # safe to repeat
 ```
-Back up both databases (safe while the app runs): `uv run python manage.py backup_db`.
 
 ## Admin (HR)
 
@@ -98,12 +130,6 @@ Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every chang
 - **Import CSV / Export CSV:** on the employee list. Export uses the same columns as import, so you can edit the file and import it again; you always see a summary (or the errors with line numbers) before anything changes.
 - Timesheets, approvals, change requests, payroll records and the audit log are read-only here.
 
-After updating to Phase 11, apply the new migration (main database only):
-
-```bash
-uv run python manage.py migrate
-```
-
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history
@@ -111,7 +137,7 @@ uv run python manage.py seed_demo --large    # ~500 employees, 52 weeks (perform
 uv run python manage.py import_employees data/your_file.csv   # create/update employees by employee_code
 ```
 `seed_demo` refuses to run when the database already has data. Every demo login uses the
-`DEMO_PASSWORD` from `.env`. The admin at http://127.0.0.1:8000/admin/ is view-only for now.
+`DEMO_PASSWORD` from `.env`.
 
 To create an admin login for an existing directory admin employee (ACTIVE, `is_admin` on,
 no account yet):
@@ -121,10 +147,40 @@ uv run python manage.py createsuperuser    # asks for the employee code, e.g. EM
 
 ## Test
 ```bash
-uv run pytest -m "not e2e"                 # fast unit + integration tests
-bash scripts/test_all.sh                   # ruff, migrations check, Django check, coverage, e2e
+uv run pytest -m "not e2e"                 # fast unit + integration tests (~1 minute)
+uv run pytest -m e2e                       # end-to-end tests in a real browser (needs Chromium, see setup)
+bash scripts/test_all.sh                   # everything: ruff, migrations, Django check, coverage ≥ 80 %, e2e
+uv run pytest -m "not e2e" --cov --cov-report=html   # coverage report → open htmlcov/index.html
 ```
-Tests use temporary databases and never touch `db.sqlite3` or `payroll.sqlite3`.
+Tests use their own temporary databases and a fixed clock; they never touch `db.sqlite3` or
+`payroll.sqlite3`. The end-to-end tests start a test server by themselves. No Chromium yet? Use
+your installed Google Chrome: `bash scripts/test_all.sh --browser-channel chrome`.
+
+## Backup and restore
+Back up **both** databases at once (safe while the app runs):
+```bash
+uv run python manage.py backup_db          # → backups/db-<stamp>.sqlite3 and backups/payroll-<stamp>.sqlite3
+```
+Copy the `backups/` folder somewhere safe (it is not in Git). To restore:
+1. Stop the server (Control + C).
+2. Pick **one** timestamp and copy both files back — always both from the same time:
+   ```bash
+   cp backups/db-20261024-120953.sqlite3 db.sqlite3
+   cp backups/payroll-20261024-120953.sqlite3 payroll.sqlite3
+   ```
+   (Keep the files you replace, e.g. rename them to `*-old.sqlite3` first, until you have checked the result.)
+3. Start the server, then repair anything approved after that backup:
+   ```bash
+   uv run python manage.py sync_payroll
+   ```
+
+## Known limitations (version 1)
+- Runs on one Mac with SQLite over plain HTTP: fine for one person or a trusted office network, not for the internet (no HTTPS; see B.12 D-97).
+- No notifications or email, so no "forgot password" link: HR sets a temporary password in Admin.
+- No holiday calendar (enter Holiday rows by hand) and no delegated approvals when a manager is away.
+- All deadlines use one company time zone (`COMPANY_TZ`).
+- The payroll CSV is the app's own format, not a payroll provider's.
+- Changing someone's expected weekly hours applies to every week shown afterwards (no history per week).
 
 ## Layout
 - `config/`: settings (read from `.env`), URLs

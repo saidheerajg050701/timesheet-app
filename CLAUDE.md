@@ -9,7 +9,7 @@
 ## Stack (do not substitute without asking)
 Python 3.13 via uv; Django 5.2 LTS; two SQLite databases (default = db.sqlite3, payroll = payroll.sqlite3)
 with a database router for the payroll app; django-environ; argon2-cffi (Argon2 password hashing);
-django-axes; django-import-export; Faker; Django templates + Bootstrap 5 + HTMX + Chart.js
+django-axes; Faker; Django templates + Bootstrap 5 + HTMX + Chart.js
 (vendored in static/vendor, no JS build step); pytest, pytest-django, factory_boy, time-machine,
 pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for version 1.
 

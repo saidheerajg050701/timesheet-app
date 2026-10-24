@@ -3,12 +3,13 @@
 
 - **Audience:** You (the project owner), building the app with Claude Code inside the Google Antigravity IDE
 - **Target:** A web application that runs entirely on your Mac (localhost), with local databases
-- **Version:** 2.2 — October 21, 2026
+- **Version:** 2.3 — October 24, 2026 (version 1 of the app complete: Phases 0–12)
 
 ### What changed
 
 | Version | Change | Details |
 |---|---|---|
+| 2.3 | **Version 1 complete** | Phases 0–12 built; decisions D-23–D-99 in B.12; 156 catalogued tests (T-01–T-156) including 10 Playwright e2e flows, all passing (status table in B.11); e2e mandatory in `test_all.sh` |
 | 2.2 | **Decisions log** | New **section B.12** (D-01…D-22) settles the open points from the spec review. B.1–B.11 and Part C updated to match; **B.12 wins** if anything still conflicts |
 | 2.1 | **Payroll database** | Approved hours per week are copied into a **separate payroll database**. Only the new **Payroll** role (and admins) can see and export it (B.4 FR-11, B.6, Phase 8) |
 | 2.1 | **Full testing plan** | New **section B.11**: test tools, folder layout, 40+ named test cases, example test code, coverage targets, and a one-command test runner. Tests use their own temporary databases |
@@ -17,6 +18,24 @@
 | 2.1 | Copy-safe commands | Part A checks are now short commands, so they copy correctly from the PDF |
 | 2.0 | Tech stack | Switched to **Python + Django** |
 | 2.0 | Notifications | Not included in version 1 |
+
+### Build progress
+
+| Phase | What | Commit | Status |
+|---|---|---|---|
+| 0 | Environment check (`doctor.sh`) | (starter kit) | Done |
+| 1 | Project scaffold, two databases, Argon2, test setup | `9a54543` | Done |
+| 2 | Data model, `import_employees`, `seed_demo`, view-only admin | `ca271e8` | Done |
+| 3 | Login, sign-up with directory check, axes lockout | `09cc388` | Done |
+| 4 | Layout, profile and permissions | `8c00a4b` | Done |
+| 5 / 5b | Weekly timesheet, deadline, validation; start/end times, reasons, Break | `79d8314`, `abce157` | Done |
+| 6 | Change requests, unlock, Edit directly | `c7a2ea6` | Done |
+| 7 | Biweekly approvals, reject, unlock, bulk approve | `b46bb87` | Done |
+| 8 | Payroll database, publish/supersede, export, sync, backup | `e1833ba` | Done |
+| 9 | Personal analytics dashboard | `1ca56d5` | Done |
+| 10 | Team (hierarchy) analytics | `31aa771` | Done |
+| 11 | Admin polish: audited edits, deactivate, password reset, CSV | `f8513b8` | Done |
+| 12 | Full test pass, e2e, hardening, README | (commit pending) | Done — ready to commit |
 
 ---
 
@@ -173,7 +192,7 @@ DEMO_PASSWORD=choose-a-strong-demo-password
 | Databases | **Two SQLite files:** `db.sqlite3` (main app) and `payroll.sqlite3` (payroll) | No server to install; each backed up by copying one file |
 | Database tools | **Django ORM + migrations** + a **database router** | Tables defined in Python; the router sends payroll tables to the payroll database |
 | Login & security | **Django auth** + **Argon2** (`argon2-cffi`) + **django-axes** | Strong password hashing, sessions, CSRF protection, lockout after 5 failed logins |
-| HR admin screens | **Django Admin** + **django-import-export** | Ready-made screens; CSV import/export |
+| HR admin screens | **Django Admin** | Ready-made screens; employee CSV import/export through our own audited admin views (D-92, D-98) |
 | Settings | **django-environ** | Reads `.env` |
 | Screens | **Django templates + Bootstrap 5 + HTMX** | Clean responsive pages; no JavaScript build step |
 | Charts | **Chart.js** | Analytics charts |
@@ -662,12 +681,14 @@ tests/
     test_team.py           # /team/, drill-down, week view, large-data query count (T-123–T-132)
     test_admin.py
     test_admin_edit.py     # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
+    test_hardening.py      # DEBUG off: static files, friendly 404/500 (T-156)
     test_admin_csv.py      # employee CSV import preview/confirm and export round-trip (T-142, T-143)
     test_import_employees.py
     test_layout.py         # menus, header, placeholder pages, profile (FR-4, D-30)
     test_seed_demo.py
   e2e/
-    test_e2e_flows.py      # marked @pytest.mark.e2e
+    conftest.py            # live test server, fixed clock, a small company, one browser context per person (D-94)
+    test_e2e_flows.py      # marked @pytest.mark.e2e (T-146–T-155)
 ```
 
 ### Test case catalogue (must all exist and pass)
@@ -821,6 +842,180 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-143 | Admin | Employee CSV export round-trip | Import columns + end_date; formula cells exported as `'=…` and read back unchanged; exporting then importing changes nothing; list filters apply; EXPORT audit row (D-92) |
 | T-144 | Admin | Admin access 403s | Employee, manager, payroll-only and payroll+manager users → 403 on `/admin/`, model pages, import, export, reset password and actions; anonymous → `/login/`; a deactivated admin's session ends (D-93, D-29) |
 | T-145 | Admin | Search and filters | Employees by name, manager, payroll flag, status, department; teams by name; timesheets by status; AuditLog by action, actor, entity type and date range (D-93) |
+| T-146 | E2E | Sign-up in a real browser | Unknown email refused ("not in the company employee directory"); a directory employee without an account signs up and sees their name and code in the header |
+| T-147 | E2E | Save a draft, then submit before Saturday 12:00 (fixed clock: Wed Oct 21 10:00) | Row with day, category, project, times and reason saved as Draft; reopening shows it with hours 8.00; Submit → Submitted and read-only |
+| T-148 | E2E | Week after the deadline (clock moved to Sat Oct 24 12:00) | The draft week shows Locked, with no inputs, Save draft or Submit |
+| T-149 | E2E | Change request → manager Edit directly | Employee sends a request; manager edits Monday's end time and saves; the employee sees the week Submitted with 18:00; UPDATE audit row linked to the request, actor = manager |
+| T-150 | E2E | Approve → payroll | Manager approves the period; the payroll user sees both week records (40.00 regular, 2.00 overtime on the long week) |
+| T-151 | E2E | Reject with a comment → resubmit | Both weeks Reopened with the comment shown to the employee; after resubmitting both, the manager can approve again |
+| T-152 | E2E | Payroll export and mark paid | Export CSV downloads a file with both records; records show Exported; Mark as paid → batch and records Paid |
+| T-153 | E2E | HR deactivates an employee | Admin action with today as the default end date; the employee's open browser is sent to login and logging in again fails with "Wrong email or password." |
+| T-154 | E2E | HR password reset | Temporary password set in Admin; the employee logs in with it, is kept on Profile until they choose a new password, then pages open normally |
+| T-155 | E2E | 403 pages | Employee (/team/, /approvals/, /payroll/, /admin/), payroll-only (/team/, /approvals/) and a manager outside a tree (/team/OPS1/) get the "Not allowed" page with status 403 |
+| T-156 | Hardening | DEBUG off | Vendored static files still load; unknown URLs show the friendly 404 page and errors the plain 500 page, never a traceback or settings (D-96) |
+
+### Status of every test (Phase 12)
+
+Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the **156 catalogued tests** T-01–T-156 below; the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+
+| ID | Area | Test (`tests/…`) | Status |
+|---|---|---|---|
+| T-01 | Sign-up | `unit/test_signup.py::test_wrong_domain_is_refused` | ✅ Pass |
+| T-02 | Sign-up | `unit/test_signup.py::test_email_not_in_directory_is_refused_with_contact_hr` | ✅ Pass |
+| T-03 | Sign-up | `unit/test_signup.py::test_inactive_employee_is_refused` | ✅ Pass |
+| T-04 | Sign-up | `unit/test_signup.py::test_existing_account_is_refused` | ✅ Pass |
+| T-05 | Sign-up | `integration/test_auth_views.py::test_signup_creates_account_with_lowercase_email` | ✅ Pass |
+| T-06 | Password | `unit/test_passwords.py::test_password_is_hashed_with_argon2_never_plain_text` | ✅ Pass |
+| T-07 | Password | `unit/test_passwords.py::test_same_password_gives_different_hashes` | ✅ Pass |
+| T-08 | Password | `unit/test_passwords.py::test_short_or_common_passwords_are_rejected` | ✅ Pass (3 cases) |
+| T-09 | Login | `integration/test_auth_views.py::test_correct_password_logs_in` | ✅ Pass |
+| T-10 | Login | `integration/test_auth_views.py::test_five_wrong_attempts_lock_the_account_for_15_minutes` | ✅ Pass |
+| T-11 | Login | `integration/test_auth_views.py::test_inactive_employee_cannot_log_in` | ✅ Pass |
+| T-12 | Calendar | `unit/test_calendar.py::test_week_start_for_every_day_is_monday` | ✅ Pass |
+| T-13 | Calendar | `unit/test_calendar.py::test_week_still_open_at_1159` | ✅ Pass |
+| T-14 | Calendar | `unit/test_calendar.py::test_week_locked_at_noon` | ✅ Pass |
+| T-15 | Calendar | `unit/test_calendar.py::test_deadline_stays_noon_local_across_daylight_saving` | ✅ Pass |
+| T-16 | Calendar | `unit/test_calendar.py::test_pay_period_across_year_boundary` | ✅ Pass |
+| T-17 | Validation | `unit/test_validation.py::test_times_and_hours_must_use_15_minute_steps` | ✅ Pass |
+| T-18 | Validation | `unit/test_validation.py::test_day_total_over_24_hours_is_rejected` | ✅ Pass |
+| T-19 | Validation | `unit/test_validation.py::test_date_outside_week_or_inactive_project_is_rejected` | ✅ Pass |
+| T-20 | Timesheet | `integration/test_timesheet_flow.py::test_save_draft_then_submit_before_deadline` | ✅ Pass |
+| T-21 | Timesheet | `integration/test_timesheet_flow.py::test_employee_cannot_edit_after_submitting` | ✅ Pass |
+| T-22 | Timesheet | `integration/test_timesheet_flow.py::test_unsubmitted_week_locks_at_deadline_and_counts_as_missed` | ✅ Pass |
+| T-23 | Change request | `integration/test_change_requests.py::test_request_is_visible_to_own_manager_only` | ✅ Pass |
+| T-24 | Change request | `integration/test_change_requests.py::test_unlock_reopens_until_later_of_48h_and_deadline` | ✅ Pass |
+| T-25 | Change request | `integration/test_change_requests.py::test_edit_directly_writes_before_and_after` | ✅ Pass |
+| T-26 | Permissions | `integration/test_layout.py::test_employee_is_refused_manager_and_payroll_pages` | ✅ Pass |
+| T-27 | Permissions | `unit/test_permissions.py::test_director_sees_indirect_reports_manager_only_own_tree` | ✅ Pass |
+| T-28 | Permissions | `unit/test_permissions.py::test_reporting_tree_survives_a_cycle` | ✅ Pass |
+| T-29 | Approvals | `integration/test_approvals.py::test_approve_blocked_while_a_week_is_draft_or_locked` | ✅ Pass |
+| T-30 | Approvals | `integration/test_approvals.py::test_approving_both_weeks` | ✅ Pass |
+| T-31 | Approvals | `integration/test_approvals.py::test_reject_needs_a_comment_and_reopens_both_weeks` | ✅ Pass |
+| T-32 | Approvals | `integration/test_approvals.py::test_non_manager_cannot_approve` | ✅ Pass |
+| T-33 | Payroll | `integration/test_payroll_publish.py::test_approval_publishes_two_week_records` | ✅ Pass |
+| T-34 | Payroll | `integration/test_payroll_publish.py::test_overtime_and_pto_split` | ✅ Pass |
+| T-35 | Payroll | `integration/test_payroll_publish.py::test_publish_twice_creates_no_duplicates` | ✅ Pass |
+| T-36 | Payroll | `integration/test_payroll_publish.py::test_approved_week_edited_later_gets_a_new_version` | ✅ Pass |
+| T-37 | Payroll | `integration/test_payroll_pages.py::test_export_csv` | ✅ Pass |
+| T-38 | Payroll | `integration/test_payroll_pages.py::test_managers_and_employees_get_403` | ✅ Pass |
+| T-39 | Payroll | `integration/test_payroll_pages.py::test_superseded_after_export_is_listed_in_corrections` | ✅ Pass |
+| T-40 | Analytics | `integration/test_analytics.py::test_dashboard_numbers_for_known_data` | ✅ Pass |
+| T-41 | Seed | `integration/test_seed_demo.py::test_seed_builds_the_demo_company` | ✅ Pass |
+| T-42 | Seed | `integration/test_seed_demo.py::test_seed_refuses_to_run_twice` | ✅ Pass |
+| T-43 | Change request | `integration/test_change_requests.py::test_week_unlocked_on_wednesday_stays_open_until_saturday_noon` | ✅ Pass |
+| T-44 | Accounts | `unit/test_accounts.py::test_account_requires_an_employee` | ✅ Pass |
+| T-45 | Accounts | `unit/test_accounts.py::test_create_user_takes_email_and_flags_from_employee` | ✅ Pass |
+| T-46 | Accounts | `unit/test_accounts.py::test_createsuperuser_refuses_ineligible_employees` | ✅ Pass |
+| T-47 | Accounts | `unit/test_accounts.py::test_createsuperuser_creates_admin_account_for_active_admin_employee` | ✅ Pass |
+| T-48 | Accounts | `unit/test_accounts.py::test_admin_flag_controls_staff_and_superuser` | ✅ Pass |
+| T-49 | Accounts | `unit/test_accounts.py::test_employee_status_controls_is_active` | ✅ Pass |
+| T-50 | Accounts | `unit/test_accounts.py::test_email_change_in_directory_updates_account` | ✅ Pass |
+| T-51 | Accounts | `unit/test_accounts.py::test_emails_stay_unique_regardless_of_case` | ✅ Pass |
+| T-52 | Audit | `unit/test_audit.py::test_audit_row_needs_exactly_one_actor` | ✅ Pass |
+| T-53 | Import | `integration/test_import_employees.py::test_import_creates_people_teams_and_manager_links` | ✅ Pass |
+| T-54 | Import | `integration/test_import_employees.py::test_reimport_updates_in_place_and_syncs_account` | ✅ Pass |
+| T-55 | Import | `integration/test_import_employees.py::test_invalid_csv_imports_nothing_and_lists_every_error` | ✅ Pass |
+| T-56 | Seed | `integration/test_seed_demo.py::test_seed_approvals_follow_the_rules` | ✅ Pass |
+| T-57 | Seed | `integration/test_seed_demo.py::test_seed_audit_rows_name_the_right_actor` | ✅ Pass |
+| T-58 | Login | `integration/test_auth_views.py::test_every_page_requires_login_except_login_and_signup` | ✅ Pass |
+| T-59 | Databases | `integration/test_auth_views.py::test_axes_and_main_tables_stay_out_of_payroll_database` | ✅ Pass |
+| T-60 | Permissions | `unit/test_permissions.py::test_only_the_direct_manager_approves` | ✅ Pass |
+| T-61 | Permissions | `unit/test_permissions.py::test_admins_approve_only_employees_without_a_manager` | ✅ Pass |
+| T-62 | Permissions | `integration/test_layout.py::test_payroll_flag_adds_only_payroll_pages` | ✅ Pass |
+| T-63 | Permissions | `integration/test_layout.py::test_payroll_user_who_manages_gets_manager_rights_for_own_tree` | ✅ Pass |
+| T-64 | Layout | `integration/test_layout.py::test_menu_and_header_follow_roles` | ✅ Pass |
+| T-65 | Profile | `integration/test_layout.py::test_profile_shows_directory_details_read_only` | ✅ Pass |
+| T-66 | Profile | `integration/test_layout.py::test_password_change_keeps_session_and_audits_without_password_data` | ✅ Pass |
+| T-67 | Validation | `unit/test_validation.py::test_project_entries_need_a_project_and_others_must_not_have_one` | ✅ Pass |
+| T-68 | Validation | `unit/test_validation.py::test_entries_only_within_employment` | ✅ Pass |
+| T-69 | Calendar | `unit/test_calendar.py::test_expected_minutes_are_prorated_for_partial_weeks` | ✅ Pass |
+| T-70 | Timesheet | `unit/test_calendar.py::test_weeks_outside_employment_are_never_missed` | ✅ Pass |
+| T-71 | Timesheet | `integration/test_timesheet_flow.py::test_submit_writes_audit_row` | ✅ Pass |
+| T-72 | Validation | `unit/test_validation.py::test_end_must_be_after_start` | ✅ Pass |
+| T-73 | Validation | `unit/test_validation.py::test_timed_rows_on_one_day_must_not_overlap` | ✅ Pass |
+| T-74 | Validation | `unit/test_validation.py::test_every_row_needs_a_reason` | ✅ Pass |
+| T-75 | Validation | `unit/test_validation.py::test_break_has_times_and_never_a_project` | ✅ Pass |
+| T-76 | Validation | `unit/test_validation.py::test_leave_is_hours_only_and_work_needs_times` | ✅ Pass |
+| T-77 | Timesheet | `integration/test_timesheet_flow.py::test_hours_worked_excludes_break_and_leave` | ✅ Pass |
+| T-78 | Timesheet | `integration/test_timesheet_flow.py::test_break_only_week_cannot_be_submitted` | ✅ Pass |
+| T-79 | Timesheet | `integration/test_timesheet_flow.py::test_many_rows_on_one_day` | ✅ Pass |
+| T-80 | Seed | `integration/test_seed_demo.py::test_seeded_entries_pass_the_entry_rules` | ✅ Pass |
+| T-81 | Change request | `integration/test_change_requests.py::test_requests_only_on_submitted_locked_or_approved_weeks` | ✅ Pass |
+| T-82 | Change request | `integration/test_change_requests.py::test_who_handles_a_request` | ✅ Pass |
+| T-83 | Change request | `integration/test_change_requests.py::test_each_step_is_audited` | ✅ Pass |
+| T-84 | Change request | `integration/test_change_requests.py::test_edit_directly_uses_the_same_rules` | ✅ Pass |
+| T-85 | Change request | `integration/test_change_requests.py::test_changing_an_approved_week_resets_the_period` | ✅ Pass (2 cases) |
+| T-86 | Timesheet | `integration/test_change_requests.py::test_reopened_past_week_is_editable_until_window_ends` | ✅ Pass |
+| T-87 | Timesheet | `integration/test_change_requests.py::test_late_flag_is_decided_by_the_first_submission` | ✅ Pass |
+| T-88 | Layout | `integration/test_change_requests.py::test_open_request_count_in_menu` | ✅ Pass |
+| T-89 | Timesheet | `integration/test_entry_form.py::test_completely_empty_rows_are_ignored` | ✅ Pass (2 cases) |
+| T-90 | Timesheet | `integration/test_entry_form.py::test_rerender_after_an_error_adds_no_rows` | ✅ Pass (2 cases) |
+| T-91 | Timesheet | `integration/test_entry_form.py::test_hours_are_shown_for_every_row` | ✅ Pass (2 cases) |
+| T-92 | Approvals | `integration/test_approvals.py::test_unlock_locked_week_from_approvals` | ✅ Pass |
+| T-93 | Approvals | `integration/test_approvals.py::test_rejected_period_comes_back_after_resubmission` | ✅ Pass |
+| T-94 | Approvals | `integration/test_approvals.py::test_approve_is_one_transaction_with_the_payroll_hook` | ✅ Pass |
+| T-95 | Approvals | `integration/test_approvals.py::test_who_sees_and_approves_which_rows` | ✅ Pass |
+| T-96 | Approvals | `integration/test_approvals.py::test_bulk_approve` | ✅ Pass |
+| T-97 | Approvals | `integration/test_approvals.py::test_pay_period_dates` | ✅ Pass |
+| T-98 | Approvals | `integration/test_approvals.py::test_flags` | ✅ Pass |
+| T-99 | Approvals | `integration/test_approvals.py::test_forbidden_cases` | ✅ Pass |
+| T-100 | Approvals | `integration/test_approvals.py::test_period_partly_outside_employment` | ✅ Pass |
+| T-101 | Approvals | `integration/test_approvals.py::test_open_change_request_blocks_approval` | ✅ Pass |
+| T-102 | Timesheet | `integration/test_approvals.py::test_week_page_shows_approval_status` | ✅ Pass |
+| T-103 | Payroll | `unit/test_payroll_split.py::test_overtime_rule` | ✅ Pass |
+| T-104 | Payroll | `integration/test_payroll_publish.py::test_payroll_records_are_append_only` | ✅ Pass |
+| T-105 | Payroll | `integration/test_payroll_publish.py::test_deactivated_employee_is_published_and_paid` | ✅ Pass |
+| T-106 | Payroll | `integration/test_payroll_publish.py::test_publish_and_sync_are_idempotent` | ✅ Pass |
+| T-107 | Payroll | `integration/test_payroll_publish.py::test_payroll_failure_after_commit_is_repaired_by_sync` | ✅ Pass |
+| T-108 | Payroll | `integration/test_payroll_publish.py::test_main_rollback_writes_nothing_to_payroll` | ✅ Pass |
+| T-109 | Payroll | `integration/test_payroll_publish.py::test_supersede_failure_is_repaired_by_sync` | ✅ Pass |
+| T-110 | Payroll | `integration/test_payroll_pages.py::test_csv_cells_are_spreadsheet_safe` | ✅ Pass |
+| T-111 | Payroll | `integration/test_payroll_pages.py::test_who_can_open_payroll_pages` | ✅ Pass |
+| T-112 | Payroll | `integration/test_payroll_publish.py::test_mark_paid_moves_only_exported_records` | ✅ Pass |
+| T-113 | Payroll | `integration/test_payroll_publish.py::test_backup_db_copies_both_databases` | ✅ Pass |
+| T-114 | Seed | `integration/test_seed_demo.py::test_seed_fills_the_payroll_database` | ✅ Pass |
+| T-115 | Analytics | `integration/test_analytics.py::test_range_filter` | ✅ Pass |
+| T-116 | Analytics | `integration/test_analytics.py::test_on_time_late_missed_edge_cases` | ✅ Pass |
+| T-117 | Analytics | `integration/test_analytics.py::test_new_hire_and_deactivated_employee` | ✅ Pass |
+| T-118 | Analytics | `integration/test_analytics.py::test_dashboard_overtime_matches_payroll` | ✅ Pass |
+| T-119 | Analytics | `integration/test_analytics.py::test_only_own_data` | ✅ Pass |
+| T-120 | Analytics | `integration/test_analytics.py::test_empty_state` | ✅ Pass |
+| T-121 | Analytics | `integration/test_analytics.py::test_viewing_writes_nothing_and_queries_are_bounded` | ✅ Pass |
+| T-122 | Analytics | `integration/test_analytics.py::test_categories_break_outcomes_and_current_week` | ✅ Pass |
+| T-123 | Team | `integration/test_team.py::test_team_metrics_for_known_data` | ✅ Pass |
+| T-124 | Team | `integration/test_team.py::test_utilization_rule` | ✅ Pass |
+| T-125 | Team | `integration/test_team.py::test_whole_tree_vs_direct_and_team_filter` | ✅ Pass |
+| T-126 | Team | `integration/test_team.py::test_access_rules` | ✅ Pass |
+| T-127 | Team | `integration/test_team.py::test_admin_sees_everyone` | ✅ Pass |
+| T-128 | Team | `integration/test_team.py::test_this_weeks_compliance` | ✅ Pass |
+| T-129 | Team | `integration/test_team.py::test_inactive_employees_only_with_timesheets` | ✅ Pass |
+| T-130 | Team | `integration/test_team.py::test_drill_down_is_read_only` | ✅ Pass |
+| T-131 | Team | `integration/test_team.py::test_viewing_writes_nothing` | ✅ Pass |
+| T-132 | Team | `integration/test_team.py::test_query_count_is_fixed_for_large_teams` | ✅ Pass |
+| T-133 | Admin | `integration/test_admin_edit.py::test_employee_edit_is_audited` | ✅ Pass |
+| T-134 | Admin | `integration/test_admin_edit.py::test_add_and_edit_teams_projects_and_employees` | ✅ Pass |
+| T-135 | Admin | `integration/test_admin_edit.py::test_workflow_records_are_read_only` | ✅ Pass |
+| T-136 | Admin | `integration/test_admin_edit.py::test_nothing_can_be_deleted` | ✅ Pass |
+| T-137 | Admin | `integration/test_admin_edit.py::test_deactivate` | ✅ Pass |
+| T-138 | Admin | `integration/test_admin_edit.py::test_deactivate_and_reactivate_rules` | ✅ Pass |
+| T-139 | Admin | `integration/test_admin_edit.py::test_email_and_flag_sync` | ✅ Pass |
+| T-140 | Admin | `integration/test_admin_edit.py::test_safety_rules` | ✅ Pass |
+| T-141 | Admin | `integration/test_admin_edit.py::test_password_reset` | ✅ Pass |
+| T-142 | Admin | `integration/test_admin_csv.py::test_csv_import_in_admin` | ✅ Pass |
+| T-143 | Admin | `integration/test_admin_csv.py::test_csv_export_round_trip` | ✅ Pass |
+| T-144 | Admin | `integration/test_admin_edit.py::test_only_directory_admins_reach_admin` | ✅ Pass |
+| T-145 | Admin | `integration/test_admin_edit.py::test_search_and_filters` | ✅ Pass |
+| T-146 | E2E | `e2e/test_e2e_flows.py::test_signup_refused_then_accepted` | ✅ Pass |
+| T-147 | E2E | `e2e/test_e2e_flows.py::test_save_draft_then_submit_before_the_deadline` | ✅ Pass |
+| T-148 | E2E | `e2e/test_e2e_flows.py::test_week_locks_after_the_deadline` | ✅ Pass |
+| T-149 | E2E | `e2e/test_e2e_flows.py::test_change_request_then_manager_edits_directly` | ✅ Pass |
+| T-150 | E2E | `e2e/test_e2e_flows.py::test_approve_then_payroll_sees_the_records` | ✅ Pass |
+| T-151 | E2E | `e2e/test_e2e_flows.py::test_reject_with_comment_then_resubmit` | ✅ Pass |
+| T-152 | E2E | `e2e/test_e2e_flows.py::test_payroll_export_and_mark_paid` | ✅ Pass |
+| T-153 | E2E | `e2e/test_e2e_flows.py::test_hr_deactivates_an_employee` | ✅ Pass |
+| T-154 | E2E | `e2e/test_e2e_flows.py::test_hr_password_reset_forces_a_change` | ✅ Pass |
+| T-155 | E2E | `e2e/test_e2e_flows.py::test_forbidden_pages` | ✅ Pass |
+| T-156 | Hardening | `integration/test_hardening.py::test_debug_off_serves_static_and_friendly_errors` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -895,7 +1090,7 @@ from playwright.sync_api import Page, expect
 
 @pytest.mark.e2e
 def test_signup_refused_for_unknown_email(page: Page, live_server):
-    """E2E: sign-up refused for an email that is not in the directory."""
+    """T-146: E2E sign-up refused for an email that is not in the directory."""
     page.goto(f"{live_server.url}/signup/")
     page.get_by_label("Email").fill("nobody@yourcompany.com")
     page.get_by_label("Password", exact=True).fill("Long-Enough-Pass-1")
@@ -915,7 +1110,7 @@ Runs, in order, and stops at the first failure:
 2. `uv run python manage.py makemigrations --check --dry-run` — no forgotten migrations
 3. `uv run python manage.py check` — Django configuration
 4. `uv run pytest -m "not e2e" --cov --cov-fail-under=80` — unit + integration with coverage
-5. `uv run pytest -m e2e` — browser tests. Until Phase 12, if no tests are marked `e2e` the script prints `e2e: skipped - no e2e tests yet` and treats pytest exit code 5 ("no tests collected") as success **for this step only**. Phase 12 installs Chromium and makes this step mandatory (D-01).
+5. `uv run pytest -m e2e` — browser tests, **mandatory** since Phase 12 (D-95): "no tests collected" fails like any other error. Install Chromium once with `uv run playwright install chromium`. Extra arguments go to this step, e.g. `bash scripts/test_all.sh --browser-channel chrome` to use an installed Google Chrome instead.
 
 ```bash
 bash scripts/test_all.sh
@@ -924,11 +1119,11 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-93 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-99 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
-| D-01 | Setup | `test_all.sh`: when no tests are marked `e2e`, skip the e2e step and print `e2e: skipped - no e2e tests yet`; treat pytest exit code 5 as success **only** for that step. Phase 12 installs Chromium and makes e2e mandatory. | B.11, C.4 P1/P12 |
+| D-01 | Setup | `test_all.sh`: when no tests are marked `e2e`, skip the e2e step and print `e2e: skipped - no e2e tests yet`; treat pytest exit code 5 as success **only** for that step. Phase 12 installs Chromium and makes e2e mandatory — done, see D-95. | B.11, C.4 P1/P12 |
 | D-02 | Setup | Custom `UserManager` with email login. `create_user` / `create_superuser` require an employee. `createsuperuser` asks for an `employee_code` that must exist, be ACTIVE and have no account. Normal accounts come from `seed_demo` or sign-up. | B.6, C.4 P1 |
 | D-03 | Setup | Add `DJANGO_ALLOWED_HOSTS` to `.env.example` (default `127.0.0.1,localhost`). | B.1 `.env`, C.4 P1 |
 | D-04 | Setup | Every app uses a services package: `<app>/services/<module>.py` (e.g. `payroll/services/publish.py`, `analytics/services/metrics.py`). | B.6, B.9, B.11, C.4 |
@@ -1019,8 +1214,14 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-89 | Admin | Directory safety rules (`check_employee`, and the same checks in the CSV import): nobody is their own manager; a manager change that makes a reporting loop is refused; a newly assigned manager must be ACTIVE; you cannot remove your own admin flag; at least one ACTIVE admin always remains; a new or changed email is lower-cased, unique across Employee and User (any case) and must end in `COMPANY_EMAIL_DOMAIN`; a changed hire date may not be after the person's first saved entry or after their end date. The command-line import and `seed_demo` keep the Phase 2 rules plus the loop and last-admin checks; the domain and "your own" rules apply when an admin imports. | B.4 FR-10, B.9 |
 | D-90 | Admin | **Deactivate** (admin action with a confirmation page; all or nothing for the selection): status INACTIVE and `end_date` (default today; allowed from the hire date and the last saved entry up to today, never in the future). The User becomes inactive (D-13), so an open session ends on the next request; history stays and existing timesheets can still be approved and paid (D-19). Refused for yourself, for someone who still manages ACTIVE people outside the selection ("reassign their reports first"), and when no ACTIVE admin would remain. **Reactivate**: ACTIVE with `end_date` cleared, hire date unchanged. Both write an UPDATE audit row. | B.4 FR-10, D-19 |
 | D-91 | Admin | **Password reset by HR** from the employee's admin page: a temporary password typed twice that passes `AUTH_PASSWORD_VALIDATORS`; Argon2 hash stored and `User.must_change_password` set (migration `directory/0002`). The person's other sessions end (session hash), their axes lockout is cleared, and the UPDATE audit row holds only `{"changed": ["password"], "must_change_password": true, "lockout_cleared": n}`. While the flag is set every page except Profile, logout and static files redirects to Profile; the profile password change clears it. Not for yourself (use Profile) or people without an account. `/admin/password_change/` redirects to Profile so every change is audited. Passwords are never shown. | B.4 FR-2/FR-10, B.6 |
-| D-92 | Admin | **Employee CSV in Admin** (own views; django-import-export stays installed but unused because its admin would bypass `import_employees` and the audit log). Import: upload (≤ 1 MB, UTF-8) → `import_employees(..., actor=admin, dry_run=True)` (same code, rolled back) → every error with its line, or a summary of created/updated (with changed fields)/unchanged/new teams → **Confirm** re-runs it for real on exactly that file (signed, valid 1 hour); all or nothing; audited with the admin as actor. Export (current list filters): the import columns plus `end_date`, formula-safe via payroll `safe_cell` (D-68) — the importer strips that leading `'` again, so an exported file re-imports with no changes; an EXPORT audit row records the row count. | B.4 FR-10, B.7 |
+| D-92 | Admin | **Employee CSV in Admin** (own views; django-import-export would bypass `import_employees` and the audit log, and was removed in Phase 12, D-98). Import: upload (≤ 1 MB, UTF-8) → `import_employees(..., actor=admin, dry_run=True)` (same code, rolled back) → every error with its line, or a summary of created/updated (with changed fields)/unchanged/new teams → **Confirm** re-runs it for real on exactly that file (signed, valid 1 hour); all or nothing; audited with the admin as actor. Export (current list filters): the import columns plus `end_date`, formula-safe via payroll `safe_cell` (D-68) — the importer strips that leading `'` again, so an exported file re-imports with no changes; an EXPORT audit row records the row count. | B.4 FR-10, B.7 |
 | D-93 | Admin | **Admin access**: a custom default admin site admits only logged-in ACTIVE employees with is_admin; anyone else logged in gets 403 straight away, anonymous users go to `/login/` (refines D-29). Search and filters: employees by name, code, email, job title, team, department and manager name, filtered by status, team, department, is_admin, is_payroll and manager (managers only); teams by name/department; projects by code/name/active; timesheets by status, week, team and employee; AuditLog by action, entity type, actor, system actor and date (plus date hierarchy). | B.4 FR-10, B.8 |
+| D-94 | Tests | **E2E tests** live in `tests/e2e/`, marked `e2e`, and run against pytest-django's `live_server` on the **test databases** (both, `transaction=True`) — never `db.sqlite3` or `payroll.sqlite3`. Data comes from factories in each test (not `seed_demo`). The clock is fixed with `time_machine` at Wed 2026-10-21 10:00 Chicago (`tick=True`) and moved with `move_to()` for deadline tests. Only Playwright `expect(...)` and explicit waits, never sleeps. One browser context per person; confirm dialogs are accepted. `DJANGO_ALLOW_ASYNC_UNSAFE=true` is set for e2e only (Playwright's sync API runs an event loop in the test thread). Catalogued as T-146–T-155. | B.11, C.4 P12 |
+| D-95 | Tests | **E2E is mandatory**: `test_all.sh` step 5 runs `uv run pytest -m e2e` and fails on any non-zero exit code, including 5 ("no tests collected"); this ends the D-01 skip rule. Chromium is installed once by the owner (`uv run playwright install chromium`). Extra script arguments are passed to this step (e.g. `--browser-channel chrome`). | B.11, D-01 |
+| D-96 | Hardening | **DEBUG off for daily use**: `.env.example` has `DJANGO_DEBUG=False`. With DEBUG off the vendored `/static/` files are served by a URL rule using `django.contrib.staticfiles.views.serve(insecure=True)` (open to anonymous users so the login page has its CSS) — acceptable for a local single-machine app with no build step and no extra package. Friendly `404.html` (site layout) and `500.html` (plain HTML, no context or database) never show code or settings. DEBUG=True still works for development. | B.10, D.2 |
+| D-97 | Hardening | `manage.py check --deploy` **HTTPS-only warnings do not apply**: W004 (HSTS), W008 (SSL redirect), W012 (`SESSION_COOKIE_SECURE`), W016 (`CSRF_COOKIE_SECURE`). The app is served over plain HTTP on `127.0.0.1` (or a trusted office network, D.2): secure-only cookies would never be sent, so nobody could log in, and HSTS would force browsers onto HTTPS for the host. They are documented, not silenced, so they show up again if the app ever moves to a server — then set them. Every other deploy check passes once `.env` has `DJANGO_DEBUG=False` and a long random secret key. | B.10, D.2 |
+| D-98 | Setup | **django-import-export removed** (`uv remove django-import-export`, also dropping `tablib` and `diff-match-patch`); nothing used it — the admin CSV import/export are our own audited views (D-92). Removed from CLAUDE.md, B.2 and the Phase 1 prompt. | B.2, C.2, D-92 |
+| D-99 | Scope | **Known limitations of version 1**: one Mac, SQLite and plain HTTP (not for internet exposure); no notifications or email, so no "forgot password" — HR resets passwords (D-91); no holiday calendar or delegated approvals; one company time zone for every deadline; payroll CSV in the app's own format; a changed expected weekly hours value has no per-week history (D-87). See D.5 for what comes next. | README, D.5 |
 
 ---
 
@@ -1058,7 +1259,7 @@ Claude Code reads this automatically at the start of every session.
 ## Stack (do not substitute without asking)
 Python 3.13 via uv; Django 5.2 LTS; two SQLite databases (default = db.sqlite3, payroll = payroll.sqlite3)
 with a database router for the payroll app; django-environ; argon2-cffi (Argon2 password hashing);
-django-axes; django-import-export; Faker; Django templates + Bootstrap 5 + HTMX + Chart.js
+django-axes; Faker; Django templates + Bootstrap 5 + HTMX + Chart.js
 (vendored in static/vendor, no JS build step); pytest, pytest-django, factory_boy, time-machine,
 pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for version 1.
 
@@ -1129,7 +1330,7 @@ any ❌ or ⚠️ items and how to fix them. Do not create the Django project ye
 ```
 Plan first, then scaffold the project in the current folder:
 - uv project pinned to Python 3.13; add django ">=5.2,<5.3", django-environ, argon2-cffi, django-axes,
-  django-import-export, faker; dev deps: pytest, pytest-django, factory-boy, time-machine, pytest-cov,
+  faker; dev deps: pytest, pytest-django, factory-boy, time-machine, pytest-cov,
   pytest-playwright, ruff.
 - Django project package "config"; apps: directory, timesheets, audit, payroll, analytics, each with
   a services/ package (D-04).
@@ -1372,7 +1573,7 @@ To let others on a trusted office network use it: add your Mac's IP to `ALLOWED_
 ## D.3 Backups & reset
 
 - **Backup:** `uv run python manage.py backup_db` saves timestamped copies of **both** `db.sqlite3` and `payroll.sqlite3` into `backups/`. Copy that folder somewhere safe.
-- **Restore:** stop the server, copy the backup files over `db.sqlite3` and `payroll.sqlite3` (always restore **both from the same time**), start the server, then run `uv run python manage.py sync_payroll`.
+- **Restore:** stop the server; pick **one timestamp** and copy `backups/db-<stamp>.sqlite3` over `db.sqlite3` and `backups/payroll-<stamp>.sqlite3` over `payroll.sqlite3` (always both from the same time); start the server, then run `uv run python manage.py sync_payroll` to repair any week approved after that backup. Keep the files you replaced until you have checked the result.
 - **Start over with demo data (destroys all data):** stop the server, rename both `.sqlite3` files (e.g. add `-old`), then:
   ```bash
   uv run python manage.py migrate
@@ -1392,7 +1593,8 @@ To let others on a trusted office network use it: add your Mac's IP to `ALLOWED_
 | Payroll page empty after approving | `uv run python manage.py sync_payroll` |
 | Port 8000 in use | `lsof -i :8000`, then `kill <PID>`; or `runserver 8001` |
 | Deadline looks an hour off | Check `COMPANY_TZ` in `.env`; run the daylight-saving tests (T-15) |
-| E2E tests fail with "browser not found" | `uv run playwright install chromium` |
+| E2E tests fail with "browser not found" / "Executable doesn't exist" | `uv run playwright install chromium` (once), or `bash scripts/test_all.sh --browser-channel chrome` to use Google Chrome |
+| A plain "Something went wrong" page | `DJANGO_DEBUG=False` hides details on purpose (D-96); read the Terminal running `runserver`, or set `DJANGO_DEBUG=True` in `.env` while investigating |
 | Git shows the wrong author | Home-folder repository check (A.3) and `git config --show-origin user.name` |
 | Claude Code uses API billing | Remove `ANTHROPIC_API_KEY` from `~/.zshrc`, open a new Terminal |
 | `claude: command not found` | Open a new Terminal or `source ~/.zshrc` |
