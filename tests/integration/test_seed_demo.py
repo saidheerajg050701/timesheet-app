@@ -9,6 +9,9 @@ from django.core.management.base import CommandError
 from audit.models import AuditLog
 from directory.models import Employee, Team, User
 from directory.services.demo import us_holidays
+from payroll.models import PayrollWeek
+from payroll.services.export import corrections
+from payroll.services.publish import out_of_sync
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
 from timesheets.services.validation import validate_entries
 
@@ -18,7 +21,18 @@ LAST_COMPLETED = date(2026, 9, 28)
 FIRST_WEEK = date(2026, 7, 20)  # 6 completed periods back (D-27)
 HISTORY = [FIRST_WEEK + timedelta(weeks=i) for i in range(13)]  # + week 1 of current period
 SIGNUP_CANDIDATES = ("qa1", "ops1", "ops2")
-MODELS = (Employee, Team, User, Project, Timesheet, TimeEntry, PeriodApproval, ChangeRequest)
+MODELS = (
+    Employee,
+    Team,
+    User,
+    Project,
+    Timesheet,
+    TimeEntry,
+    PeriodApproval,
+    ChangeRequest,
+    PayrollWeek,
+)
+pytestmark = pytest.mark.django_db(databases=["default", "payroll"])  # seed fills both (D-73)
 
 
 @pytest.fixture
@@ -94,6 +108,9 @@ def test_seed_builds_the_demo_company(seeded, demo_password):
     assert ChangeRequest.objects.filter(status=ChangeRequest.Status.OPEN).count() == 1
     assert ChangeRequest.objects.filter(status=ChangeRequest.Status.EDITED).count() == 1
 
+    # Payroll: every approved week has a live payroll record (B.7, D-73).
+    assert PayrollWeek.objects.exists() and out_of_sync() == (0, 0)
+
 
 def test_seed_refuses_to_run_twice(seeded):
     """T-42: a second seed_demo run refuses and leaves the data unchanged."""
@@ -144,7 +161,8 @@ def test_seed_audit_rows_name_the_right_actor(seeded):
     assert set(rows.exclude(system_actor="").values_list("system_actor", flat=True)) == {
         "seed_demo"
     }
-    assert not rows.filter(system_actor="seed_demo").exclude(action=AuditLog.Action.CREATE).exists()
+    seed_actions = {AuditLog.Action.CREATE, AuditLog.Action.PUBLISH, AuditLog.Action.SUPERSEDE}
+    assert not rows.filter(system_actor="seed_demo").exclude(action__in=seed_actions).exists()
     assert rows.filter(system_actor="seed_demo", entity_type="Employee").count() == 50
     assert rows.filter(system_actor="seed_demo", entity_type="DemoData").count() == 1
 
@@ -239,3 +257,40 @@ def test_seed_needs_a_strong_demo_password(settings, password, message):
     with pytest.raises(CommandError, match=message):
         call_command("seed_demo", stdout=StringIO())
     assert not Employee.objects.exists()
+
+
+def test_seed_fills_the_payroll_database(seeded):
+    """T-114: seed payroll: approved weeks live; older periods EXPORTED/PAID; one correction."""
+    assert out_of_sync() == (0, 0)
+    by_period = defaultdict(Counter)
+    for period, status in PayrollWeek.objects.values_list("period_start", "status"):
+        by_period[period][status] += 1
+    periods = sorted(by_period)  # Jul 20, Aug 3, Aug 17, Aug 31, Sep 14 (approved periods)
+    assert len(periods) == 5
+    for period in periods[:3]:  # oldest: paid (plus the correction in the first one)
+        assert set(by_period[period]) <= {"PAID", "SUPERSEDED", "CURRENT"}
+        assert by_period[period]["PAID"] > 0
+    assert set(by_period[periods[3]]) == {"EXPORTED"}
+    assert set(by_period[periods[4]]) == {"CURRENT"}
+    batches = sorted(
+        set(PayrollWeek.objects.exclude(export_batch="").values_list("export_batch", flat=True))
+    )
+    assert batches == ["EXP-0001", "EXP-0002", "EXP-0003", "EXP-0004"]
+
+    (correction,) = corrections()
+    assert correction.old.status == "SUPERSEDED" and correction.old.paid_at is not None
+    assert correction.new.version == 2 and correction.new.status == "CURRENT"
+    assert correction.difference == 60
+    clerk = Employee.objects.get(email="payroll@yourcompany.com")
+    assert set(
+        AuditLog.objects.filter(action__in=["EXPORT", "PAY"]).values_list("actor", flat=True)
+    ) == {clerk.pk}
+    assert AuditLog.objects.filter(action="PUBLISH").count() == PayrollWeek.objects.count()
+
+
+def test_seed_still_refuses_when_payroll_has_data(seeded):
+    """Helper check: the second run refuses before touching either database (T-42 with payroll)."""
+    before = PayrollWeek.objects.count()
+    with pytest.raises(CommandError, match="already has data"):
+        call_command("seed_demo", stdout=StringIO())
+    assert PayrollWeek.objects.count() == before

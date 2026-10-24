@@ -79,3 +79,9 @@ def iso_day(value):
 def is_timed(category):
     """Work and Break rows: hours come from start and end (D-37)."""
     return category in TimeEntry.TIMED
+
+
+@register.filter
+def hours2(minutes):
+    """Minutes as hours with 2 decimals: 450 → "7.50" (payroll, D-64)."""
+    return f"{int(minutes or 0) / 60:.2f}"

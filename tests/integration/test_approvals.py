@@ -7,7 +7,7 @@ from django.urls import reverse
 
 from audit.models import AuditLog
 from directory.models import Employee
-from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory
+from tests.factories import EmployeeFactory, TimeEntryFactory
 from tests.forms import form, work
 from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 from timesheets.services.approvals import period_rows
@@ -24,28 +24,6 @@ PERIOD = date(2026, 9, 28)  # most recent completed period: Sep 28 + Oct 5
 WEEK1, WEEK2 = PERIOD, PERIOD + timedelta(weeks=1)
 CURRENT = date(2026, 10, 12)  # current period: Oct 12 + Oct 19
 HOOK = "timesheets.services.approvals.publish_payroll_period"
-ON_TIME = datetime(2026, 10, 2, 16, 0, tzinfo=TZ)
-
-
-@pytest.fixture
-def make_week(project, fixed_now):
-    """A week with full 09:00–17:00 days Mon–Fri (40 h, no flags) unless told otherwise."""
-
-    def make(employee, week, status="SUBMITTED", days=5, end=time(17), **extra):
-        extra.setdefault("submitted_at", ON_TIME if status != "DRAFT" else None)
-        sheet = TimesheetFactory(employee=employee, week_start=week, status=status, **extra)
-        minutes = (end.hour - 9) * 60
-        for offset in range(days):
-            TimeEntryFactory(
-                timesheet=sheet,
-                work_date=week + timedelta(days=offset),
-                project=project,
-                end_time=end,
-                minutes=minutes,
-            )
-        return sheet
-
-    return make
 
 
 def detail_url(employee, period=PERIOD):

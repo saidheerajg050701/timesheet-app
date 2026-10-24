@@ -33,6 +33,7 @@ def test_employee_is_refused_manager_and_payroll_pages(org, login_as):
         assert status_of(client, name) == 200, name
 
 
+@pytest.mark.django_db(databases=["default", "payroll"])  # /payroll/ reads payroll
 def test_payroll_flag_adds_only_payroll_pages(org, login_as):
     """T-62: a payroll user with no reports reaches /payroll/ and nothing else extra (D-12)."""
     client = login_as(org.payroll)
@@ -44,6 +45,7 @@ def test_payroll_flag_adds_only_payroll_pages(org, login_as):
         assert not can_view(org.payroll, other)
 
 
+@pytest.mark.django_db(databases=["default", "payroll"])  # /payroll/ reads payroll
 def test_payroll_user_who_manages_gets_manager_rights_for_own_tree(org, login_as):
     """T-63: a payroll user who is also a manager gets manager rights for their own tree only."""
     client = login_as(org.finance)

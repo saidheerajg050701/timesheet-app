@@ -147,7 +147,7 @@ What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew
 | 13 | Approver | **Direct manager**; higher managers view only. Employees with **no manager** are approved by an Admin. **Nobody ever approves their own timesheet** (D-11) | **Decided** |
 | 14 | Analytics visibility | Roles add up (D-12). Everyone: own. Manager: + whole reporting tree. Admin: everyone. Payroll flag: adds payroll pages only | **Decided** |
 | 15 | Time categories | **Work** (start/end times): Project work, Meetings, Training, Other. **Break time** (start/end times, unpaid, D-39). **Leave** (hours only): PTO, Sick, Holiday (D-37, D-40) | Default |
-| 16 | Overtime rule (payroll) | Worked hours (Project, Meetings, Training, Other) above the employee's expected weekly hours = overtime. PTO, Sick and Holiday are paid separately and never count as overtime. **Break time is unpaid and never counts as regular hours or overtime** (D-45) | Default — confirm with payroll; real overtime rules depend on law and contracts |
+| 16 | Overtime rule (payroll) | Per week: worked minutes (Project work, Meetings, Training, Other) up to that week's expected minutes (prorated for partial weeks, D-19) are **regular**; the rest is **overtime**. PTO, Sick and Holiday are separate totals and never overtime. **Break is unpaid and never counts anywhere.** Stored as minutes, shown as hours with 2 decimals (D-64, D-45) | Default — confirm with payroll; real overtime rules depend on law and contracts |
 | 17 | Hours granularity | 15-minute steps; max 24 h/day; stored as whole minutes | Default |
 | 18 | Expected hours | 40 h/week, can differ per employee. Partial weeks (hire / end date) are prorated by active weekdays (D-19) | Default |
 | 19 | Email verification at sign-up | Off (directory check only) | Default |
@@ -472,7 +472,12 @@ class PayrollWeek(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["employee_code", "week_start", "version"],
-                                               name="one_version_per_week")]
+                                               name="one_version_per_week"),
+                       models.UniqueConstraint(fields=["employee_code", "week_start"],      # D-66
+                                               condition=~Q(status="SUPERSEDED"),
+                                               name="one_live_record_per_week")]
+    # save() refuses changes to frozen fields and backwards moves; delete(), QuerySet.update()
+    # and QuerySet.delete() always raise AppendOnlyError (D-15, D-67).
 ```
 
 How the two databases work together:
@@ -502,7 +507,7 @@ Design notes:
 | Projects | 8 (one inactive) |
 | Timesheet history | **12 weeks** (period-aligned, D-27) for every employee with an account: mostly on time, some late, a few missed, one rejected period, one open change request. Work rows have realistic start/end times (first start 08:00–09:30), a reason, and a 30–60 min **lunch Break**; leave days are hours only, holidays named ("Public holiday: Labor Day") (D-44) |
 | Approved periods | All completed periods whose two weeks are both SUBMITTED are approved, except the most recent period (left **pending** to test approvals). Periods containing a missed (LOCKED) week stay **pending** (D-06) |
-| Payroll database | Pre-filled with every approved week (some marked EXPORTED and PAID for older periods, one SUPERSEDED correction) |
+| Payroll database | Pre-filled with every approved week, after the main data commits: the oldest approved periods EXPORTED and PAID (one batch per period, by payroll@), the next one EXPORTED, the newest CURRENT, plus one SUPERSEDED correction (v1 one hour short, v2 CURRENT) (D-73) |
 | Audit log | Entries for the seeded approvals, rejection and manager edit. Rows the seed itself creates use `system_actor="seed_demo"`; seeded human decisions name the manager as `actor` (D-14) |
 
 ### Core employees (`data/employees_core.csv`)
@@ -598,8 +603,8 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `timesheets/services/approvals.py` |
 | 11 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
 | 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `payroll/services/hours.py` |
-| 13 | `publish_period(approval)`, `supersede_week(...)` | `payroll/services/publish.py` |
-| 14 | `export_period(...)`, `mark_paid(...)` — forward-only status changes (D-15) | `payroll/services/export.py` |
+| 13 | `publish_period(approval, …)` (idempotent, D-66), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` repairs (`payroll/services/sync.py`) | `payroll/services/publish.py` |
+| 14 | `export_period(...)` (whole period, batch `EXP-0001`…, D-68), `batch_csv(...)` (spreadsheet-safe), `mark_paid(...)` (per batch, D-69), `corrections()` (D-70) — forward-only status changes (D-15) | `payroll/services/export.py` |
 | 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks) | `analytics/services/metrics.py` |
 | 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
 
@@ -648,6 +653,7 @@ tests/
     test_change_requests.py
     test_approvals.py
     test_payroll_publish.py
+    test_payroll_pages.py  # /payroll/, export CSV, corrections, 403s (T-37–T-39, T-110, T-111)
     test_analytics.py
     test_admin.py
     test_import_employees.py
@@ -756,7 +762,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-91 | Timesheet | Hours column on the week page and Edit directly | Calculated for every work/Break row from start/end (e.g. 08:30–12:00 → 3.50) on page load and after an error; read-only for timed rows, typed for leave |
 | T-92 | Approvals | Unlock a LOCKED week from the approval page (with and without an open employee request; missed week with no timesheet) | REOPENED per D-21; manager-authored UNLOCKED ChangeRequest or the open request resolved; UNLOCK audit (D-06, D-59) |
 | T-93 | Approvals | Reject with a comment, employee resubmits | Comment shown on the employee's week page; after resubmission the period is PENDING again (audited) and approvable once both weeks are submitted (D-07, D-60) |
-| T-94 | Approvals | Approve is one transaction with the payroll hook | Hook called once with the approval; if it fails, nothing changes (PeriodApproval, weeks, audit) (D-10, D-61) |
+| T-94 | Approvals | Approve calls the payroll hook inside its transaction | Hook called once with the approval; if the hook itself fails, nothing changes (PeriodApproval, weeks, audit). A failure of the later payroll *write* does not undo the approval — see T-107 (D-10, D-61, D-65) |
 | T-95 | Approvals | Who sees and approves which rows | Manager: direct reports only (not indirect, never self); HR admin: the CEO; CEO never sees own row; approving self or a non-direct report → 403 (D-11, D-54) |
 | T-96 | Approvals | Bulk approve | Only clean rows have a checkbox; posted ineligible rows are skipped with a reason; each eligible employee approved in its own transaction; summary of approved and skipped (D-63) |
 | T-97 | Approvals | Pay-period dates | 14-day periods from the anchor; default = most recent completed period; any date snaps to its period start; future periods refused; Previous/Next links (D-54) |
@@ -765,6 +771,18 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-100 | Approvals | Period with one week outside employment (hired in week 2, or left in week 1) | Approvable when the employed week is SUBMITTED; the other week shows "not employed" (D-56) |
 | T-101 | Approvals | Open change request in the period | Approve/Reject blocked with the reason; row not bulk-eligible (D-58) |
 | T-102 | Timesheet | Employee week page approval status | "Approved by … on …", the rejection comment, or "Waiting for approval by …" |
+| T-103 | Payroll | Overtime rule: partial week (prorated expected), Break rows, PTO/Sick/Holiday, worked below expected | Regular = min(worked, expected), overtime = the rest; leave separate; Break never counted; hours shown with 2 decimals (D-64) |
+| T-104 | Payroll | Change a frozen field; move status backwards; `update()` / `delete()` / `bulk_update()` | All refused with AppendOnlyError; forward moves work and set each lifecycle field once (D-15, D-67) |
+| T-105 | Payroll | Deactivated employee's approved period | Published (prorated expected), exported and paid like anyone else's (D-19, D-71) |
+| T-106 | Payroll | `publish_period` and `sync_payroll` run repeatedly | No duplicates; sync publishes missing periods and supersedes stale records; one SYNC audit row per run with system_actor `sync_payroll` (D-14, D-66) |
+| T-107 | Payroll | Payroll write fails after the approval commits | Approval stays APPROVED; no partial payroll rows; error logged; out-of-sync banner; `sync_payroll` then publishes (D-65) |
+| T-108 | Payroll | Main transaction rolls back after the hook | Nothing is written to payroll (D-65) |
+| T-109 | Payroll | Supersede fails after an edit commits | Stale record remains until `sync_payroll` supersedes it; re-approval writes the next version; a live record from an older decision is superseded on publish (D-65, D-66) |
+| T-110 | Payroll | CSV cells starting with `=`, `+`, `-`, `@` (or tab/CR) | Escaped with a leading `'`; other cells unchanged; batch numbers sequential (D-68) |
+| T-111 | Payroll | Who can open payroll pages | Payroll users and admins: 200; employee, manager, director: 403 on every payroll URL; a payroll user still gets 403 on others' timesheet details (D-12) |
+| T-112 | Payroll | Mark as paid | EXPORTED → PAID for that batch only; CURRENT and later records untouched; PAY audit; repeating does nothing (D-69) |
+| T-113 | Payroll | `backup_db` | Timestamped copies of both databases (same timestamp) that open with their tables (D-72) |
+| T-114 | Seed | Payroll part of `seed_demo` | Every approved week has a live record; older periods EXPORTED/PAID with batches EXP-0001…; exactly one SUPERSEDED correction with its v2; EXPORT/PAY by payroll@ (D-73) |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -868,7 +886,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-73 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -932,9 +950,19 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-58 | Approvals | An open change request on either week blocks Approve and Reject (and bulk approve skips the row) until it is handled. | B.4 FR-7/FR-9 |
 | D-59 | Approvals | Unlock on the approvals page reuses Phase 6 `approvals.unlock_week`: it resolves the employee's open request on that week if there is one, otherwise records a manager-authored ChangeRequest (requester = manager, UNLOCKED); a missed week with no timesheet is created as LOCKED first. Audited. | B.4 FR-7, D-06 |
 | D-60 | Approvals | Resubmitting a week of a REJECTED period sets the PeriodApproval back to PENDING (`approvals.period_resubmitted`, audited with the employee as actor). | B.4 FR-7, B.5 |
-| D-61 | Payroll | Payroll hook `approvals.publish_payroll_period(approval, actor, at)` runs inside the approve transaction; it does nothing until Phase 8 writes the PayrollWeek records. | B.9 #13, C.4 P8 |
+| D-61 | Payroll | Payroll hook `approvals.publish_payroll_period(approval, actor, at)` is called inside the approve transaction; since Phase 8 it only registers the payroll write to run after the main commit (see D-65). | B.9 #13, C.4 P8 |
 | D-62 | Data | One PeriodApproval per employee per period: unique constraint `one_approval_per_period` (migration `timesheets/0004`). | B.6 |
 | D-63 | Approvals | Bulk approve: only rows with the required weeks SUBMITTED, no flags, no open request and not yet decided can be ticked; the server re-checks every posted row, approves each employee in its own transaction and shows what was approved and what was skipped with reasons. | B.4 FR-7 |
+| D-64 | Payroll | **Overtime rule**, per week: worked = Project work + Meetings + Training + Other; regular = min(worked, that week's prorated expected minutes, D-19); overtime = worked − regular; PTO, Sick and Holiday are separate totals, never overtime; Break never counts; total = regular + overtime + PTO + Sick + Holiday. Stored in minutes, shown as hours with 2 decimals. | B.1 row 16, B.9 #12 |
+| D-65 | Payroll | **Two databases, fixed order.** The main DB decides first (PeriodApproval is the source of truth). The timesheet hooks only register `transaction.on_commit` callbacks; after the main commit, `publish_period` / `supersede_week` run in their own payroll transaction, then write PUBLISH / SUPERSEDE audit rows. A main rollback never reaches payroll; a payroll failure after the commit leaves the approval in place, rolls back the payroll write completely, is logged, shows an out-of-sync banner on `/payroll/`, and is repaired by `manage.py sync_payroll` (publish every APPROVED period, supersede live records of weeks no longer approved, one SYNC audit row). | B.4 FR-11, B.6, C.4 P8 |
+| D-66 | Payroll | A payroll record belongs to one approval decision (`approved_at` = `PeriodApproval.decided_at`): publishing the same decision again is a no-op; a live record from an older decision is superseded and the next version written. Partial unique constraint `one_live_record_per_week` (at most one non-SUPERSEDED record per employee and week). | B.6, B.9 #13 |
+| D-67 | Payroll | Append-only (D-15) enforced in code: `PayrollWeek.save()` refuses changes to frozen fields and any move other than CURRENT→EXPORTED→PAID or →SUPERSEDED, each lifecycle field set once by its own move; `delete()`, `QuerySet.update()`, `bulk_update()` and `QuerySet.delete()` raise AppendOnlyError; the admin is view-only. | B.6, B.10 |
+| D-68 | Payroll | Export CSV covers **all CURRENT records of the selected period** (filters only change the view) as one batch numbered `EXP-0001`, `EXP-0002`, …; a batch can be downloaded again without changing anything; every cell starting with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` so Excel/Numbers never run it as a formula. | B.4 FR-11 |
+| D-69 | Payroll | Mark as paid works per batch: its EXPORTED records become PAID (`paid_at`); anything else in the batch (e.g. superseded) is untouched. | B.4 FR-11 |
+| D-70 | Payroll | Corrections = SUPERSEDED records that had been exported or paid, shown with their replacement version (or "waiting for re-approval") and the difference in hours. | B.4 FR-11 |
+| D-71 | Payroll | The snapshot's `expected_weekly_minutes` is that week's prorated expected minutes (D-19). Deactivated employees' approved weeks are published, exported and paid like anyone else's. | B.6, B.4 FR-11 |
+| D-72 | Ops | `backup_db` copies both databases with SQLite's online backup API through a separate read-only connection (safe while the app runs) to `backups/db-YYYYmmdd-HHMMSS.sqlite3` and `backups/payroll-…` with the same timestamp; `--dir` chooses another folder. | D.2, D.3 |
+| D-73 | Data | `seed_demo` fills payroll after the main seed commits (publish every approved period; oldest periods EXPORTED and PAID, next EXPORTED, newest CURRENT; one correction). If the payroll part fails, the main data stays and `sync_payroll` completes it; seed_demo still refuses when data exists. | B.7 |
 
 ---
 
@@ -1270,7 +1298,8 @@ Use the demo logins from B.7 (password = `DEMO_PASSWORD`).
 cd ~/Documents/timesheet-app
 uv run python manage.py runserver          # open http://127.0.0.1:8000
 bash scripts/test_all.sh                   # all tests
-uv run python manage.py backup_db          # back up both databases into backups/
+uv run python manage.py backup_db          # back up both databases into backups/ (safe while running)
+uv run python manage.py sync_payroll       # payroll out of sync? publish missing / supersede stale records
 ```
 After new migrations:
 ```bash

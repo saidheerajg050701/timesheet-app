@@ -6,6 +6,7 @@ dates are relative to `now`. History covers the 6 completed pay periods before t
 """
 
 import csv
+import logging
 import random
 import re
 from collections import Counter, defaultdict
@@ -25,6 +26,7 @@ from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry,
 from timesheets.services.calendar import deadline_for, pay_period_for, week_start_for
 
 SYSTEM_ACTOR = "seed_demo"
+logger = logging.getLogger(__name__)
 SEED = 2026
 CORE_CSV = settings.BASE_DIR / "data" / "employees_core.csv"
 
@@ -37,6 +39,7 @@ DEV1, DEV2, HR, OPS_MANAGER, FINANCE_MANAGER = (
     "EMP-0012",
 )
 SIGNUP_CANDIDATES = {"EMP-0006", "EMP-0009", "EMP-0010"}  # qa1, ops1, ops2: no account (B.7)
+PAYROLL_CLERK = "EMP-0011"  # payroll@: exports and pays batches in the demo history
 
 NORMAL_PERIODS, LARGE_PERIODS = 6, 26
 LARGE_FACTOR = 14  # staff per team multiplier for --large (~500 employees)
@@ -131,7 +134,75 @@ def seed_demo(*, now, password, large=False):
             "To start over, see docs/BUILD_GUIDE.md D.3."
         )
     with transaction.atomic():
-        return _Seeder(now, password, large).run()
+        summary = _Seeder(now, password, large).run()
+    # The payroll database is a separate file: it is filled only after the main seed has
+    # committed (D-65, D-73). If this part fails, sync_payroll completes it later.
+    try:
+        summary["payroll"] = seed_payroll(now)
+    except Exception:
+        logger.exception("seed_demo: payroll part failed")
+        summary["payroll"] = "not written — run `uv run python manage.py sync_payroll`"
+    return summary
+
+
+def seed_payroll(now):
+    """Publish every approved period; older periods EXPORTED and PAID; one correction (B.7)."""
+    from payroll.models import PayrollWeek
+    from payroll.services.export import export_period, mark_paid
+    from payroll.services.publish import PublishResult, audit_result, publish_period, snapshot
+
+    tz = ZoneInfo(settings.COMPANY_TZ)
+    approvals = list(
+        PeriodApproval.objects.filter(status=PeriodApproval.Status.APPROVED)
+        .select_related("employee", "approver")
+        .order_by("period_start", "employee__employee_code")
+    )
+    periods = sorted({a.period_start for a in approvals})
+    paid, exported_only = periods[:-2], periods[-2:-1]
+    correction = next((a for a in approvals if paid and a.period_start == paid[0]), None)
+    clerk = Employee.objects.filter(employee_code=PAYROLL_CLERK).first()
+
+    for approval in approvals:
+        if approval is not correction:
+            publish_period(approval, actor=approval.approver, at=approval.decided_at)
+            continue
+        # The correction (B.7): week 1 was first published with an hour less, from an earlier
+        # decision; it is exported and paid with its period, then superseded below.
+        sheets = Timesheet.objects.filter(
+            employee=approval.employee,
+            week_start__in=(approval.period_start, approval.period_start + timedelta(weeks=1)),
+        ).order_by("week_start")
+        first = []
+        for number, sheet in enumerate(sheets, start=1):
+            fields = snapshot(approval, sheet)
+            if number == 1:
+                fields["regular_minutes"] -= 60
+                fields["total_minutes"] -= 60
+                fields["approved_at"] = approval.decided_at - timedelta(days=2)
+            first.append(PayrollWeek.objects.create(**fields, version=1))
+        audit_result(
+            PublishResult(created=first), actor=approval.approver, at=fields["approved_at"]
+        )
+
+    batches = {"exported": 0, "paid": 0}
+    for period in paid + exported_only:
+        exported_at = datetime.combine(period + timedelta(days=18), time(10), tzinfo=tz)
+        batch = export_period(period, actor=clerk, at=exported_at)
+        batches["exported"] += 1
+        if period in paid:
+            mark_paid(batch, actor=clerk, at=exported_at + timedelta(days=7))
+            batches["paid"] += 1
+    if correction:
+        fixed_at = datetime.combine(
+            correction.period_start + timedelta(days=28), time(10), tzinfo=tz
+        )
+        publish_period(correction, system_actor=SYSTEM_ACTOR, at=min(fixed_at, now))
+    return {
+        "records": PayrollWeek.objects.count(),
+        "export_batches": batches["exported"],
+        "paid_batches": batches["paid"],
+        "corrections": PayrollWeek.objects.filter(status=PayrollWeek.Status.SUPERSEDED).count(),
+    }
 
 
 def us_holidays(year):

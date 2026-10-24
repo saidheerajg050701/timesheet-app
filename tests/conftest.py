@@ -1,6 +1,6 @@
 """Shared fixtures (B.11): fixed clock and directory people. More arrive in later phases."""
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
@@ -13,6 +13,7 @@ from tests.factories import (
     EmployeeFactory,
     ProjectFactory,
     TeamFactory,
+    TimeEntryFactory,
     TimesheetFactory,
     UserFactory,
 )
@@ -119,3 +120,25 @@ def project(db):
 def draft_sheet_week_of_oct_19(db):
     """A DRAFT timesheet for the week of Monday 2026-10-19 (deadline Sat 24 Oct 12:00)."""
     return TimesheetFactory(week_start=date(2026, 10, 19))
+
+
+@pytest.fixture
+def make_week(project, fixed_now):
+    """A week with full 09:00–17:00 days Mon–Fri (40 h, no flags) unless told otherwise."""
+
+    def make(employee, week, status="SUBMITTED", days=5, end=time(17), **extra):
+        on_time = datetime(2026, 10, 2, 16, 0, tzinfo=ZoneInfo("America/Chicago"))
+        extra.setdefault("submitted_at", on_time if status != "DRAFT" else None)
+        sheet = TimesheetFactory(employee=employee, week_start=week, status=status, **extra)
+        minutes = (end.hour - 9) * 60
+        for offset in range(days):
+            TimeEntryFactory(
+                timesheet=sheet,
+                work_date=week + timedelta(days=offset),
+                project=project,
+                end_time=end,
+                minutes=minutes,
+            )
+        return sheet
+
+    return make

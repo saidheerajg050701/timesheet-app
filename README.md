@@ -55,6 +55,19 @@ hours worked (Break never counts), leave, and Late / Overtime / Missing days fla
 can be approved or rejected (with a comment) once its weeks are submitted; a locked week has an
 Unlock button. Clean rows can be bulk approved. Nobody approves their own timesheet.
 
+## Payroll
+Approved weeks are copied into a separate database, `payroll.sqlite3`, right after the
+approval is saved: regular hours up to the expected hours, overtime above, PTO / Sick /
+Holiday separately (Break is unpaid and never counted). Payroll staff and admins use
+**Payroll** (`/payroll/`) to filter, see totals per employee, **Export CSV** (one numbered
+batch per period, safe to open in Excel/Numbers) and **Mark as paid**; **Corrections** lists
+weeks that changed after export. Records are append-only: a changed week is superseded and a
+new version is written after re-approval. If the page says payroll is out of sync, run:
+```bash
+uv run python manage.py sync_payroll       # safe to repeat
+```
+Back up both databases (safe while the app runs): `uv run python manage.py backup_db`.
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history

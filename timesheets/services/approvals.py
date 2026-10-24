@@ -32,11 +32,13 @@ from timesheets.services.summary import WeekSummary, summarize
 def supersede_payroll_week(timesheet, *, actor, at):
     """Payroll hook (D-53): called for every week that leaves APPROVED.
 
-    Phase 8 replaces this body with payroll/services/publish.py → supersede_week(...), which
-    marks the week's CURRENT PayrollWeek as SUPERSEDED (D-15). Until then there are no
-    payroll records, so there is nothing to do.
+    Registers payroll/services/publish.py → supersede_week to run after this transaction
+    commits, in its own payroll transaction (D-65). Never writes to payroll while the main
+    transaction can still roll back.
     """
-    return None
+    from payroll.services.publish import supersede_after_commit  # payroll depends on us
+
+    supersede_after_commit(timesheet, actor=actor, at=at)
 
 
 def reset_approval(employee, period_start, *, actor, change_request=None, at):
@@ -111,13 +113,15 @@ def unlock_week(timesheet, *, actor, change_request=None, at):
 
 
 def publish_payroll_period(approval, *, actor, at):
-    """Payroll hook (D-61): called inside the approve transaction, once per approved period.
+    """Payroll hook (D-61, D-65): called inside the approve transaction, once per period.
 
-    Phase 8 replaces this body with payroll/services/publish.py → publish_period(approval),
-    which writes one PayrollWeek per approved week into the payroll database. Until then
-    nothing is written anywhere.
+    Registers payroll/services/publish.py → publish_period to run after the approval has
+    committed, in its own payroll transaction. If that fails, the approval stands and
+    `manage.py sync_payroll` writes the missing records.
     """
-    return None
+    from payroll.services.publish import publish_after_commit  # payroll depends on us
+
+    publish_after_commit(approval, actor=actor, at=at)
 
 
 @dataclass
