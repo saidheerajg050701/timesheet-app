@@ -4,16 +4,13 @@
 {% block title %}{{ target.first_name }} {{ target.last_name }}, week of {{ state.week_start|date:"M j" }} — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+<header class="page-header">
   <div>
-    <h1 class="h3 mb-1">{{ target.first_name }} {{ target.last_name }} · week of {{ state.week_start|date:"M j, Y" }}</h1>
-    <span class="badge {{ state.status|status_badge }}" id="week-status">{{ state.status|status_label }}</span>
-    {% if state.timesheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
-    {% if state.is_missed %}<span class="badge text-bg-danger">Missed</span>{% endif %}
-    <span class="badge text-bg-light border">Read-only</span>
+    <h1 class="h3 mb-0">{{ target.first_name }} {{ target.last_name }} · week of {{ state.week_start|date:"M j, Y" }}</h1>
+    <p class="page-subtitle">{% include "includes/week_badges.html" with state=state badge_id="week-status" only %} {% include "includes/status_badge.html" with status="READ_ONLY" only %}</p>
   </div>
-  <a class="btn btn-sm btn-outline-secondary" href="{% url 'team_member' target.employee_code %}">&larr; {{ target.first_name }}'s overview</a>
-</div>
+  <div class="page-actions"><a class="btn btn-sm btn-outline-secondary" href="{% url 'team_member' target.employee_code %}">&larr; {{ target.first_name }}'s overview</a></div>
+</header>
 
 <div class="table-responsive">
   <table class="table table-sm align-middle bg-body" id="entries">

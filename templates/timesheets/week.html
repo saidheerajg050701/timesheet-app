@@ -4,19 +4,17 @@
 {% block title %}Week of {{ state.week_start|date:"M j, Y" }} — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+<header class="page-header">
   <div>
-    <h1 class="h3 mb-1">Week of {{ state.week_start|date:"l, M j, Y" }}</h1>
-    <span class="badge {{ state.status|status_badge }}" id="week-status">{{ status_label }}</span>
-    {% if sheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
-    {% if state.is_missed %}<span class="badge text-bg-danger">Missed</span>{% endif %}
+    <h1 class="h3 mb-0">Week of {{ state.week_start|date:"l, M j, Y" }}</h1>
+    <p class="page-subtitle">{% include "includes/week_badges.html" with state=state label=status_label badge_id="week-status" only %}</p>
   </div>
-  <nav aria-label="Weeks" class="btn-group">
+  <nav aria-label="Weeks" class="btn-group page-actions">
     <a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheet_week' previous_week %}">&larr; Previous</a>
     <a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheets' %}">All weeks</a>
     {% if next_week %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'timesheet_week' next_week %}">Next &rarr;</a>{% endif %}
   </nav>
-</div>
+</header>
 
 <div class="alert {% if open_until %}alert-info{% elif state.status == 'LOCKED' %}alert-danger{% else %}alert-secondary{% endif %}" id="deadline" role="status">
   {% if open_until %}

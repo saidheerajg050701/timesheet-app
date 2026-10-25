@@ -3,10 +3,15 @@
 
 {% block title %}Approvals — Timesheets{% endblock %}
 
+{% block main_class %}app-main-wide{% endblock %}
+
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-  <h1 class="h3 mb-0">Approvals</h1>
-  <form method="get" class="d-flex align-items-center gap-2" id="period-picker">
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Approvals</h1>
+    <p class="page-subtitle">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Hours worked never include Break time.</p>
+  </div>
+  <form method="get" class="page-actions" id="period-picker">
     <a class="btn btn-outline-secondary btn-sm" href="?period={{ previous|date:'Y-m-d' }}" id="previous-period">&larr; Previous</a>
     <label for="id_period" class="visually-hidden">Pay period</label>
     <select name="period" id="id_period" class="form-select form-select-sm" onchange="this.form.submit()">
@@ -17,13 +22,12 @@
     </select>
     {% if next %}<a class="btn btn-outline-secondary btn-sm" href="?period={{ next|date:'Y-m-d' }}" id="next-period">Next &rarr;</a>{% endif %}
   </form>
-</div>
-<p class="text-body-secondary">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Hours worked never include Break time.</p>
+</header>
 
 <form method="post" action="{% url 'approval_bulk' %}" id="bulk-form">
   {% csrf_token %}
   <input type="hidden" name="period" value="{{ period|date:'Y-m-d' }}">
-  <div class="table-responsive">
+  <div class="table-responsive table-scroll">
     <table class="table align-middle bg-body" id="approval-rows">
       <thead>
         <tr>
@@ -44,16 +48,14 @@
             <td>{% if row.can_bulk %}<input type="checkbox" class="form-check-input" name="employee" value="{{ row.employee.employee_code }}" aria-label="Select {{ row.employee.first_name }} {{ row.employee.last_name }}">{% endif %}</td>
             <td>{{ row.employee.first_name }} {{ row.employee.last_name }}<br><small class="text-body-secondary">{{ row.employee.employee_code }}</small></td>
             {% for week in row.weeks %}
-              <td><span class="badge {{ week.state.status|status_badge }}">{{ week.state.status|status_label }}</span>{% if week.open_request %} <span class="badge text-bg-warning">Change requested</span>{% endif %}</td>
+              <td><span class="badges">{% include "includes/status_badge.html" with status=week.state.status only %}{% if week.open_request %} {% include "includes/status_badge.html" with status="CHANGE_REQUESTED" only %}{% endif %}</span></td>
             {% endfor %}
             <td class="text-end">{{ row.worked|hm }}</td>
             <td class="text-end">{{ row.leave|hm }}</td>
             <td>
-              {% if row.flags.late %}<span class="badge text-bg-warning">Late</span>{% endif %}
-              {% if row.flags.overtime %}<span class="badge text-bg-info">Overtime</span>{% endif %}
-              {% if row.flags.missing_days %}<span class="badge text-bg-danger">Missing {{ row.flags.missing_days }} day{{ row.flags.missing_days|pluralize }}</span>{% endif %}
+              <span class="badges">{% include "timesheets/_flags.html" with flags=row.flags only %}</span>
             </td>
-            <td><span class="badge {% if row.status == 'APPROVED' %}text-bg-success{% elif row.status == 'REJECTED' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ row.status|title }}</span></td>
+            <td>{% include "includes/status_badge.html" with status=row.status only %}</td>
             <td><a class="btn btn-sm btn-outline-primary" href="{% url 'approval_detail' row.period_start row.employee.employee_code %}">Open</a></td>
           </tr>
         {% empty %}

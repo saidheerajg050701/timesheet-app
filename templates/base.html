@@ -1,16 +1,17 @@
-{% load static %}<!doctype html>
+{% load static timesheet_tags %}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Timesheets{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'vendor/bootstrap/bootstrap.min.css' %}">
+  <link rel="stylesheet" href="{% static 'css/theme.css' %}">
   {% block head %}{% endblock %}
 </head>
-<body class="bg-body-tertiary" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
-  <nav class="navbar navbar-expand-lg bg-dark" data-bs-theme="dark">
-    <div class="container">
-      <a class="navbar-brand" href="{% url 'home' %}">Timesheets</a>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+  <nav class="navbar navbar-expand-lg app-nav">
+    <div class="container-xl">
+      <a class="navbar-brand app-brand" href="{% url 'home' %}"><span class="app-logo" aria-hidden="true">T</span>Timesheets</a>
       {% block navbar %}
       {% if me %}
         {% with current=request.resolver_match.url_name %}
@@ -19,38 +20,41 @@
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="main-menu">
-          <ul class="navbar-nav me-auto" aria-label="Main menu">
-            <li class="nav-item"><a class="nav-link{% if current == 'home' %} active{% endif %}" href="{% url 'home' %}">Dashboard</a></li>
-            <li class="nav-item"><a class="nav-link{% if current == 'timesheets' %} active{% endif %}" href="{% url 'timesheets' %}">Timesheets</a></li>
-            <li class="nav-item"><a class="nav-link{% if current == 'requests' %} active{% endif %}" href="{% url 'requests' %}">Requests</a></li>
-            {% if menu.team %}<li class="nav-item"><a class="nav-link{% if current == 'team' or current == 'team_member' %} active{% endif %}" href="{% url 'team' %}">Team</a></li>{% endif %}
-            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'approvals' %} active{% endif %}" href="{% url 'approvals' %}">Approvals</a></li>{% endif %}
-            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'request_inbox' or current == 'request_detail' or current == 'request_edit' %} active{% endif %}" href="{% url 'request_inbox' %}" id="menu-change-requests">Change requests{% if menu.open_requests %} <span class="badge text-bg-warning" title="Open change requests">{{ menu.open_requests }}</span>{% endif %}</a></li>{% endif %}
-            {% if menu.payroll %}<li class="nav-item"><a class="nav-link{% if current == 'payroll' %} active{% endif %}" href="{% url 'payroll' %}">Payroll</a></li>{% endif %}
+          <ul class="navbar-nav me-auto app-menu" aria-label="Main menu">
+            <li class="nav-item"><a class="nav-link{% if current == 'home' %} active" aria-current="page{% endif %}" href="{% url 'home' %}">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link{% if current == 'timesheets' or current == 'timesheet_week' %} active" aria-current="page{% endif %}" href="{% url 'timesheets' %}">Timesheets</a></li>
+            <li class="nav-item"><a class="nav-link{% if current == 'requests' %} active" aria-current="page{% endif %}" href="{% url 'requests' %}">Requests</a></li>
+            {% if menu.team %}<li class="nav-item"><a class="nav-link{% if current == 'team' or current == 'team_member' or current == 'team_member_week' %} active" aria-current="page{% endif %}" href="{% url 'team' %}">Team</a></li>{% endif %}
+            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'approvals' or current == 'approval_detail' %} active" aria-current="page{% endif %}" href="{% url 'approvals' %}">Approvals</a></li>{% endif %}
+            {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'request_inbox' or current == 'request_detail' or current == 'request_edit' %} active" aria-current="page{% endif %}" href="{% url 'request_inbox' %}" id="menu-change-requests">Change requests{% if menu.open_requests %} <span class="badge rounded-pill tone-warning" title="Open change requests">{{ menu.open_requests }}</span>{% endif %}</a></li>{% endif %}
+            {% if menu.payroll %}<li class="nav-item"><a class="nav-link{% if current == 'payroll' or current == 'payroll_corrections' %} active" aria-current="page{% endif %}" href="{% url 'payroll' %}">Payroll</a></li>{% endif %}
             {% if menu.admin %}<li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">Admin</a></li>{% endif %}
           </ul>
-          <div class="d-flex align-items-center gap-3">
-            <a class="navbar-text text-decoration-none small lh-sm text-end{% if current == 'profile' %} text-white{% endif %}" href="{% url 'profile' %}" id="who-am-i">
-              <span class="fw-semibold">{{ me.first_name }} {{ me.last_name }}</span> · {{ me.employee_code }}<br>
-              {{ me.job_title }}{% if me.team %} · {{ me.team.name }}{% endif %}
+          <div class="app-user">
+            <a class="app-user-link{% if current == 'profile' %} active{% endif %}" href="{% url 'profile' %}" id="who-am-i" title="Your profile">
+              <span class="avatar" aria-hidden="true">{{ me|initials }}</span>
+              <span class="small">
+                <span class="fw-semibold">{{ me.first_name }} {{ me.last_name }}</span> · {{ me.employee_code }}<br>
+                <span class="app-user-meta">{{ me.job_title }}{% if me.team %} · {{ me.team.name }}{% endif %}</span>
+              </span>
             </a>
             <form method="post" action="{% url 'logout' %}" class="m-0">
               {% csrf_token %}
-              <button type="submit" class="btn btn-outline-light btn-sm">Log out</button>
+              <button type="submit" class="btn btn-outline-secondary btn-sm">Log out</button>
             </form>
           </div>
         </div>
         {% endwith %}
       {% else %}
         <div class="ms-auto d-flex align-items-center gap-2">
-          <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Log in</a>
-          <a class="btn btn-light btn-sm" href="{% url 'signup' %}">Sign up</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'login' %}">Log in</a>
+          <a class="btn btn-primary btn-sm" href="{% url 'signup' %}">Sign up</a>
         </div>
       {% endif %}
       {% endblock %}
     </div>
   </nav>
-  <main class="container py-4">
+  <main class="app-main {% block main_class %}{% endblock %}">
     {% for message in messages %}
       <div class="alert alert-{% if message.level_tag == 'error' %}danger{% else %}{{ message.level_tag }}{% endif %}" role="alert">{{ message }}</div>
     {% endfor %}

@@ -4,16 +4,19 @@
 {% block title %}My timesheets — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-  <h1 class="h3 mb-0">My timesheets</h1>
-  <a class="btn btn-primary" href="{% url 'timesheet_week' current_week %}">This week</a>
-</div>
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">My timesheets</h1>
+    <p class="page-subtitle">Your recent weeks. Submit each week by Saturday 12:00.</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-primary" href="{% url 'timesheet_week' current_week %}">This week</a></div>
+</header>
 {% if missed %}
   <div class="alert alert-warning" role="alert">
     You have {{ missed }} missed week{{ missed|pluralize }} in this list. Locked weeks can be reopened through a change request.
   </div>
 {% endif %}
-<div class="table-responsive">
+<div class="table-responsive table-scroll">
   <table class="table table-hover align-middle bg-body" id="my-weeks">
     <thead>
       <tr><th>Week</th><th>Status</th><th class="text-end">Hours worked</th><th class="text-end">Leave</th><th class="text-end">Expected</th><th>Deadline</th></tr>
@@ -22,12 +25,7 @@
       {% for state, worked, leave in weeks %}
         <tr data-week="{{ state.week_start|date:'Y-m-d' }}">
           <td><a href="{% url 'timesheet_week' state.week_start %}">{{ state.week_start|date:"M j" }} – {{ state.week_start|add_days:6|date:"M j, Y" }}</a></td>
-          <td>
-            <span class="badge {{ state.status|status_badge }}">{{ state.status|status_label }}</span>
-            {% if state.timesheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
-            {% if state.is_missed %}<span class="badge text-bg-danger">Missed</span>{% endif %}
-            {% if state.timesheet.has_open_request %}<span class="badge text-bg-warning">Change requested</span>{% endif %}
-          </td>
+          <td>{% include "includes/week_badges.html" with state=state only %}</td>
           <td class="text-end">{{ worked|hm }}</td>
           <td class="text-end">{{ leave|hm }}</td>
           <td class="text-end">{{ state.expected_minutes|hm }}</td>

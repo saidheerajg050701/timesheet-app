@@ -6,18 +6,18 @@
       {% with c=dash.outcome_counts %}
         <p class="small mb-2">Approved <strong id="approved-count">{{ c.APPROVED }}</strong> · Rejected <strong id="rejected-count">{{ c.REJECTED }}</strong> · Pending <strong id="pending-count">{{ c.PENDING }}</strong></p>
       {% endwith %}
-      <table class="table table-sm small mb-0" id="periods-table">
+      <div class="table-responsive"><table class="table table-sm small mb-0" id="periods-table">
         <thead><tr><th scope="col">Pay period</th><th scope="col">Outcome</th><th scope="col">Decided</th></tr></thead>
         <tbody>
           {% for p in dash.periods %}
             <tr data-period="{{ p.period_start|date:'Y-m-d' }}">
               <td>{{ p.period_start|date:"M j" }} – {{ p.period_start|add_days:13|date:"M j" }}</td>
-              <td><span class="badge {% if p.status == 'APPROVED' %}text-bg-success{% elif p.status == 'REJECTED' %}text-bg-danger{% elif p.status == 'IN_PROGRESS' %}text-bg-light border{% else %}text-bg-secondary{% endif %}">{% if p.status == "IN_PROGRESS" %}In progress{% else %}{{ p.status|title }}{% endif %}</span></td>
+              <td>{% include "includes/status_badge.html" with status=p.status only %}</td>
               <td>{% if p.approval.decided_at and p.status != "PENDING" %}{{ p.approval.decided_at|date:"M j" }}{% if p.approval.approver %} by {{ p.approval.approver.first_name }} {{ p.approval.approver.last_name }}{% endif %}{% else %}—{% endif %}</td>
             </tr>
           {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     {% else %}
       <p class="text-body-secondary mb-0">No pay periods in this range.</p>
     {% endif %}

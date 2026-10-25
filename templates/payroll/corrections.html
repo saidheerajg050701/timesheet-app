@@ -4,11 +4,13 @@
 {% block title %}Payroll corrections — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-  <h1 class="h3 mb-0">Corrections</h1>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll' %}">&larr; Payroll</a>
-</div>
-<p class="text-body-secondary">Weeks that changed after they were already exported or paid. Adjust the next payroll run by the difference.</p>
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Corrections</h1>
+    <p class="page-subtitle">Weeks that changed after they were already exported or paid. Adjust the next payroll run by the difference.</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll' %}">&larr; Payroll</a></div>
+</header>
 <div class="table-responsive">
   <table class="table align-middle bg-body" id="corrections">
     <thead><tr><th>Employee</th><th>Week</th><th>Old version</th><th>Was</th><th class="text-end">Old total</th><th>New version</th><th class="text-end">New total</th><th class="text-end">Difference</th><th>Superseded</th></tr></thead>
@@ -20,7 +22,7 @@
           <td>v{{ c.old.version }}</td>
           <td>{% if c.old.paid_at %}Paid{% else %}Exported{% endif %} ({{ c.old.export_batch }})</td>
           <td class="text-end">{{ c.old.total_minutes|hours2 }}</td>
-          <td>{% if c.new %}v{{ c.new.version }} · {{ c.new.status|title }}{% else %}<span class="text-body-secondary">waiting for re-approval</span>{% endif %}</td>
+          <td>{% if c.new %}v{{ c.new.version }} {% include "includes/status_badge.html" with status=c.new.status only %}{% else %}<span class="text-body-secondary">waiting for re-approval</span>{% endif %}</td>
           <td class="text-end">{% if c.new %}{{ c.new.total_minutes|hours2 }}{% else %}—{% endif %}</td>
           <td class="text-end fw-semibold">{{ c.difference_text }}</td>
           <td>{{ c.old.superseded_at|date:"M j, Y" }}</td>

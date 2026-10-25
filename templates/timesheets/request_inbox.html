@@ -4,9 +4,14 @@
 {% block title %}Change requests — Timesheets{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-3">Change requests</h1>
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Change requests</h1>
+    <p class="page-subtitle">Corrections your reports asked for. Reject, unlock the week, or edit it yourself.</p>
+  </div>
+</header>
 
-<h2 class="h5">Open <span class="badge text-bg-warning">{{ open_requests|length }}</span></h2>
+<h2 class="section-title">Open <span class="badge rounded-pill tone-warning">{{ open_requests|length }}</span></h2>
 <div class="table-responsive mb-4">
   <table class="table align-middle bg-body" id="open-requests">
     <thead><tr><th>Employee</th><th>Week</th><th>Week status</th><th>Reason</th><th>Requested</th><th></th></tr></thead>
@@ -15,7 +20,7 @@
         <tr data-request="{{ change.pk }}">
           <td>{{ change.timesheet.employee.first_name }} {{ change.timesheet.employee.last_name }}<br><small class="text-body-secondary">{{ change.timesheet.employee.employee_code }}</small></td>
           <td>{{ change.timesheet.week_start|date:"M j" }} – {{ change.timesheet.week_start|add_days:6|date:"M j, Y" }}</td>
-          <td><span class="badge {{ change.timesheet.status|status_badge }}">{{ change.timesheet.status|status_label }}</span></td>
+          <td>{% include "includes/status_badge.html" with status=change.timesheet.status only %}</td>
           <td>{{ change.reason }}</td>
           <td>{{ change.created_at|date:"M j, g:i A" }}</td>
           <td><a class="btn btn-sm btn-primary" href="{% url 'request_detail' change.pk %}">Open</a></td>
@@ -27,7 +32,7 @@
   </table>
 </div>
 
-<h2 class="h5">Recently handled</h2>
+<h2 class="section-title">Recently handled</h2>
 <div class="table-responsive">
   <table class="table table-sm align-middle bg-body" id="recent-requests">
     <thead><tr><th>Employee</th><th>Week</th><th>Outcome</th><th>By</th><th>When</th><th>Note</th></tr></thead>
@@ -36,7 +41,7 @@
         <tr>
           <td>{{ change.timesheet.employee.first_name }} {{ change.timesheet.employee.last_name }}</td>
           <td><a href="{% url 'request_detail' change.pk %}">{{ change.timesheet.week_start|date:"M j, Y" }}</a></td>
-          <td>{{ change.get_status_display|title }}</td>
+          <td>{% include "includes/status_badge.html" with status=change.status only %}</td>
           <td>{% if change.reviewer %}{{ change.reviewer.first_name }} {{ change.reviewer.last_name }}{% endif %}</td>
           <td>{{ change.resolved_at|date:"M j, g:i A" }}</td>
           <td>{{ change.resolution|default:"—" }}</td>

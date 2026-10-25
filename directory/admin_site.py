@@ -12,8 +12,8 @@ from directory.admin_base import ViewOnlyAdmin
 
 
 class CompanyAdminSite(admin.AdminSite):
-    site_header = "Timesheets — HR admin"
-    site_title = "Timesheets admin"
+    site_header = "Timesheets Admin"  # light branding only (D-104)
+    site_title = "Timesheets Admin"
 
     def has_permission(self, request):
         """Only a logged-in, ACTIVE employee with is_admin (is_staff mirrors it, D-13)."""

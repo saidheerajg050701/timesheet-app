@@ -3,7 +3,7 @@
     <h2 class="h6 text-body-secondary">On-time submission</h2>
     {% with p=dash.punctuality %}
       {% if p.counted %}
-        <p class="fs-4 fw-semibold mb-1" id="on-time-rate">{{ p.rate }}%</p>
+        <p class="stat-value mb-1" id="on-time-rate">{{ p.rate }}%</p>
         <table class="table table-sm mb-0 small" aria-label="Submission outcomes">
           <tbody>
             <tr><th scope="row" class="fw-normal">On time</th><td class="text-end" id="on-time-count">{{ p.on_time }}</td></tr>

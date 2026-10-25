@@ -2,8 +2,8 @@
 <div class="card h-100 shadow-sm" id="current-week">
   <div class="card-body">
     <h2 class="h6 text-body-secondary">This week · {{ dash.current.state.week_start|date:"M j" }} – {{ dash.current.state.week_start|add_days:6|date:"M j" }}</h2>
-    <p class="mb-2"><span class="badge {{ dash.current.state.status|status_badge }}" id="current-status">{{ dash.current.state.status|status_label }}</span></p>
-    <p class="mb-2"><span class="fs-4 fw-semibold">{{ dash.current.summary.worked|hours2 }}</span> of {{ dash.current.summary.expected|hours2 }} hours worked</p>
+    <p class="mb-2">{% include "includes/status_badge.html" with status=dash.current.state.status badge_id="current-status" only %}</p>
+    <p class="mb-2"><span class="stat-value">{{ dash.current.summary.worked|hours2 }}</span> <span class="text-body-secondary">of {{ dash.current.summary.expected|hours2 }} hours worked</span></p>
     {% if dash.current.open_until %}
       <p class="small mb-2">Submit by {{ dash.current.open_until|date:"D M j, g:i A" }} —
         <span data-deadline="{{ dash.current.open_until|date:'c' }}" id="countdown">{{ dash.current.open_until|countdown:dash.now }}</span> left</p>

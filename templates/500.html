@@ -4,16 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Something went wrong — Timesheets</title>
+  {# Rendered without a request context or database (D-96): plain HTML, the theme's colours inline. #}
   <style>
-    body { font-family: system-ui, sans-serif; margin: 3rem auto; max-width: 36rem; padding: 0 1rem; color: #212529; }
-    h1 { font-size: 1.25rem; }
+    body { margin: 0; background: #f8fafc; color: #0f172a; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    .wrap { display: flex; justify-content: center; padding: 10vh 16px; }
+    .card { width: 100%; max-width: 440px; background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 32px; box-shadow: 0 1px 2px rgba(15, 23, 42, .05), 0 1px 3px rgba(15, 23, 42, .04); }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; margin-bottom: 24px; }
+    .logo { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: #2563eb; color: #fff; font-size: 14px; }
+    h1 { font-size: 1.375rem; margin: 0 0 8px; }
+    p { color: #475569; margin: 0 0 12px; }
+    a.button { display: inline-block; margin-top: 8px; padding: 7px 14px; border: 1px solid #cbd5e1; border-radius: 6px; color: #334155; text-decoration: none; font-weight: 500; }
+    a.button:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, .45); }
   </style>
 </head>
 <body>
-  {# Rendered without a request context or database (D-96): plain HTML only. #}
-  <h1 id="server-error">Something went wrong</h1>
-  <p>The page could not be shown. Nothing you entered was lost unless you were saving it — go back and try again.</p>
-  <p>If it keeps happening, tell the person who runs the app; the details are in the server log.</p>
-  <p><a href="/">Back to the dashboard</a></p>
+  <div class="wrap">
+    <div class="card">
+      <div class="brand"><span class="logo" aria-hidden="true">T</span>Timesheets</div>
+      <h1 id="server-error">Something went wrong</h1>
+      <p>The page could not be shown. Nothing you entered was lost unless you were saving it — go back and try again.</p>
+      <p>If it keeps happening, tell the person who runs the app; the details are in the server log.</p>
+      <a class="button" href="/">Back to the dashboard</a>
+    </div>
+  </div>
 </body>
 </html>

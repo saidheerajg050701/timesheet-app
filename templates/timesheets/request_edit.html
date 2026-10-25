@@ -4,13 +4,13 @@
 {% block title %}Edit week — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<header class="page-header">
   <div>
-    <h1 class="h3 mb-1">Edit {{ sheet.employee.first_name }} {{ sheet.employee.last_name }}'s week</h1>
-    <span class="text-body-secondary">Week of {{ sheet.week_start|date:"l, M j, Y" }} · request: “{{ change.reason }}”</span>
+    <h1 class="h3 mb-0">Edit {{ sheet.employee.first_name }} {{ sheet.employee.last_name }}'s week</h1>
+    <p class="page-subtitle">Week of {{ sheet.week_start|date:"l, M j, Y" }} · request: “{{ change.reason }}”</p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'request_detail' change.pk %}">&larr; Back to the request</a>
-</div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'request_detail' change.pk %}">&larr; Back to the request</a></div>
+</header>
 
 {% if errors %}
   <div class="alert alert-danger" role="alert" id="errors">

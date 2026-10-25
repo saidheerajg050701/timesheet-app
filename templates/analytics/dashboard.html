@@ -4,15 +4,18 @@
 {% block title %}Dashboard — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-  <h1 class="h3 mb-0">Dashboard</h1>
-  <nav aria-label="Range" class="btn-group" id="range-picker">
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <p class="page-subtitle">Your hours, deadlines and approvals over the last {{ dash.weeks }} weeks.</p>
+  </div>
+  <nav aria-label="Range" class="btn-group page-actions" id="range-picker">
     {% for n in ranges %}
       <a class="btn btn-sm {% if n == dash.weeks %}btn-primary{% else %}btn-outline-secondary{% endif %}"
          href="?weeks={{ n }}"{% if n == dash.weeks %} aria-current="page"{% endif %}>Last {{ n }} weeks</a>
     {% endfor %}
   </nav>
-</div>
+</header>
 {% include "analytics/_dashboard.html" with dash=dash own=True %}
 {% endblock %}
 

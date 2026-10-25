@@ -3,11 +3,16 @@
 
 {% block title %}Payroll — Timesheets{% endblock %}
 
+{% block main_class %}app-main-wide{% endblock %}
+
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
-  <h1 class="h3 mb-0">Payroll</h1>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_corrections' %}">Corrections</a>
-</div>
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Payroll</h1>
+    <p class="page-subtitle">Approved hours from the payroll database: export a period, then mark it paid.</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_corrections' %}">Corrections</a></div>
+</header>
 
 {% if missing or stale %}
   <div class="alert alert-warning" role="alert" id="out-of-sync">
@@ -18,7 +23,7 @@
   </div>
 {% endif %}
 
-<form method="get" class="row g-2 align-items-end mb-3" id="payroll-filters">
+<form method="get" class="card card-body row g-2 align-items-end mx-0 mb-4 flex-row" id="payroll-filters">
   <div class="col-sm-6 col-lg-3">
     <label for="id_period" class="form-label small">Pay period</label>
     <select name="period" id="id_period" class="form-select form-select-sm">
@@ -53,8 +58,8 @@
   <div class="col-lg-1"><button type="submit" class="btn btn-sm btn-primary w-100">Filter</button></div>
 </form>
 
-<h2 class="h5">Totals per employee <small class="text-body-secondary">({{ period|date:"M j" }} – {{ period|add_days:13|date:"M j, Y" }}, hours)</small></h2>
-<div class="table-responsive mb-4">
+<h2 class="section-title">Totals per employee <small class="text-body-secondary fw-normal">({{ period|date:"M j" }} – {{ period|add_days:13|date:"M j, Y" }}, hours)</small></h2>
+<div class="table-responsive table-scroll mb-4">
   <table class="table table-sm align-middle bg-body" id="payroll-totals">
     <thead><tr><th>Employee</th><th>Department</th><th>Team</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th></tr></thead>
     <tbody>
@@ -73,7 +78,7 @@
   </table>
 </div>
 
-<div class="d-flex flex-wrap gap-4 mb-4">
+<div class="card card-body d-flex flex-row flex-wrap gap-4 mb-4">
   <form method="post" action="{% url 'payroll_export' %}" id="export-form">
     {% csrf_token %}
     <input type="hidden" name="period" value="{{ period|date:'Y-m-d' }}">
@@ -81,14 +86,14 @@
     <div class="small text-body-secondary mt-1">Exports every CURRENT record of this period as one numbered batch.</div>
   </form>
   <div>
-    <h3 class="h6">Batches for this period</h3>
+    <h3 class="h6 card-title">Batches for this period</h3>
     <ul class="list-unstyled mb-0" id="batches">
       {% for b in batches %}
         <li class="mb-1">
           <a href="{% url 'payroll_batch_csv' b.batch %}">{{ b.batch }}</a> · {{ b.records }} week{{ b.records|pluralize }} · exported {{ b.exported_at|date:"M j, Y" }}
           {% if b.exported %}
             <form method="post" action="{% url 'payroll_mark_paid' b.batch %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success ms-1">Mark as paid</button></form>
-          {% elif b.paid %}<span class="badge text-bg-success">Paid</span>{% endif %}
+          {% elif b.paid %}{% include "includes/status_badge.html" with status="PAID" only %}{% endif %}
         </li>
       {% empty %}
         <li class="text-body-secondary">None yet.</li>
@@ -97,15 +102,15 @@
   </div>
 </div>
 
-<h2 class="h5">Week records</h2>
-<div class="table-responsive">
+<h2 class="section-title">Week records</h2>
+<div class="table-responsive table-scroll">
   <table class="table table-sm align-middle bg-body" id="payroll-records">
     <thead><tr><th>Employee</th><th>Week</th><th>v</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
     <tbody>
       {% for r in records %}
         <tr>
           <td>{{ r.employee_name }}</td><td>{{ r.week_start|date:"M j" }}</td><td>{{ r.version }}</td>
-          <td><span class="badge {% if r.status == 'PAID' %}text-bg-success{% elif r.status == 'EXPORTED' %}text-bg-primary{% elif r.status == 'SUPERSEDED' %}text-bg-secondary{% else %}text-bg-light border{% endif %}">{{ r.status|title }}</span></td>
+          <td>{% include "includes/status_badge.html" with status=r.status only %}</td>
           <td>{{ r.export_batch|default:"—" }}</td>
           <td class="text-end">{{ r.regular_minutes|hours2 }}</td><td class="text-end">{{ r.overtime_minutes|hours2 }}</td>
           <td class="text-end">{{ r.pto_minutes|hours2 }}</td><td class="text-end">{{ r.sick_minutes|hours2 }}</td>

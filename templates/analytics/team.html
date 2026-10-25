@@ -3,10 +3,17 @@
 
 {% block title %}Team — Timesheets{% endblock %}
 
-{% block content %}
-<h1 class="h3 mb-3">Team</h1>
+{% block main_class %}app-main-wide{% endblock %}
 
-<form method="get" class="row g-2 align-items-end mb-3" id="team-filters">
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Team</h1>
+    <p class="page-subtitle">{% if board.viewer.is_admin %}Everyone in the company{% else %}The people who report to you{% endif %} — hours, utilization and this week's submissions.</p>
+  </div>
+</header>
+
+<form method="get" class="card card-body row g-2 align-items-end mx-0 mb-4 flex-row" id="team-filters">
   <div class="col-sm-4 col-lg-3">
     <label for="id_scope" class="form-label small">People</label>
     <select name="scope" id="id_scope" class="form-select form-select-sm">
@@ -72,7 +79,7 @@
   <div class="card shadow-sm mb-3">
     <div class="card-body">
       <h2 class="h6 text-body-secondary">People</h2>
-      <div class="table-responsive">
+      <div class="table-responsive table-scroll">
         <table class="table table-sm align-middle mb-0" id="team-table">
           <thead>
             <tr>
@@ -111,9 +118,9 @@
         <div class="card-body">
           <h2 class="h6 text-body-secondary">This week's compliance</h2>
           {% if board.compliance %}
-            <ul class="list-unstyled mb-0">
+            <ul class="list-unstyled mb-0 divide-y">
               {% for item in board.compliance %}
-                <li class="mb-1" data-employee="{{ item.employee.employee_code }}">{{ item.employee.first_name }} {{ item.employee.last_name }} — <span class="badge {% if item.label == 'Not submitted yet' %}text-bg-secondary{% else %}text-bg-danger{% endif %}">{{ item.label }}</span></li>
+                <li class="d-flex justify-content-between align-items-center gap-2 py-1" data-employee="{{ item.employee.employee_code }}">{{ item.employee.first_name }} {{ item.employee.last_name }} {% if item.label == "Not submitted yet" %}{% include "includes/status_badge.html" with status="NOT_SUBMITTED" label=item.label only %}{% elif item.label == "Reopened" %}{% include "includes/status_badge.html" with status="REOPENED" label=item.label only %}{% else %}{% include "includes/status_badge.html" with status="MISSED" label=item.label only %}{% endif %}</li>
               {% endfor %}
             </ul>
           {% else %}

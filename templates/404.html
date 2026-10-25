@@ -3,9 +3,14 @@
 {% block title %}Page not found — Timesheets{% endblock %}
 
 {% block content %}
-<div class="alert alert-warning" role="alert" id="not-found">
-  <h1 class="h5">Page not found</h1>
-  <p class="mb-0">There is nothing at this address. Check the link, or use the menu.</p>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-body">
+      {% include "includes/auth_brand.html" %}
+      <h1 class="h4" id="not-found">Page not found</h1>
+      <p class="text-body-secondary mt-2">There is nothing at this address. Check the link, or use the menu.</p>
+      <a class="btn btn-outline-secondary" href="{% url 'home' %}">Back to the dashboard</a>
+    </div>
+  </div>
 </div>
-<a href="{% url 'home' %}">Back to the dashboard</a>
 {% endblock %}

@@ -3,13 +3,14 @@
 {% block title %}Account locked — Timesheets{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-sm-10 col-md-7 col-lg-5">
-    <div class="alert alert-warning" role="alert">
-      <h1 class="h5">Account locked</h1>
-      <p class="mb-0">Too many failed attempts. Try again in 15 minutes, or ask HR to reset your password.</p>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-body">
+      {% include "includes/auth_brand.html" %}
+      <h1 class="h4">Account locked</h1>
+      <div class="alert alert-warning mt-3" role="alert">Too many failed attempts. Try again in 15 minutes, or ask HR to reset your password.</div>
+      <a class="btn btn-outline-secondary" href="{% url 'login' %}">Back to log in</a>
     </div>
-    <a href="{% url 'login' %}">Back to log in</a>
   </div>
 </div>
 {% endblock %}

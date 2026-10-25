@@ -130,6 +130,19 @@ Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every chang
 - **Import CSV / Export CSV:** on the employee list. Export uses the same columns as import, so you can edit the file and import it again; you always see a summary (or the errors with line numbers) before anything changes.
 - Timesheets, approvals, change requests, payroll records and the audit log are read-only here.
 
+## Look and feel
+One theme stylesheet, `static/css/theme.css`, styles every page on top of the vendored Bootstrap:
+colours, spacing, corners and shadows are CSS variables (`--ts-*`) at its top, so a brand
+colour change happens in one place. Fonts are the system fonts (nothing is downloaded). Week,
+period, request and payroll statuses always use the same badge component
+(`templates/includes/status_badge.html`).
+
+To review the pages yourself, take screenshots of the main pages for an employee, a manager,
+payroll and HR at laptop and phone width (uses the test databases only, never your data):
+```bash
+SCREENSHOTS_DIR=~/Desktop/timesheet-screenshots uv run pytest scripts/visual_review --browser-channel chrome
+```
+
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history
@@ -187,4 +200,4 @@ Copy the `backups/` folder somewhere safe (it is not in Git). To restore:
 - `directory/`, `timesheets/`, `audit/`, `payroll/`, `analytics/`: Django apps. Business rules live in each app's `services/` package
 - `payroll/routers.py`: sends the payroll app to `payroll.sqlite3` and keeps every other app out of it
 - `templates/`, `static/vendor/`: Bootstrap 5, HTMX and Chart.js, saved locally (no JS build step)
-- `tests/`: pytest suite (see B.11 in the guide)
+- `tests/`: pytest suite (see B.11 in the guide); `scripts/visual_review/`: the screenshot tool

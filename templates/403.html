@@ -3,9 +3,14 @@
 {% block title %}Not allowed — Timesheets{% endblock %}
 
 {% block content %}
-<div class="alert alert-danger" role="alert">
-  <h1 class="h5">Not allowed</h1>
-  <p class="mb-0">{% if exception %}{{ exception }}{% else %}You don't have access to this page.{% endif %}</p>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="card-body">
+      {% include "includes/auth_brand.html" %}
+      <h1 class="h4">Not allowed</h1>
+      <div class="alert alert-danger mt-3" role="alert">{% if exception %}{{ exception }}{% else %}You don't have access to this page.{% endif %}</div>
+      <a class="btn btn-outline-secondary" href="{% url 'home' %}">Back to the dashboard</a>
+    </div>
+  </div>
 </div>
-<a href="{% url 'home' %}">Back to the dashboard</a>
 {% endblock %}

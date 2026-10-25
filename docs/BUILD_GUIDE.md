@@ -9,6 +9,7 @@
 
 | Version | Change | Details |
 |---|---|---|
+| 2.4 | **Change 1 – Modern UI** | Light, modern look on every page with one theme stylesheet (`static/css/theme.css`, design tokens), a shared status badge component, centered login/sign-up/profile/error cards, chart colours from the tokens, and a screenshot tool for visual review (D-100–D-105, T-157–T-159). Behaviour, URLs, permissions and rules unchanged |
 | 2.3 | **Version 1 complete** | Phases 0–12 built; decisions D-23–D-99 in B.12; 156 catalogued tests (T-01–T-156) including 10 Playwright e2e flows, all passing (status table in B.11); e2e mandatory in `test_all.sh` |
 | 2.2 | **Decisions log** | New **section B.12** (D-01…D-22) settles the open points from the spec review. B.1–B.11 and Part C updated to match; **B.12 wins** if anything still conflicts |
 | 2.1 | **Payroll database** | Approved hours per week are copied into a **separate payroll database**. Only the new **Payroll** role (and admins) can see and export it (B.4 FR-11, B.6, Phase 8) |
@@ -35,7 +36,8 @@
 | 9 | Personal analytics dashboard | `1ca56d5` | Done |
 | 10 | Team (hierarchy) analytics | `31aa771` | Done |
 | 11 | Admin polish: audited edits, deactivate, password reset, CSV | `f8513b8` | Done |
-| 12 | Full test pass, e2e, hardening, README | (commit pending) | Done — ready to commit |
+| 12 | Full test pass, e2e, hardening, README | `bad0b31` | Done |
+| Change 1 | Modern UI (post-release, like Phase 5b) | (commit pending) | Done — ready to commit |
 
 ---
 
@@ -682,6 +684,7 @@ tests/
     test_admin.py
     test_admin_edit.py     # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
     test_hardening.py      # DEBUG off: static files, friendly 404/500 (T-156)
+    test_ui_theme.py       # theme stylesheet, one status badge component, WCAG AA contrast (T-157–T-159)
     test_admin_csv.py      # employee CSV import preview/confirm and export round-trip (T-142, T-143)
     test_import_employees.py
     test_layout.py         # menus, header, placeholder pages, profile (FR-4, D-30)
@@ -853,10 +856,13 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-154 | E2E | HR password reset | Temporary password set in Admin; the employee logs in with it, is kept on Profile until they choose a new password, then pages open normally |
 | T-155 | E2E | 403 pages | Employee (/team/, /approvals/, /payroll/, /admin/), payroll-only (/team/, /approvals/) and a manager outside a tree (/team/OPS1/) get the "Not allowed" page with status 403 |
 | T-156 | Hardening | DEBUG off | Vendored static files still load; unknown URLs show the friendly 404 page and errors the plain 500 page, never a traceback or settings (D-96) |
+| T-157 | UI | The theme stylesheet | Logged-in and login pages link `/static/css/theme.css` after the vendored Bootstrap; with DEBUG off it is served (200, `text/css`) and defines the `--ts-accent` token (D-100) |
+| T-158 | UI | One status badge component | Every Timesheet, PeriodApproval, ChangeRequest and PayrollWeek status, plus Not started, Not employed, In progress and the Late/Missed/Overtime/Missing/Change requested/Read-only flags, has a tone with a CSS rule; no page template uses Bootstrap `text-bg-*` badges or the old `status_badge` filter; the week page renders `id="week-status">Submitted<` through the component (D-102) |
+| T-159 | UI | Contrast | Every badge tone (text on its background), body and muted text, white on the accent and success buttons, the active menu item and error text reach at least 4.5:1, computed from the tokens in theme.css (D-100, WCAG AA) |
 
-### Status of every test (Phase 12)
+### Status of every test (Phase 12, updated for Change 1)
 
-Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the **156 catalogued tests** T-01–T-156 below; the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, all passing); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
@@ -1016,6 +1022,9 @@ Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24,
 | T-154 | E2E | `e2e/test_e2e_flows.py::test_hr_password_reset_forces_a_change` | ✅ Pass |
 | T-155 | E2E | `e2e/test_e2e_flows.py::test_forbidden_pages` | ✅ Pass |
 | T-156 | Hardening | `integration/test_hardening.py::test_debug_off_serves_static_and_friendly_errors` | ✅ Pass |
+| T-157 | UI | `integration/test_ui_theme.py::test_theme_stylesheet_is_loaded_and_served` | ✅ Pass |
+| T-158 | UI | `integration/test_ui_theme.py::test_one_status_badge_component` | ✅ Pass |
+| T-159 | UI | `integration/test_ui_theme.py::test_theme_contrast_meets_wcag_aa` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -1119,7 +1128,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-99 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-105 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -1222,6 +1231,12 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-97 | Hardening | `manage.py check --deploy` **HTTPS-only warnings do not apply**: W004 (HSTS), W008 (SSL redirect), W012 (`SESSION_COOKIE_SECURE`), W016 (`CSRF_COOKIE_SECURE`). The app is served over plain HTTP on `127.0.0.1` (or a trusted office network, D.2): secure-only cookies would never be sent, so nobody could log in, and HSTS would force browsers onto HTTPS for the host. They are documented, not silenced, so they show up again if the app ever moves to a server — then set them. Every other deploy check passes once `.env` has `DJANGO_DEBUG=False` and a long random secret key. | B.10, D.2 |
 | D-98 | Setup | **django-import-export removed** (`uv remove django-import-export`, also dropping `tablib` and `diff-match-patch`); nothing used it — the admin CSV import/export are our own audited views (D-92). Removed from CLAUDE.md, B.2 and the Phase 1 prompt. | B.2, C.2, D-92 |
 | D-99 | Scope | **Known limitations of version 1**: one Mac, SQLite and plain HTTP (not for internet exposure); no notifications or email, so no "forgot password" — HR resets passwords (D-91); no holiday calendar or delegated approvals; one company time zone for every deadline; payroll CSV in the app's own format; a changed expected weekly hours value has no per-week history (D-87). See D.5 for what comes next. | README, D.5 |
+| D-100 | UI | **Change 1 – Modern UI: one theme stylesheet.** `static/css/theme.css`, loaded after the vendored Bootstrap 5.3.8 on every page (no CDN, no build step, no new package, no downloaded fonts). Design tokens as CSS variables (`--ts-*`): one accent `#2563eb`, slate neutral greys, status tones, spacing 4/8/12/16/24/32 px, radii 6/10/14 px, two soft shadows, 150 ms transitions; mapped onto Bootstrap's variables (`--bs-primary`, body font and colours, button, alert and focus-ring variables) so existing classes follow. System font stack `-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`; tables use tabular figures with numbers right-aligned. One visible 3 px accent focus ring for keyboard users; `prefers-reduced-motion` switches transitions off. Text and badges meet WCAG AA (T-159). Behaviour, URLs, permissions, rules and the labels tests rely on are unchanged. | B.8, B.10 |
+| D-101 | UI | **Layout.** Light top bar with a 1 px bottom border: active page as a tinted pill (`aria-current="page"`), pill badges, and a user block with an initials avatar, name · Employee ID and title · team; Log out stays a POST button. Pages: a page header (title, short subtitle, actions on the right), content in cards, max width 1200 px (1400 px for Team, Approvals and Payroll). Tables: soft header, row hover, comfortable rows; long tables (timesheets list, approvals, team, payroll) keep their header visible in a 70vh scroll box on laptop screens; on narrow windows tables scroll sideways inside their card and the page itself never does. Login, sign-up, profile, account locked, 403, 404 and 500 are centered cards with the app name (500 stays standalone HTML with the token values inline, D-96). | B.8 |
+| D-102 | UI | **One status badge component**, `templates/includes/status_badge.html` (context: `status`, optional `label` and `badge_id`; included with `only`), plus `includes/week_badges.html` (a week's status with its Late / Missed / Change requested flags) and `timesheets/_flags.html` (approval flags). Every page that shows a week, pay period, change request or payroll status uses them. The `status_tone` filter (replacing `status_badge`) maps codes to tones: neutral (Not started, Not employed, Pending, In progress, Current, Superseded, Read-only, Not submitted yet), draft (grey), submitted (blue; also Exported), approved (green; also Paid, Unlocked, Edited), danger (red; Locked, Missed, Rejected, Missing days), reopened (violet), warning (amber; Late, Change requested, an open change request), info (cyan; Overtime). Soft background with dark text, always with the word, never colour alone. | B.5, B.8 |
+| D-103 | UI | **Charts use the tokens**: `dashboard.js` and `team.js` read `--ts-chart-series` (the accent `#2563eb`, which passes the palette validator against the light surface), `--ts-chart-muted` and `--ts-chart-grid` with `getComputedStyle`, falling back to the same values. Every chart keeps its table or text version (D-80). | B.4 FR-5/FR-6 |
+| D-104 | UI | **Django Admin: light branding only.** `site_header`/`site_title` = "Timesheets Admin"; `templates/admin/base_site.html` sets the admin's own colour variables (primary, header, breadcrumbs) to the accent and slate tokens in light mode and makes the site name dark. The admin's pages and dark mode are not restyled. | B.4 FR-10 |
+| D-105 | UI | **Visual review tool** (not part of `test_all.sh`): `SCREENSHOTS_DIR=<folder outside the repo> uv run pytest scripts/visual_review --browser-channel chrome`. It starts a live test server on the **test databases**, runs `seed_demo` there with a fixed clock (Wed 2026-10-21 10:00, also in the browser), logs in as dev1, eng.manager, payroll and hr, checks each page's status code and that the page never scrolls sideways, and saves full-page screenshots at 1440×900 and 390×844. It never touches `db.sqlite3` or `payroll.sqlite3`. | B.11 |
 
 ---
 

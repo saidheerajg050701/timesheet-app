@@ -8,14 +8,41 @@ from timesheets.services.weeks import STATUS_LABELS
 
 register = template.Library()
 
-BADGES = {
-    "NOT_STARTED": "text-bg-light border",
-    "DRAFT": "text-bg-secondary",
-    "SUBMITTED": "text-bg-primary",
-    "REOPENED": "text-bg-info",
-    "APPROVED": "text-bg-success",
-    "LOCKED": "text-bg-danger",
-    "OUTSIDE_EMPLOYMENT": "text-bg-light border",
+# Status badges (D-102): every status and flag maps to one tone; theme.css colours each
+# tone (soft background, dark text, WCAG AA). Rendered by includes/status_badge.html.
+TONES = {
+    "NOT_STARTED": "neutral",
+    "OUTSIDE_EMPLOYMENT": "neutral",
+    "DRAFT": "draft",
+    "SUBMITTED": "submitted",
+    "REOPENED": "reopened",
+    "APPROVED": "approved",
+    "LOCKED": "danger",
+    "MISSED": "danger",
+    "PENDING": "neutral",  # pay period, no decision yet
+    "IN_PROGRESS": "neutral",
+    "REJECTED": "danger",
+    "OPEN": "warning",  # change request waiting for the manager
+    "UNLOCKED": "approved",
+    "EDITED": "approved",
+    "CURRENT": "neutral",  # payroll records
+    "EXPORTED": "submitted",
+    "PAID": "approved",
+    "SUPERSEDED": "neutral",
+    "LATE": "warning",  # flags
+    "CHANGE_REQUESTED": "warning",
+    "OVERTIME": "info",
+    "MISSING": "danger",
+    "READ_ONLY": "neutral",
+    "NOT_SUBMITTED": "neutral",
+}
+LABELS = {
+    **STATUS_LABELS,
+    "MISSED": "Missed",
+    "IN_PROGRESS": "In progress",
+    "CHANGE_REQUESTED": "Change requested",
+    "READ_ONLY": "Read-only",
+    "NOT_SUBMITTED": "Not submitted yet",
 }
 
 
@@ -28,12 +55,25 @@ def hm(minutes):
 
 @register.filter
 def status_label(status):
-    return STATUS_LABELS.get(status, status)
+    """Week statuses as in /timesheets/; anything else in title case ("PAID" → "Paid")."""
+    return LABELS.get(status, str(status).replace("_", " ").capitalize())
 
 
 @register.filter
-def status_badge(status):
-    return BADGES.get(status, "text-bg-secondary")
+def status_tone(status):
+    return TONES.get(status, "neutral")
+
+
+@register.filter
+def missing_days_label(days):
+    """3 → "Missing 3 days" (approval flag)."""
+    return f"Missing {days} day{'' if days == 1 else 's'}"
+
+
+@register.filter
+def initials(employee):
+    """ "John Kim" → "JK", for the avatar in the top bar."""
+    return f"{employee.first_name[:1]}{employee.last_name[:1]}".upper()
 
 
 @register.filter

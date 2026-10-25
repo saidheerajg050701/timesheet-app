@@ -1,0 +1,1 @@
+{# Status badge (D-102). Context: status (a status or flag code), optional label and badge_id. Include with "only". #}{% load timesheet_tags %}<span class="badge status-badge tone-{{ status|status_tone }}"{% if badge_id %} id="{{ badge_id }}"{% endif %}>{% if label %}{{ label }}{% else %}{{ status|status_label }}{% endif %}</span>

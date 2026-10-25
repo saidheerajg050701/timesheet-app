@@ -1,0 +1,45 @@
+{% extends "admin/base.html" %}
+{# Light branding only (D-104): the app's accent and slate colours in the admin header; the admin's own pages are not restyled. #}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme="dark"]) {
+      --primary: #2563eb;
+      --secondary: #1e40af;
+      --header-bg: #ffffff;
+      --header-color: #475569;
+      --header-branding-color: #0f172a;
+      --header-link-color: #1d4ed8;
+      --breadcrumbs-bg: #eff6ff;
+      --breadcrumbs-fg: #1e40af;
+      --breadcrumbs-link-fg: #1d4ed8;
+    }
+  }
+  html[data-theme="light"] {
+    --primary: #2563eb;
+    --secondary: #1e40af;
+    --header-bg: #ffffff;
+    --header-color: #475569;
+    --header-branding-color: #0f172a;
+    --header-link-color: #1d4ed8;
+    --breadcrumbs-bg: #eff6ff;
+    --breadcrumbs-fg: #1e40af;
+    --breadcrumbs-link-fg: #1d4ed8;
+  }
+  #header { border-bottom: 1px solid #e2e8f0; }
+  @media (prefers-color-scheme: light) {
+    html:not([data-theme="dark"]) #site-name a:link, html:not([data-theme="dark"]) #site-name a:visited { color: #0f172a; font-weight: 700; }
+  }
+  html[data-theme="light"] #site-name a:link, html[data-theme="light"] #site-name a:visited { color: #0f172a; font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block branding %}
+<div id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></div>
+{% if user.is_anonymous %}{% include "admin/color_theme_toggle.html" %}{% endif %}
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

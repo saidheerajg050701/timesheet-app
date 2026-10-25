@@ -4,32 +4,28 @@
 {% block title %}Approve {{ row.employee.first_name }} {{ row.employee.last_name }} — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<header class="page-header">
   <div>
-    <h1 class="h3 mb-1">{{ row.employee.first_name }} {{ row.employee.last_name }}</h1>
-    <span class="text-body-secondary">{{ row.employee.employee_code }} · pay period {{ row.period_start|date:"M j" }} – {{ row.period_start|add_days:13|date:"M j, Y" }}</span>
-    <span class="badge {% if row.status == 'APPROVED' %}text-bg-success{% elif row.status == 'REJECTED' %}text-bg-danger{% else %}text-bg-secondary{% endif %} ms-1" id="period-status">{{ row.status|title }}</span>
+    <h1 class="h3 mb-0">{{ row.employee.first_name }} {{ row.employee.last_name }}</h1>
+    <p class="page-subtitle">{{ row.employee.employee_code }} · pay period {{ row.period_start|date:"M j" }} – {{ row.period_start|add_days:13|date:"M j, Y" }} {% include "includes/status_badge.html" with status=row.status badge_id="period-status" only %}</p>
   </div>
-  <a class="btn btn-outline-secondary btn-sm" href="{% url 'approvals' %}?period={{ row.period_start|date:'Y-m-d' }}">&larr; All employees</a>
-</div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'approvals' %}?period={{ row.period_start|date:'Y-m-d' }}">&larr; All employees</a></div>
+</header>
 
 {% if row.approval and row.approval.decided_at %}
   <p class="small" id="decision">{{ row.status|title }} by {{ row.approval.approver.first_name }} {{ row.approval.approver.last_name }} on {{ row.approval.decided_at|date:"M j, g:i A" }}{% if row.approval.comment %}: “{{ row.approval.comment }}”{% endif %}</p>
 {% endif %}
 
-<p class="mb-3">
+<p class="mb-4">
   Hours worked <strong>{{ row.worked|hm }}</strong> · Leave <strong>{{ row.leave|hm }}</strong>
-  {% if row.flags.late %}<span class="badge text-bg-warning">Late</span>{% endif %}
-  {% if row.flags.overtime %}<span class="badge text-bg-info">Overtime</span>{% endif %}
-  {% if row.flags.missing_days %}<span class="badge text-bg-danger">Missing {{ row.flags.missing_days }} day{{ row.flags.missing_days|pluralize }}</span>{% endif %}
+  <span class="badges ms-1">{% include "timesheets/_flags.html" with flags=row.flags only %}</span>
 </p>
 
 {% for week, rows in weeks %}
   <section class="mb-4" id="week-{{ week.number }}">
-    <h2 class="h5">
+    <h2 class="section-title">
       Week {{ week.number }} · {{ week.week_start|date:"M j" }} – {{ week.week_start|add_days:6|date:"M j" }}
-      <span class="badge {{ week.state.status|status_badge }}">{{ week.state.status|status_label }}</span>
-      {% if week.sheet.is_late %}<span class="badge text-bg-warning">Late</span>{% endif %}
+      {% include "includes/week_badges.html" with state=week.state only %}
     </h2>
     {% if week.open_request %}
       <div class="alert alert-warning py-2">Open change request: “{{ week.open_request.reason }}” — <a href="{% url 'request_detail' week.open_request.pk %}">handle it</a>.</div>

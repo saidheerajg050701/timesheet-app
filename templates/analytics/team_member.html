@@ -4,19 +4,18 @@
 {% block title %}{{ target.first_name }} {{ target.last_name }} — Team — Timesheets{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+<header class="page-header">
   <div>
-    <h1 class="h3 mb-1">{{ target.first_name }} {{ target.last_name }}</h1>
-    <span class="text-body-secondary">{{ target.employee_code }} · {{ target.job_title }}{% if target.team %} · {{ target.team.name }}{% endif %}{% if target.status != "ACTIVE" %} · inactive{% endif %}</span>
-    <span class="badge text-bg-light border ms-1">Read-only</span>
+    <h1 class="h3 mb-0">{{ target.first_name }} {{ target.last_name }}</h1>
+    <p class="page-subtitle">{{ target.employee_code }} · {{ target.job_title }}{% if target.team %} · {{ target.team.name }}{% endif %}{% if target.status != "ACTIVE" %} · inactive{% endif %} {% include "includes/status_badge.html" with status="READ_ONLY" only %}</p>
   </div>
-  <div class="d-flex gap-2">
+  <div class="page-actions">
     <nav aria-label="Range" class="btn-group">
       {% for n in ranges %}<a class="btn btn-sm {% if n == dash.weeks %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?weeks={{ n }}">Last {{ n }} weeks</a>{% endfor %}
     </nav>
     <a class="btn btn-sm btn-outline-secondary" href="{% url 'team' %}">&larr; Team</a>
   </div>
-</div>
+</header>
 
 {% include "analytics/_dashboard.html" with dash=dash own=False %}
 
@@ -30,7 +29,7 @@
           {% for state, worked, leave in timesheets %}
             <tr data-week="{{ state.week_start|date:'Y-m-d' }}">
               <td><a href="{% url 'team_member_week' target.employee_code state.week_start %}">{{ state.week_start|date:"M j" }} – {{ state.week_start|add_days:6|date:"M j, Y" }}</a></td>
-              <td><span class="badge {{ state.status|status_badge }}">{{ state.status|status_label }}</span>{% if state.timesheet.is_late %} <span class="badge text-bg-warning">Late</span>{% endif %}{% if state.is_missed %} <span class="badge text-bg-danger">Missed</span>{% endif %}</td>
+              <td>{% include "includes/week_badges.html" with state=state only %}</td>
               <td class="text-end">{{ worked|hm }}</td>
               <td class="text-end">{{ leave|hm }}</td>
               <td class="text-end">{{ state.expected_minutes|hm }}</td>
