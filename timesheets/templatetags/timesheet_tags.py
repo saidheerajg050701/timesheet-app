@@ -30,6 +30,7 @@ TONES = {
     "EXPORTED": "submitted",
     "PAID": "approved",
     "SUPERSEDED": "neutral",
+    "SETTLED": "info",  # a corrected week paid through adjustments (D-118)
     "LATE": "warning",  # flags
     "CHANGE_REQUESTED": "warning",
     "OVERTIME": "info",
@@ -126,6 +127,14 @@ def is_timed(category):
 def slot_hours(row):
     """A grid slot's hours as typed: "3.50" (Change 2)."""
     return hours_text(slot_minutes(row))
+
+
+@register.filter
+def signed_hours(minutes):
+    """Signed minutes as hours: 90 → "+1.50", -30 → "−0.50", 0 → "0.00" (adjustments)."""
+    minutes = int(minutes or 0)
+    sign = "+" if minutes > 0 else "−" if minutes < 0 else ""
+    return f"{sign}{abs(minutes) / 60:.2f}"
 
 
 @register.filter

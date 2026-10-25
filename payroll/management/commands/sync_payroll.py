@@ -3,16 +3,20 @@
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from payroll.services.sync import sync_payroll
+from payroll.services.sync import sync_payroll_counts
 
 
 class Command(BaseCommand):
-    help = "Publish missing payroll records and supersede stale ones. Safe to run any time."
+    help = (
+        "Publish missing payroll records, supersede stale ones and create missing pay "
+        "adjustments. Safe to run any time."
+    )
 
     def handle(self, *args, **options):
-        published, superseded = sync_payroll(at=timezone.now())
+        published, superseded, adjustments = sync_payroll_counts(at=timezone.now())
         self.stdout.write(
             self.style.SUCCESS(
-                f"Payroll in sync: {published} record(s) published, {superseded} superseded."
+                f"Payroll in sync: {published} record(s) published, {superseded} superseded, "
+                f"{adjustments} adjustment(s) created."
             )
         )

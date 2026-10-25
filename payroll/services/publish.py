@@ -17,6 +17,7 @@ from django.db.models import Max
 from audit.models import AuditLog
 from audit.services.log import build, bulk_record
 from payroll.models import PayrollWeek
+from payroll.services.adjustments import settle
 from payroll.services.hours import split_hours
 from timesheets.models import PeriodApproval, Timesheet
 from timesheets.services.calendar import expected_minutes_for, pay_period_for
@@ -29,6 +30,7 @@ REPAIR_HINT = "run `uv run python manage.py sync_payroll` to repair"
 class PublishResult:
     created: list = field(default_factory=list)
     superseded: list = field(default_factory=list)
+    adjustments: list = field(default_factory=list)  # carried to a later pay run (D-119)
 
 
 def live_records(employee_code, week_start):
@@ -73,7 +75,9 @@ def publish_period(approval, *, actor=None, system_actor="", at):
     """One record per approved week of an APPROVED period. Idempotent (T-35, D-66).
 
     A week already published for this decision (same approved_at) is skipped. A live record
-    from an older decision is superseded and the next version written.
+    from an older decision is superseded and the next version written. If an earlier version of
+    the week was already exported, the new one is SETTLED and its difference becomes an
+    adjustment for the next pay run, in the same payroll transaction (D-118–D-121).
     """
     approval = PeriodApproval.objects.select_related("employee__team", "approver").get(
         pk=approval.pk
@@ -101,6 +105,9 @@ def publish_period(approval, *, actor=None, system_actor="", at):
             version = next_version(code, sheet.week_start)
             record = PayrollWeek.objects.create(**snapshot(approval, sheet), version=version)
             result.created.append(record)
+            settled = settle(record, at=at)
+            if settled and settled.adjustment:
+                result.adjustments.append(settled.adjustment)
     audit_result(result, actor=actor, system_actor=system_actor, at=at)
     return result
 
@@ -123,42 +130,68 @@ def _supersede(record, at):
 
 
 def audit_result(result, *, actor=None, system_actor="", at):
-    rows = [
-        build(
-            AuditLog.Action.SUPERSEDE,
-            "PayrollWeek",
-            r.pk,
-            actor=actor,
-            system_actor=system_actor,
-            after={
-                "employee_code": r.employee_code,
-                "week_start": r.week_start,
-                "version": r.version,
-            },
-            at=at,
-        )
-        for r in result.superseded
-    ] + [
-        build(
-            AuditLog.Action.PUBLISH,
-            "PayrollWeek",
-            r.pk,
-            actor=actor,
-            system_actor=system_actor,
-            after={
-                "employee_code": r.employee_code,
-                "week_start": r.week_start,
-                "version": r.version,
-                "regular_minutes": r.regular_minutes,
-                "overtime_minutes": r.overtime_minutes,
-                "total_minutes": r.total_minutes,
-            },
-            at=at,
-        )
-        for r in result.created
-    ]
+    rows = (
+        [
+            build(
+                AuditLog.Action.SUPERSEDE,
+                "PayrollWeek",
+                r.pk,
+                actor=actor,
+                system_actor=system_actor,
+                after={
+                    "employee_code": r.employee_code,
+                    "week_start": r.week_start,
+                    "version": r.version,
+                },
+                at=at,
+            )
+            for r in result.superseded
+        ]
+        + [
+            build(
+                AuditLog.Action.PUBLISH,
+                "PayrollWeek",
+                r.pk,
+                actor=actor,
+                system_actor=system_actor,
+                after={
+                    "employee_code": r.employee_code,
+                    "week_start": r.week_start,
+                    "version": r.version,
+                    "regular_minutes": r.regular_minutes,
+                    "overtime_minutes": r.overtime_minutes,
+                    "total_minutes": r.total_minutes,
+                },
+                at=at,
+            )
+            for r in result.created
+        ]
+        + [
+            adjustment_audit(a, actor=actor, system_actor=system_actor, at=at)
+            for a in result.adjustments
+        ]
+    )
     if rows:
         bulk_record(rows)
+
+
+def adjustment_audit(adjustment, *, actor=None, system_actor="", at):
+    """PUBLISH row for a new adjustment (D-125); the reason stays out of the audit summary."""
+    return build(
+        AuditLog.Action.PUBLISH,
+        "PayrollAdjustment",
+        adjustment.pk,
+        actor=actor,
+        system_actor=system_actor,
+        after={
+            "employee_code": adjustment.employee_code,
+            "week_start": adjustment.week_start,
+            "versions": [adjustment.old_version, adjustment.new_version],
+            "period_start": adjustment.period_start,
+            **{f"{n}_minutes": getattr(adjustment, f"{n}_minutes") for n in adjustment.AMOUNTS},
+        },
+        at=at,
+    )
 
 
 # --- called by the timesheet hooks, after the main database commits (D-65) ----------------

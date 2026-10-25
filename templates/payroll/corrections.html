@@ -3,32 +3,43 @@
 
 {% block title %}Payroll corrections — Timesheets{% endblock %}
 
+{% block main_class %}app-main-wide{% endblock %}
+
 {% block content %}
 <header class="page-header">
   <div>
     <h1 class="h3 mb-0">Corrections</h1>
-    <p class="page-subtitle">Weeks that changed after they were already exported or paid. Adjust the next payroll run by the difference.</p>
+    <p class="page-subtitle">Weeks that changed after they were already exported or paid. The difference is paid automatically as an adjustment in the next pay run; the corrected week itself is never exported again.</p>
   </div>
   <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll' %}">&larr; Payroll</a></div>
 </header>
 <div class="table-responsive">
   <table class="table align-middle bg-body" id="corrections">
-    <thead><tr><th>Employee</th><th>Week</th><th>Old version</th><th>Was</th><th class="text-end">Old total</th><th>New version</th><th class="text-end">New total</th><th class="text-end">Difference</th><th>Superseded</th></tr></thead>
+    <thead><tr><th>Employee</th><th>Week</th><th>Old version</th><th>Was</th><th class="text-end">Old total</th><th>New version</th><th class="text-end">New total</th><th class="text-end">Difference</th><th>Adjustment</th><th>Reason</th><th>Superseded</th></tr></thead>
     <tbody>
       {% for c in corrections %}
         <tr data-employee="{{ c.old.employee_code }}">
           <td>{{ c.old.employee_name }}<br><small class="text-body-secondary">{{ c.old.employee_code }}</small></td>
           <td>{{ c.old.week_start|date:"M j, Y" }}</td>
           <td>v{{ c.old.version }}</td>
-          <td>{% if c.old.paid_at %}Paid{% else %}Exported{% endif %} ({{ c.old.export_batch }})</td>
+          <td class="text-nowrap">{% if c.old.paid_at %}Paid ({{ c.old.export_batch }}){% elif c.old.exported_at %}Exported ({{ c.old.export_batch }}){% else %}Settled{% endif %}</td>
           <td class="text-end">{{ c.old.total_minutes|hours2 }}</td>
           <td>{% if c.new %}v{{ c.new.version }} {% include "includes/status_badge.html" with status=c.new.status only %}{% else %}<span class="text-body-secondary">waiting for re-approval</span>{% endif %}</td>
           <td class="text-end">{% if c.new %}{{ c.new.total_minutes|hours2 }}{% else %}—{% endif %}</td>
           <td class="text-end fw-semibold">{{ c.difference_text }}</td>
+          <td data-role="adjustment">
+            {% if c.adjustment %}
+              {{ c.adjustment.total_minutes|signed_hours }} h → pay period {{ c.adjustment.period_start|date:"M j" }} – {{ c.adjustment.period_start|add_days:13|date:"M j, Y" }}<br>
+              {% include "includes/status_badge.html" with status=c.adjustment.status label=c.adjustment_status only %}
+            {% elif c.new and c.new.status == "SETTLED" %}<span class="text-body-secondary">no adjustment (0.00)</span>
+            {% elif c.new %}<span class="text-body-secondary">not adjusted yet — run sync_payroll</span>
+            {% else %}<span class="text-body-secondary">after re-approval</span>{% endif %}
+          </td>
+          <td class="small">{% if c.adjustment %}{{ c.adjustment.reason }}{% else %}—{% endif %}</td>
           <td>{{ c.old.superseded_at|date:"M j, Y" }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="9" class="text-body-secondary">No corrections.</td></tr>
+        <tr><td colspan="11" class="text-body-secondary">No corrections.</td></tr>
       {% endfor %}
     </tbody>
   </table>

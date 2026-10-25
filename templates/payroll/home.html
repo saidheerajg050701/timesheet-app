@@ -61,7 +61,7 @@
 <h2 class="section-title">Totals per employee <small class="text-body-secondary fw-normal">({{ period|date:"M j" }} – {{ period|add_days:13|date:"M j, Y" }}, hours)</small></h2>
 <div class="table-responsive table-scroll mb-4">
   <table class="table table-sm align-middle bg-body" id="payroll-totals">
-    <thead><tr><th>Employee</th><th>Department</th><th>Team</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th></tr></thead>
+    <thead><tr><th>Employee</th><th>Department</th><th>Team</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Weeks</th><th class="text-end">Adjustments</th><th class="text-end">Total</th></tr></thead>
     <tbody>
       {% for t in totals %}
         <tr data-employee="{{ t.employee_code }}">
@@ -69,28 +69,31 @@
           <td>{{ t.department }}</td><td>{{ t.team }}</td>
           <td class="text-end">{{ t.regular|hours2 }}</td><td class="text-end">{{ t.overtime|hours2 }}</td>
           <td class="text-end">{{ t.pto|hours2 }}</td><td class="text-end">{{ t.sick|hours2 }}</td>
-          <td class="text-end">{{ t.holiday|hours2 }}</td><td class="text-end fw-semibold">{{ t.total|hours2 }}</td>
+          <td class="text-end">{{ t.holiday|hours2 }}</td><td class="text-end">{{ t.weeks|hours2 }}</td>
+          <td class="text-end" data-role="adjustments">{% if t.adjustments %}{{ t.adjustments|signed_hours }}{% else %}—{% endif %}</td>
+          <td class="text-end fw-semibold">{{ t.total|hours2 }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="9" class="text-body-secondary">No payroll records match.</td></tr>
+        <tr><td colspan="11" class="text-body-secondary">No payroll records match.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+<p class="small text-body-secondary">Weeks show each week's current approved hours (corrected weeks included). Adjustments are differences for earlier weeks that were already exported or paid, carried into this period's pay run; Total = weeks + adjustments.</p>
 
 <div class="card card-body d-flex flex-row flex-wrap gap-4 mb-4">
   <form method="post" action="{% url 'payroll_export' %}" id="export-form">
     {% csrf_token %}
     <input type="hidden" name="period" value="{{ period|date:'Y-m-d' }}">
-    <button type="submit" class="btn btn-primary"{% if not exportable %} disabled{% endif %}>Export CSV ({{ exportable }} new week record{{ exportable|pluralize }})</button>
-    <div class="small text-body-secondary mt-1">Exports every CURRENT record of this period as one numbered batch.</div>
+    <button type="submit" class="btn btn-primary"{% if not exportable %} disabled{% endif %}>Export CSV ({{ exportable_weeks }} new week record{{ exportable_weeks|pluralize }}{% if exportable_adjustments %}, {{ exportable_adjustments }} adjustment{{ exportable_adjustments|pluralize }}{% endif %})</button>
+    <div class="small text-body-secondary mt-1">Exports every CURRENT week record and adjustment of this period as one numbered batch. Settled weeks are never exported again.</div>
   </form>
   <div>
     <h3 class="h6 card-title">Batches for this period</h3>
     <ul class="list-unstyled mb-0" id="batches">
       {% for b in batches %}
         <li class="mb-1">
-          <a href="{% url 'payroll_batch_csv' b.batch %}">{{ b.batch }}</a> · {{ b.records }} week{{ b.records|pluralize }} · exported {{ b.exported_at|date:"M j, Y" }}
+          <a href="{% url 'payroll_batch_csv' b.batch %}">{{ b.batch }}</a> · {{ b.records }} week{{ b.records|pluralize }}{% if b.adjustments %} + {{ b.adjustments }} adjustment{{ b.adjustments|pluralize }}{% endif %} · exported {{ b.exported_at|date:"M j, Y" }}
           {% if b.exported %}
             <form method="post" action="{% url 'payroll_mark_paid' b.batch %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success ms-1">Mark as paid</button></form>
           {% elif b.paid %}{% include "includes/status_badge.html" with status="PAID" only %}{% endif %}
@@ -110,7 +113,8 @@
       {% for r in records %}
         <tr>
           <td>{{ r.employee_name }}</td><td>{{ r.week_start|date:"M j" }}</td><td>{{ r.version }}</td>
-          <td>{% include "includes/status_badge.html" with status=r.status only %}</td>
+          <td>{% include "includes/status_badge.html" with status=r.status only %}{% if r.status == "SETTLED" %}
+            <div class="small" data-role="settled-in">{% if r.settled_in %}<a href="?period={{ r.settled_in|date:'Y-m-d' }}">Settled by adjustment in {{ r.settled_in|date:"M j" }} – {{ r.settled_in|add_days:13|date:"M j" }}</a>{% else %}<span class="text-body-secondary">No difference to pay</span>{% endif %}</div>{% endif %}</td>
           <td>{{ r.export_batch|default:"—" }}</td>
           <td class="text-end">{{ r.regular_minutes|hours2 }}</td><td class="text-end">{{ r.overtime_minutes|hours2 }}</td>
           <td class="text-end">{{ r.pto_minutes|hours2 }}</td><td class="text-end">{{ r.sick_minutes|hours2 }}</td>
@@ -119,6 +123,28 @@
         </tr>
       {% empty %}
         <tr><td colspan="12" class="text-body-secondary">No records.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="section-title">Adjustments carried to this period</h2>
+<div class="table-responsive">
+  <table class="table table-sm align-middle bg-body" id="payroll-adjustments">
+    <thead><tr><th>Employee</th><th>Original week</th><th>Versions</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
+    <tbody>
+      {% for a in adjustments %}
+        <tr data-adjustment="{{ a.employee_code }}">
+          <td>{{ a.employee_name }}</td><td>{{ a.week_start|date:"M j, Y" }}</td><td>v{{ a.old_version }} → v{{ a.new_version }}</td>
+          <td>{% if a.status == "CURRENT" %}{% include "includes/status_badge.html" with status="CURRENT" label="Scheduled" only %}{% else %}{% include "includes/status_badge.html" with status=a.status only %}{% endif %}</td>
+          <td>{{ a.export_batch|default:"—" }}</td>
+          <td class="text-end">{{ a.regular_minutes|signed_hours }}</td><td class="text-end">{{ a.overtime_minutes|signed_hours }}</td>
+          <td class="text-end">{{ a.pto_minutes|signed_hours }}</td><td class="text-end">{{ a.sick_minutes|signed_hours }}</td>
+          <td class="text-end">{{ a.holiday_minutes|signed_hours }}</td><td class="text-end fw-semibold">{{ a.total_minutes|signed_hours }}</td>
+          <td>{{ a.approved_by_name }}<br><small class="text-body-secondary">{{ a.approved_at|date:"M j, g:i A" }}</small></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="12" class="text-body-secondary">No adjustments carried to this period.</td></tr>
       {% endfor %}
     </tbody>
   </table>

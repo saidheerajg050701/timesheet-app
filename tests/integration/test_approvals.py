@@ -226,7 +226,7 @@ def test_bulk_approve(org, make_week, login_as):
     assert AuditLog.objects.filter(action="APPROVE").count() == 1
 
 
-def test_pay_period_dates(org, login_as):
+def test_pay_period_dates(org, login_as, fixed_now):
     """T-97: 14-day periods from the anchor; default = last completed; snapping; no future."""
     assert period_start_for(date(2026, 1, 4)) == date(2026, 1, 4)
     assert period_start_for(date(2026, 1, 17)) == date(2026, 1, 4)

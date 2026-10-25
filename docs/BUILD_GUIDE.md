@@ -9,6 +9,7 @@
 
 | Version | Change | Details |
 |---|---|---|
+| 2.7 | **Change 4 – Automatic pay adjustments** | A corrected week that was already exported or paid is no longer exported again in full: its new version is SETTLED and the difference (regular, overtime, PTO, sick, holiday, total; positive or negative) becomes a pay adjustment carried forward to the next unexported pay run, exported in the same CSV batch as a row of type ADJUSTMENT and paid with it; Corrections shows each adjustment and its status; sync_payroll creates missing ones (D-118–D-126, T-173–T-181) |
 | 2.6 | **Change 3 – Sunday-to-Saturday week** | Weeks run Sunday → Saturday and are identified by their Sunday; the Saturday 12:00 deadline is now the last day of the week; pay periods are anchored on Sunday 2026-01-04 and a non-Sunday anchor stops the app; working days stay Mon–Fri; non-Sunday week links redirect; demo data rebuilt by the owner (D-111–D-117, T-168–T-172) |
 | 2.5 | **Change 2 – Weekly grid** | Timesheets are entered and shown as a weekly grid: one row per Project / Category, day cells (Sun–Sat since Change 3) with time slots in an accessible dialog, a Total worked hours column and footer; used on the week page, Edit directly, and read-only on submitted weeks, change requests, approvals and the Team week view. Same entries, rules, services and totals; no migration (D-106–D-110, T-160–T-167) |
 | 2.4 | **Change 1 – Modern UI** | Light, modern look on every page with one theme stylesheet (`static/css/theme.css`, design tokens), a shared status badge component, centered login/sign-up/profile/error cards, chart colours from the tokens, and a screenshot tool for visual review (D-100–D-105, T-157–T-159). Behaviour, URLs, permissions and rules unchanged |
@@ -41,7 +42,8 @@
 | 12 | Full test pass, e2e, hardening, README | `bad0b31` | Done |
 | Change 1 | Modern UI (post-release, like Phase 5b) | `7f19f32` | Done |
 | Change 2 | Weekly grid (post-release) | (commit pending) | Done — ready to commit |
-| Change 3 | Sunday-to-Saturday week (post-release) | (commit pending) | Done — ready to commit; rebuild the demo data (D.3) |
+| Change 3 | Sunday-to-Saturday week (post-release) | `39485cd` (with Change 2) | Done |
+| Change 4 | Automatic pay adjustments (post-release) | (commit pending) | Done — ready to commit; migrate the payroll database |
 
 ---
 
@@ -291,13 +293,13 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 **FR-11 Payroll database (NEW).**
 1. When a manager **approves** a biweekly period, the app writes **one payroll record per approved week** into the **separate payroll database**.
 2. Each record is a **snapshot** at the moment of approval: Employee ID, name, department, team, week start, period start, **regular hours, overtime hours, PTO, Sick, Holiday, total hours**, expected hours, approver name, approval time.
-3. Payroll records are **append-only** (D-15): snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. This is enforced in code and tested. If an approved week is later changed (FR-9), the old record is marked **SUPERSEDED** and, after re-approval, a **new version** is written. Payroll always sees the current version plus a history of corrections. Timesheets of an employee who has since been deactivated can still be approved and paid (D-19).
+3. Payroll records are **append-only** (D-15): snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. This is enforced in code and tested. If an approved week is later changed (FR-9), the old record is marked **SUPERSEDED** and, after re-approval, a **new version** is written. Payroll always sees the current version plus a history of corrections. **Pay adjustments (Change 4, D-118–D-126):** if an earlier version of that week was already exported or paid, the new version is **SETTLED** — it is never exported again in full — and the difference (new version − previous version, for regular, overtime, PTO, sick, holiday and total minutes; positive or negative; nothing when zero) becomes a **pay adjustment**: its own append-only record, carried forward to the next pay period that has no export batch yet (D-121) and paid in that run. If the earlier versions were never exported, the new version is exported normally. Timesheets of an employee who has since been deactivated can still be approved and paid (D-19).
 4. **Payroll page** (`/payroll/`), for Payroll and Admin only:
    - Filter by pay period, department, team, employee, status
-   - Totals per employee per period (regular, overtime, PTO, sick, holiday)
-   - **Export CSV** for the selected period → records are stamped with an export batch number and marked **EXPORTED**
-   - **Mark as paid** → records become **PAID**
-   - **Corrections** tab: weeks that changed after they were already exported or paid, so payroll can adjust the next run
+   - Totals per employee per period (regular, overtime, PTO, sick, holiday), plus **Adjustments** carried into the period, Total = weeks + adjustments (D-124)
+   - **Export CSV** for the selected period → its CURRENT week records **and** CURRENT adjustments are stamped with one export batch number and marked **EXPORTED**; the CSV has a `row_type` column (WEEK / ADJUSTMENT) and the original week of each adjustment (D-123)
+   - **Mark as paid** → the batch's records and adjustments become **PAID**
+   - **Corrections** tab: every change to a week that had been exported or paid, with its adjustment, the period it was carried to and its status (Scheduled, Exported in EXP-xxxx, Paid) and the reason
 5. The payroll flag never grants access to other people's timesheet details, notes, or analytics — only approved hours. (A payroll user still has their own employee pages, and manager rights for their own tree if they manage people — D-12.)
 6. Because the payroll database is a separate file, it can be backed up, handed over, or moved to a different server later without the rest of the app.
 
@@ -322,7 +324,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 
 **Who may change APPROVED (D-10):** `PeriodApproval` is the source of truth. Only `timesheets/services/approvals.py` may move a `Timesheet.status` to or from APPROVED, in the same database transaction as the matching `PeriodApproval` change.
 
-**Payroll record status (D-15):** `CURRENT` → `EXPORTED` → `PAID`, forward only; any of these → `SUPERSEDED` when the week changes. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may ever change.
+**Payroll record status (D-15):** `CURRENT` → `EXPORTED` → `PAID`, forward only; any of these → `SUPERSEDED` when the week changes. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may ever change. **Since Change 4:** a corrected version of a week that was already exported is created CURRENT and immediately becomes **SETTLED** (never exported; → SUPERSEDED if corrected again); its difference is a **PayrollAdjustment** (CURRENT → EXPORTED → PAID, D-118–D-120).
 
 ## B.6 Data model
 
@@ -471,7 +473,7 @@ class AuditLog(models.Model):
 # payroll/models.py   (stored ONLY in the "payroll" database via payroll/routers.py)
 class PayrollWeek(models.Model):
     class Status(models.TextChoices):
-        CURRENT="CURRENT"; EXPORTED="EXPORTED"; PAID="PAID"; SUPERSEDED="SUPERSEDED"
+        CURRENT="CURRENT"; EXPORTED="EXPORTED"; PAID="PAID"; SETTLED="SETTLED"; SUPERSEDED="SUPERSEDED"
     # Snapshot fields — plain values, NOT foreign keys (Django can't link across databases)
     employee_code = models.CharField(max_length=20, db_index=True)
     employee_name = models.CharField(max_length=130)
@@ -496,6 +498,7 @@ class PayrollWeek(models.Model):
     export_batch = models.CharField(max_length=40, blank=True)
     exported_at = models.DateTimeField(null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
+    settled_at = models.DateTimeField(null=True, blank=True)     # CURRENT → SETTLED (D-118)
     superseded_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
@@ -506,6 +509,14 @@ class PayrollWeek(models.Model):
                                                name="one_live_record_per_week")]
     # save() refuses changes to frozen fields and backwards moves; delete(), QuerySet.update()
     # and QuerySet.delete() always raise AppendOnlyError (D-15, D-67).
+
+class PayrollAdjustment(AppendOnlyRecord):   # Change 4 (D-119–D-121), payroll database only
+    # frozen: employee_code/name, department, team, week_start (the corrected week),
+    # week_period_start, period_start (carried to), old_version, new_version,
+    # regular/overtime/pto/sick/holiday/total_minutes (signed IntegerFields), approved_by_code,
+    # approved_by_name, approved_at, reason, source_timesheet_id, created_at
+    status = ...   # CURRENT → EXPORTED → PAID, forward only; plus export_batch, exported_at, paid_at
+    # UniqueConstraint(employee_code, week_start, new_version) "one_adjustment_per_version"
 ```
 
 How the two databases work together:
@@ -631,8 +642,8 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `timesheets/services/approvals.py` |
 | 11 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
 | 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `payroll/services/hours.py` |
-| 13 | `publish_period(approval, …)` (idempotent, D-66), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` repairs (`payroll/services/sync.py`) | `payroll/services/publish.py` |
-| 14 | `export_period(...)` (whole period, batch `EXP-0001`…, D-68), `batch_csv(...)` (spreadsheet-safe), `mark_paid(...)` (per batch, D-69), `corrections()` (D-70) — forward-only status changes (D-15) | `payroll/services/export.py` |
+| 13 | `publish_period(approval, …)` (idempotent, D-66; settles corrected versions of once-exported weeks and creates their adjustments, D-118–D-121), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` (also creates missing adjustments, D-125) | `payroll/services/publish.py`, `payroll/services/adjustments.py`, `payroll/services/sync.py` |
+| 14 | `export_period(...)` (whole period: CURRENT weeks + CURRENT adjustments, batch `EXP-0001`…, D-68, D-123), `batch_csv(...)` (WEEK and ADJUSTMENT rows; text cells spreadsheet-safe), `mark_paid(...)` (per batch, both kinds, D-69), `corrections()` (with adjustments, D-124), `carry_period(...)` (D-121) | `payroll/services/export.py`, `payroll/services/adjustments.py` |
 | 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks): `dashboard_for`, `punctuality`, `overtime`, `hours_by_project`, `hours_by_category`, `approval_outcomes` — built on `week_state`, `summarize` and `split_hours` (D-74–D-79) | `analytics/services/metrics.py` |
 | 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
 
@@ -687,6 +698,7 @@ tests/
     test_approvals.py
     test_payroll_publish.py
     test_payroll_pages.py  # /payroll/, export CSV, corrections, 403s (T-37–T-39, T-110, T-111)
+    test_adjustments.py    # automatic pay adjustments: settle, carry forward, CSV, sync, append-only, settled label (T-173–T-182)
     test_analytics.py
     test_team.py           # /team/, drill-down, week view, large-data query count (T-123–T-132)
     test_admin.py
@@ -766,7 +778,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-56 | Seed | Approvals created by `seed_demo` | Only periods with both weeks SUBMITTED are APPROVED; most recent completed period and periods with a LOCKED week stay PENDING; approver = direct manager (HR for the CEO), never self (D-06, D-11) |
 | T-57 | Seed | Audit rows created by `seed_demo` | Seed's own rows use system_actor `seed_demo`; approvals, rejection, unlocks and the manager edit name the manager as actor (D-14) |
 | T-58 | Login | Anonymous user opens `/`, `/admin/`, or any other page except `/login/` and `/signup/` | Redirected to `/login/?next=…`; login and sign-up pages open without a session (D-24) |
-| T-59 | Databases | django-axes and every other non-payroll app after migrating both databases | Their tables exist only in the main database; payroll database holds only `django_migrations` (+ payroll tables from Phase 8) |
+| T-59 | Databases | django-axes and every other non-payroll app after migrating both databases | Their tables exist only in the main database; payroll database holds only `django_migrations` (+ payroll tables from Phase 8) | *Change 4 adds `payroll_payrolladjustment` to the payroll database's tables.*
 | T-60 | Permissions | `can_approve` for direct manager, higher manager, self | Only the direct manager; never self, never the director of an indirect report (D-11) |
 | T-61 | Permissions | Admin approving with and without a manager on the employee | Admin approves only employees with no manager, never themselves; the CEO is approved by the HR admin, not by the CEO (D-11) |
 | T-62 | Permissions | Payroll user (no reports) opens `/payroll/`, `/team/`, `/approvals/`, another person's page | Payroll 200; everything else 403; `can_view` others False (D-12) |
@@ -821,7 +833,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-111 | Payroll | Who can open payroll pages | Payroll users and admins: 200; employee, manager, director: 403 on every payroll URL; a payroll user still gets 403 on others' timesheet details (D-12) |
 | T-112 | Payroll | Mark as paid | EXPORTED → PAID for that batch only; CURRENT and later records untouched; PAY audit; repeating does nothing (D-69) |
 | T-113 | Payroll | `backup_db` | Timestamped copies of both databases (same timestamp) that open with their tables (D-72) |
-| T-114 | Seed | Payroll part of `seed_demo` | Every approved week has a live record; older periods EXPORTED/PAID with batches EXP-0001…; exactly one SUPERSEDED correction with its v2; EXPORT/PAY by payroll@ (D-73) |
+| T-114 | Seed | Payroll part of `seed_demo` | Every approved week has a live record; older periods EXPORTED/PAID with batches EXP-0001…; exactly one SUPERSEDED correction with its v2; EXPORT/PAY by payroll@ (D-73) | *Since Change 4:* that correction's v2 is SETTLED (not re-exported) with one +1.00 h adjustment carried to the first unexported period (D-126).
 | T-115 | Analytics | Range filter 4 / 12 / 26 weeks and an invalid value | Weeks end with the current week; counts change with the range; invalid → 12 (D-74) |
 | T-116 | Analytics | On-time / late / missed edge cases: draft past deadline, no timesheet, late, reopened-and-resubmitted on-time week, missed week reopened and resubmitted, re-locked submitted week, missed week reopened but not resubmitted, current week | Classified per D-75 (first submission decides; never submitted = missed); current week not counted; the `/timesheets/` Missed badge agrees |
 | T-117 | Analytics | New hire mid-range and a deactivated employee (end_date) | Weeks outside employment never shown, counted or missed; partial weeks prorated (D-19) |
@@ -880,10 +892,20 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-170 | Calendar | Pay-period anchor must be a Sunday | System check `timesheets.E001` for 2026-01-05 ("is a Monday; it must be a Sunday", hint with `PAY_PERIOD_ANCHOR=2026-01-04`); none for 2026-01-04; `pay_period_for` with a Monday anchor raises `ValueError`; 14-day periods both ways from the anchor start on Sundays (D-113) |
 | T-171 | Timesheet | Redirect from a non-Sunday date | `/timesheets/2026-10-19/` (old Monday), Wednesday and Saturday → 302 to `/timesheets/2026-10-18/`; an old Monday of a past week → its Sunday; the Sunday opens; the Team week view redirects the same way (D-115) |
 | T-172 | Calendar | Daylight-saving week | Week of Sun 1 Nov 2026 (clocks go back that night): Nov 1 and Sat Nov 7 belong to it; deadline Sat 7 Nov 12:00 CST = 18:00 UTC (the week before: 12:00 CDT = 17:00 UTC); a Sunday 09:00–17:00 entry saves as 8:00; expected 40 h; the draft locks at exactly 12:00 local (D-116) |
+| T-173 | Payroll | Positive overtime adjustment after payment | A paid week corrected through Edit directly (+2 h) and re-approved: v2 SETTLED with no batch; one adjustment overtime +2.00, regular 0, total +2.00, versions 1→2, approver and approval time, reason = the change-request reason, carried to the next unexported period; the period's untouched week settles with no adjustment (D-118, D-119, D-121, D-122) |
+| T-174 | Payroll | Negative adjustment | An exported, not yet paid week reduced by 1.5 h → adjustment regular −1.50, total −1.50; exported in the next batch as `-1.50` (a number, not escaped); shown as −1.50 on the Payroll page (D-119, D-123) |
+| T-175 | Payroll | No adjustment when the old version was never exported | Correction before export → v2 CURRENT, no adjustment; the next export has the v2 WEEK rows (D-119) |
+| T-176 | Payroll | Several corrections of the same week | Paid v1 → v2 (+1 h) → v3 (−0.5 h against v2) while the first adjustment is still scheduled → adjustments +60 and −30 minutes, summing to v3 − v1; an unchanged re-approval creates nothing (D-119) |
+| T-177 | Payroll | The new full version is never exported twice | After a correction the week's own period has nothing new to export; the next period's batch holds its WEEK rows plus one ADJUSTMENT row ("Export CSV (2 new week records, 1 adjustment)"); SETTLED records never get a batch; paid = v1 + difference = v2 (D-118, D-123) |
+| T-178 | Payroll | Carry-forward period | `carry_period`: the next period when unexported; skips periods that already have a batch; never earlier than the most recent completed period at re-approval; the next future period when everything is exported; moves on with time (D-121) |
+| T-179 | Payroll | CSV, totals, Mark as paid, Corrections | CSV columns start `batch,employee_code,row_type`; ADJUSTMENT rows with blank `week_start`, `original_week` and version `1→2`; no reason in the CSV or on the Payroll page; totals show weeks 80.00 + adjustments +2.00 = 82.00; Corrections shows the period, the reason and Scheduled → Exported in EXP-0002 → Paid (EXP-0002); Mark as paid pays weeks and the adjustment; the untouched week shows "no adjustment (0.00)" (D-122–D-124) |
+| T-180 | Payroll | sync_payroll creates missing adjustments idempotently | A pre-Change-4 state (v2 CURRENT after v1 was paid, no adjustment) → sync settles v2 and creates one adjustment (system actor `sync_payroll`, default reason); a second sync creates nothing; SYNC audit counts 1 then 0 (D-125) |
+| T-181 | Payroll | Adjustments are append-only and audited | Frozen amounts, CURRENT→PAID skip, PAID→EXPORTED, delete, bulk update/delete and creating as EXPORTED all refused; a SETTLED week can't be exported; PUBLISH audit for the adjustment (actor = approver, versions, amounts, period, no reason); EXPORT and PAY rows count the adjustment (D-120, D-125) |
+| T-182 | Payroll | Settled week shows where its difference was paid | Viewing the corrected week's own (old) period: the Settled week is labelled "Settled by adjustment in Sep 27 – Oct 10", linking to `?period=2026-09-27`, where the adjustment is listed; the period's untouched week shows "No difference to pay"; weeks that aren't Settled carry no label (D-124) |
 
-### Status of every test (Phase 12, updated for Changes 1–3)
+### Status of every test (Phase 12, updated for Changes 1–4)
 
-Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167 and Change 3 T-168–T-172, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172 and Change 4 T-173–T-182, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
@@ -1059,6 +1081,16 @@ Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24,
 | T-170 | Calendar | `unit/test_calendar.py::test_pay_period_anchor_must_be_a_sunday` | ✅ Pass |
 | T-171 | Timesheet | `integration/test_sunday_week.py::test_non_sunday_dates_redirect_to_their_week` | ✅ Pass |
 | T-172 | Calendar | `integration/test_sunday_week.py::test_daylight_saving_week` | ✅ Pass |
+| T-173 | Payroll | `integration/test_adjustments.py::test_positive_overtime_adjustment_after_payment` | ✅ Pass |
+| T-174 | Payroll | `integration/test_adjustments.py::test_negative_adjustment` | ✅ Pass |
+| T-175 | Payroll | `integration/test_adjustments.py::test_no_adjustment_when_the_old_version_was_never_exported` | ✅ Pass |
+| T-176 | Payroll | `integration/test_adjustments.py::test_several_corrections_of_the_same_week` | ✅ Pass |
+| T-177 | Payroll | `integration/test_adjustments.py::test_new_full_version_is_never_exported_twice` | ✅ Pass |
+| T-178 | Payroll | `integration/test_adjustments.py::test_carry_forward_period` | ✅ Pass |
+| T-179 | Payroll | `integration/test_adjustments.py::test_csv_totals_mark_paid_and_corrections` | ✅ Pass |
+| T-180 | Payroll | `integration/test_adjustments.py::test_sync_creates_missing_adjustments_idempotently` | ✅ Pass |
+| T-181 | Payroll | `integration/test_adjustments.py::test_adjustments_are_append_only_and_audited` | ✅ Pass |
+| T-182 | Payroll | `integration/test_adjustments.py::test_settled_week_links_to_the_period_that_paid_its_difference` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -1162,7 +1194,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-117 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-117 on October 24, 2026; D-118–D-126 on October 25, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -1180,7 +1212,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-12 | Roles | Roles add up. Payroll users are also employees (own timesheet, analytics, change requests). The payroll flag only adds `/payroll/` and never grants access to other people's timesheet details. A payroll user who is also a manager gets normal manager rights for their own tree. | B.1, B.3, B.4 FR-11, B.9 |
 | D-13 | Roles | Keep `User.is_staff` and `is_superuser` in sync with `Employee.is_admin`, and `User.is_active` with `Employee.status`, whenever an Employee is saved. | B.3, B.4 FR-1/FR-2, B.6, B.9, C.4 P1/P3 |
 | D-14 | Audit | `AuditLog.actor` becomes nullable, plus a new field `system_actor` (e.g. `"seed_demo"`, `"sync_payroll"`) used when no person is acting. Exactly one of the two must be set. | B.6, B.7, C.4 P2/P8 |
-| D-15 | Payroll | "Append-only" means snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. Enforced in code and tested. | B.4 FR-11, B.5, B.6, B.9, B.10 |
+| D-15 | Payroll | "Append-only" means snapshot and hours fields never change after creation. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may change, and only forward: CURRENT → EXPORTED → PAID, and any status → SUPERSEDED. Enforced in code and tested. *Extended by D-118 (SETTLED, `settled_at`) and D-120 (adjustments follow the same rules).* | B.4 FR-11, B.5, B.6, B.9, B.10 |
 | D-16 | Tests | New catalogued tests continue as T-43, T-44, … and are added to the B.11 table in the same phase. | B.11, C.4 |
 | D-17 | Tests | Every catalogued test's docstring starts with its ID, e.g. `"""T-13: week still open at Saturday 11:59:59."""`. Small helper tests don't need an ID. | B.11 examples |
 | D-18 | Data | PROJECT entries must have an active project; all other categories must have no project. | B.6, B.9, C.4 P5 |
@@ -1231,11 +1263,11 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-63 | Approvals | Bulk approve: only rows with the required weeks SUBMITTED, no flags, no open request and not yet decided can be ticked; the server re-checks every posted row, approves each employee in its own transaction and shows what was approved and what was skipped with reasons. | B.4 FR-7 |
 | D-64 | Payroll | **Overtime rule**, per week: worked = Project work + Meetings + Training + Other; regular = min(worked, that week's prorated expected minutes, D-19); overtime = worked − regular; PTO, Sick and Holiday are separate totals, never overtime; Break never counts; total = regular + overtime + PTO + Sick + Holiday. Stored in minutes, shown as hours with 2 decimals. | B.1 row 16, B.9 #12 |
 | D-65 | Payroll | **Two databases, fixed order.** The main DB decides first (PeriodApproval is the source of truth). The timesheet hooks only register `transaction.on_commit` callbacks; after the main commit, `publish_period` / `supersede_week` run in their own payroll transaction, then write PUBLISH / SUPERSEDE audit rows. A main rollback never reaches payroll; a payroll failure after the commit leaves the approval in place, rolls back the payroll write completely, is logged, shows an out-of-sync banner on `/payroll/`, and is repaired by `manage.py sync_payroll` (publish every APPROVED period, supersede live records of weeks no longer approved, one SYNC audit row). | B.4 FR-11, B.6, C.4 P8 |
-| D-66 | Payroll | A payroll record belongs to one approval decision (`approved_at` = `PeriodApproval.decided_at`): publishing the same decision again is a no-op; a live record from an older decision is superseded and the next version written. Partial unique constraint `one_live_record_per_week` (at most one non-SUPERSEDED record per employee and week). | B.6, B.9 #13 |
+| D-66 | Payroll | A payroll record belongs to one approval decision (`approved_at` = `PeriodApproval.decided_at`): publishing the same decision again is a no-op; a live record from an older decision is superseded and the next version written. Partial unique constraint `one_live_record_per_week` (at most one non-SUPERSEDED record per employee and week). *Extended by D-118: a SETTLED version is the live record of its week.* | B.6, B.9 #13 |
 | D-67 | Payroll | Append-only (D-15) enforced in code: `PayrollWeek.save()` refuses changes to frozen fields and any move other than CURRENT→EXPORTED→PAID or →SUPERSEDED, each lifecycle field set once by its own move; `delete()`, `QuerySet.update()`, `bulk_update()` and `QuerySet.delete()` raise AppendOnlyError; the admin is view-only. | B.6, B.10 |
-| D-68 | Payroll | Export CSV covers **all CURRENT records of the selected period** (filters only change the view) as one batch numbered `EXP-0001`, `EXP-0002`, …; a batch can be downloaded again without changing anything; every cell starting with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` so Excel/Numbers never run it as a formula. | B.4 FR-11 |
-| D-69 | Payroll | Mark as paid works per batch: its EXPORTED records become PAID (`paid_at`); anything else in the batch (e.g. superseded) is untouched. | B.4 FR-11 |
-| D-70 | Payroll | Corrections = SUPERSEDED records that had been exported or paid, shown with their replacement version (or "waiting for re-approval") and the difference in hours. | B.4 FR-11 |
+| D-68 | Payroll | Export CSV covers **all CURRENT records of the selected period** (filters only change the view) as one batch numbered `EXP-0001`, `EXP-0002`, …; a batch can be downloaded again without changing anything; every cell starting with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` so Excel/Numbers never run it as a formula. *Extended by D-123: the batch also holds the period's adjustments; hour columns are app-made numbers written as is, text cells stay formula-safe.* | B.4 FR-11 |
+| D-69 | Payroll | Mark as paid works per batch: its EXPORTED records become PAID (`paid_at`); anything else in the batch (e.g. superseded) is untouched. *Extended by D-123: adjustments in the batch are paid too.* | B.4 FR-11 |
+| D-70 | Payroll | Corrections = SUPERSEDED records that had been exported or paid, shown with their replacement version (or "waiting for re-approval") and the difference in hours. *Replaced by D-124 (Corrections with adjustments).* | B.4 FR-11 |
 | D-71 | Payroll | The snapshot's `expected_weekly_minutes` is that week's prorated expected minutes (D-19). Deactivated employees' approved weeks are published, exported and paid like anyone else's. | B.6, B.4 FR-11 |
 | D-72 | Ops | `backup_db` copies both databases with SQLite's online backup API through a separate read-only connection (safe while the app runs) to `backups/db-YYYYmmdd-HHMMSS.sqlite3` and `backups/payroll-…` with the same timestamp; `--dir` chooses another folder. | D.2, D.3 |
 | D-73 | Data | `seed_demo` fills payroll after the main seed commits (publish every approved period; oldest periods EXPORTED and PAID, next EXPORTED, newest CURRENT; one correction). If the payroll part fails, the main data stays and `sync_payroll` completes it; seed_demo still refuses when data exists. | B.7 |
@@ -1283,6 +1315,15 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-115 | Calendar | **Week links use the Sunday.** Any other date in `/timesheets/<date>/` (e.g. an old Monday link) or the Team week view redirects to the week that contains it; future weeks stay 404 (D-33). HTMX endpoints (day summary, add row) accept any date of the week. | B.8 |
 | D-116 | Calendar | **Daylight saving**: the US change on Sunday 2026-11-01 (and 2026-03-08) now falls on the first day of a week. Deadlines are built with `zoneinfo`, so Saturday 12:00 stays local either side; time entries remain wall-clock times as before (D-37). | B.9 #2, T-15 |
 | D-117 | Data | **No data conversion**: there is no data migration and no schema change (`week_start` stays a date; comments only). Existing Monday-week databases must be rebuilt by the owner (D.3 "Start over"). `seed_demo` creates Sunday weeks, history aligned to whole pay periods (D-27) with the current week empty, and the same scenarios (dev1/dev2 period pending, one rejected period, one open change request, one manager edit, exported/paid batches and one correction); decisions stay on Mondays, exports on Fridays and recent hires on Wednesdays. | B.7, D-27, D.3 |
+| D-118 | Payroll | **Change 4 – settled weeks.** `PayrollWeek` gains status **SETTLED** ("a corrected version paid through the original payment plus adjustments; never exported as a week row") and lifecycle field `settled_at`. New moves: CURRENT → SETTLED, SETTLED → SUPERSEDED; new records still start CURRENT; a SETTLED record is the week's live record (D-66). Rule: once any version of an employee-week has been exported (`exported_at` set), every later version is settled as it is published. | B.4 FR-11, B.5, D-15 |
+| D-119 | Payroll | **Adjustment = new version − previous version** of the week, separately for regular, overtime, PTO, sick, holiday and total minutes (signed). The previous version is the exported/paid one or an earlier settled one, so a week's adjustments always add up to "latest version − version first paid" and nothing is counted twice, also when an earlier adjustment has not been exported yet. A zero difference settles the week without an adjustment. Weeks whose earlier versions were never exported keep the old behaviour (new version CURRENT, exported normally). | B.4 FR-11 |
+| D-120 | Payroll | **`PayrollAdjustment`** (payroll database only, append-only like D-15 through the shared `AppendOnlyRecord` base): frozen employee snapshot, the corrected week and its period, the period it is carried to, old and new version, the six signed amounts, approver and approval time, reason and source timesheet id; status CURRENT → EXPORTED → PAID with `export_batch`, `exported_at`, `paid_at`; one per (employee, week, new version). Schema migration `payroll/0002` (payroll database only). | B.6, D-15, D-67 |
+| D-121 | Payroll | **Carry-forward period**: from the later of (the period after the corrected week's own period) and (the most recent completed period at re-approval, `default_period(at)`), the first period — stepping 14 days — that has no export batch yet (no exported week record or adjustment). That period's next export includes the adjustment. | B.4 FR-11 |
+| D-122 | Payroll | **Reason** = the reason of the latest handled change request (Edit directly or Unlock, including the manager-authored unlock from Approvals) on the week's timesheet, otherwise "Re-approved after a change". Stored on the adjustment and shown **only on the Corrections page** — never in the CSV, on the Payroll page or in the audit summary (D-12). | B.4 FR-11, D-12 |
+| D-123 | Payroll | **Export, CSV, Mark as paid**: Export CSV takes the period's CURRENT week records and CURRENT adjustments into one batch (shared `EXP-` numbering); SETTLED weeks are never exported. CSV columns: `batch, employee_code, row_type (WEEK/ADJUSTMENT), …, week_start` (blank for adjustments), `original_week` (adjustments), hours, `version` (`1→2` for adjustments), `status`; per employee, week rows first. Hour columns are numbers the app computes and are written as is (adjustments may be `-1.50`); every text cell still goes through `safe_cell` (D-68). Mark as paid pays the batch's records and adjustments. | B.4 FR-11, D-68, D-69 |
+| D-124 | Payroll | **Pages**: Payroll totals keep the week columns (each week's current approved hours, settled weeks included), add **Adjustments** (carried into this period) and **Total = weeks + adjustments**; a table "Adjustments carried to this period" (same filters); the period list includes periods with only adjustments; the export button counts both. **Corrections** (replaces D-70): one row per version change of a week that had been exported or settled — old version (Paid/Exported with batch, or Settled), new version, difference, the adjustment with its period and status (**Scheduled**, **Exported in EXP-xxxx**, **Paid**), the reason; "waiting for re-approval" before re-approval and "no adjustment (0.00)" for a zero difference. *Follow-up:* in a period's week records, each Settled week shows "Settled by adjustment in <period>" linking to the period its adjustment was carried to, or "No difference to pay" for a zero difference (T-182). | B.4 FR-11, B.8 |
+| D-125 | Payroll | **Audit and sync**: adjustments are created in the same after-commit payroll transaction as the settled version (D-65). Audit reuses existing actions (no change to `AuditLog.Action` or the main database): **PUBLISH** with entity `PayrollAdjustment` (approver or system actor; versions, amounts, period; no reason); the batch **EXPORT**/**PAY** rows add `adjustments` when the batch has any. `sync_payroll` also settles live CURRENT versions of once-exported weeks and creates missing adjustments, idempotently; its SYNC row reports `adjustments`; `sync_payroll()` still returns (published, superseded). | B.9 #13, D-22, D-65 |
+| D-126 | Data | **Seed**: the existing correction (an hour added to a paid week of the oldest period) now publishes its v2 as SETTLED with a **+1.00 h adjustment, Scheduled**, carried to the first period without an export batch (the last approved period, whose weeks are still waiting to be exported) — one correction plus one carried-forward adjustment. | B.7, T-114 |
 
 ---
 

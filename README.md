@@ -117,9 +117,14 @@ Holiday separately (Break is unpaid and never counted). Payroll staff and admins
 **Payroll** (`/payroll/`) to filter, see totals per employee, **Export CSV** (one numbered
 batch per period, safe to open in Excel/Numbers) and **Mark as paid**; **Corrections** lists
 weeks that changed after export. Records are append-only: a changed week is superseded and a
-new version is written after re-approval. If the page says payroll is out of sync, run:
+new version is written after re-approval. If the week had already been exported or paid, the new
+version is **settled** instead of exported again, and the difference (for example +2.00 overtime
+hours or −1.50 regular hours) becomes a **pay adjustment** carried to the next pay period that
+hasn't been exported yet. Adjustments appear in that period's totals and in its Export CSV as
+rows of type `ADJUSTMENT`, and Corrections shows each one as Scheduled, Exported or Paid.
+If the page says payroll is out of sync, run:
 ```bash
-uv run python manage.py sync_payroll       # safe to repeat
+uv run python manage.py sync_payroll       # safe to repeat; also creates missing adjustments
 ```
 
 ## Admin (HR)

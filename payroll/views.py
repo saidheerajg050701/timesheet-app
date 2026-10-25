@@ -12,14 +12,15 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from directory.services.permissions import payroll_required
-from payroll.models import PayrollWeek
+from payroll.models import PayrollAdjustment, PayrollWeek
 from payroll.services.export import (
     batch_csv,
     batches_for,
     corrections,
     employee_totals,
     export_period,
-    mark_paid,
+    exportable,
+    mark_paid_counts,
 )
 from payroll.services.publish import out_of_sync
 from timesheets.services.calendar import default_period, period_start_for
@@ -28,11 +29,10 @@ STATUS_CHOICES = [("", "All but superseded")] + list(PayrollWeek.Status.choices)
 
 
 def _periods():
-    return list(
-        PayrollWeek.objects.order_by("-period_start")
-        .values_list("period_start", flat=True)
-        .distinct()
-    )
+    """Periods with week records or adjustments carried to them (D-124), newest first."""
+    weeks = PayrollWeek.objects.values_list("period_start", flat=True).distinct()
+    adjustments = PayrollAdjustment.objects.values_list("period_start", flat=True).distinct()
+    return sorted({*weeks, *adjustments}, reverse=True)
 
 
 def _chosen_period(value, periods):
@@ -42,6 +42,19 @@ def _chosen_period(value, periods):
         except ValueError:
             raise Http404("Not a date.") from None
     return periods[0] if periods else default_period(timezone.now())
+
+
+def _mark_settled_in(records):
+    """Give each SETTLED week `settled_in`: the pay period its adjustment was carried to, or
+    None when the correction changed nothing (D-124)."""
+    settled = [r for r in records if r.status == PayrollWeek.Status.SETTLED]
+    adjustments = PayrollAdjustment.objects.filter(
+        employee_code__in={r.employee_code for r in settled},
+        week_start__in={r.week_start for r in settled},
+    )
+    carried = {(a.employee_code, a.week_start, a.new_version): a.period_start for a in adjustments}
+    for r in settled:
+        r.settled_in = carried.get((r.employee_code, r.week_start, r.version))
 
 
 @payroll_required
@@ -67,6 +80,21 @@ def payroll_home(request):
             | Q(employee_name__icontains=filters["employee"])
         )
     records = list(records.order_by("employee_name", "week_start", "version"))
+    _mark_settled_in(records)
+    adjustments = PayrollAdjustment.objects.filter(period_start=period)
+    if filters["status"]:
+        adjustments = adjustments.filter(status=filters["status"])
+    if filters["department"]:
+        adjustments = adjustments.filter(department=filters["department"])
+    if filters["team"]:
+        adjustments = adjustments.filter(team=filters["team"])
+    if filters["employee"]:
+        adjustments = adjustments.filter(
+            Q(employee_code__iexact=filters["employee"])
+            | Q(employee_name__icontains=filters["employee"])
+        )
+    adjustments = list(adjustments.order_by("employee_name", "week_start", "new_version"))
+    new_weeks, new_adjustments = exportable(period)
     in_period = PayrollWeek.objects.filter(period_start=period)
     missing, stale = out_of_sync()
     return render(
@@ -79,10 +107,13 @@ def payroll_home(request):
             "status_choices": STATUS_CHOICES,
             "departments": sorted(set(in_period.values_list("department", flat=True))),
             "teams": sorted(set(in_period.values_list("team", flat=True)) - {""}),
-            "totals": employee_totals(records),
+            "totals": employee_totals(records, adjustments),
             "records": records,
+            "adjustments": adjustments,
             "batches": batches_for(period),
-            "exportable": in_period.filter(status=PayrollWeek.Status.CURRENT).count(),
+            "exportable": len(new_weeks) + len(new_adjustments),
+            "exportable_weeks": len(new_weeks),
+            "exportable_adjustments": len(new_adjustments),
             "missing": missing,
             "stale": stale,
         },
@@ -92,7 +123,8 @@ def payroll_home(request):
 @require_POST
 @payroll_required
 def payroll_export(request):
-    """Stamp a new batch for all CURRENT records of the period, then download it (D-68)."""
+    """Stamp a new batch for the period's CURRENT records and adjustments, then download it
+    (D-68, D-123)."""
     period = _chosen_period(request.POST.get("period"), _periods())
     batch = export_period(period, actor=request.user.employee, at=timezone.now())
     if batch is None:
@@ -105,7 +137,10 @@ def payroll_export(request):
 @payroll_required
 def payroll_batch_csv(request, batch):
     """Download (or download again) a batch as CSV; never changes any status."""
-    if not PayrollWeek.objects.filter(export_batch=batch).exists():
+    if not (
+        PayrollWeek.objects.filter(export_batch=batch).exists()
+        or PayrollAdjustment.objects.filter(export_batch=batch).exists()
+    ):
         raise Http404("No such batch.")
     response = HttpResponse("﻿" + batch_csv(batch), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = f'attachment; filename="payroll-{batch}.csv"'
@@ -115,18 +150,24 @@ def payroll_batch_csv(request, batch):
 @require_POST
 @payroll_required
 def payroll_mark_paid(request, batch):
-    """EXPORTED records of the batch become PAID (D-69)."""
-    count = mark_paid(batch, actor=request.user.employee, at=timezone.now())
-    if count:
-        messages.success(request, f"Batch {batch}: {count} week record(s) marked as paid.")
+    """EXPORTED records and adjustments of the batch become PAID (D-69, D-123)."""
+    weeks, adjustments = mark_paid_counts(batch, actor=request.user.employee, at=timezone.now())
+    if weeks or adjustments:
+        extra = f" and {adjustments} adjustment(s)" if adjustments else ""
+        messages.success(request, f"Batch {batch}: {weeks} week record(s){extra} marked as paid.")
     else:
         messages.info(request, f"Batch {batch} has nothing left to mark as paid.")
-    period = PayrollWeek.objects.filter(export_batch=batch).values_list("period_start", flat=True)
+    period = [
+        *PayrollWeek.objects.filter(export_batch=batch).values_list("period_start", flat=True),
+        *PayrollAdjustment.objects.filter(export_batch=batch).values_list(
+            "period_start", flat=True
+        ),
+    ]
     target = reverse("payroll") + (f"?period={period[0].isoformat()}" if period else "")
     return redirect(target)
 
 
 @payroll_required
 def payroll_corrections(request):
-    """Weeks that changed after they were exported or paid (D-70)."""
+    """Weeks that changed after they were exported or paid, with their adjustments (D-124)."""
     return render(request, "payroll/corrections.html", {"corrections": corrections()})

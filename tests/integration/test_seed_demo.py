@@ -9,7 +9,7 @@ from django.core.management.base import CommandError
 from audit.models import AuditLog
 from directory.models import Employee, Team, User
 from directory.services.demo import us_holidays
-from payroll.models import PayrollWeek
+from payroll.models import PayrollAdjustment, PayrollWeek
 from payroll.services.export import corrections
 from payroll.services.publish import out_of_sync
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
@@ -265,7 +265,8 @@ def test_seed_needs_a_strong_demo_password(settings, password, message):
 
 
 def test_seed_fills_the_payroll_database(seeded):
-    """T-114: seed payroll: approved weeks live; older periods EXPORTED/PAID; one correction."""
+    """T-114: seed payroll: approved weeks live; older periods EXPORTED/PAID; one correction,
+    settled with a +1 h adjustment carried forward to an unexported period (D-118, D-126)."""
     assert out_of_sync() == (0, 0)
     by_period = defaultdict(Counter)
     for period, status in PayrollWeek.objects.values_list("period_start", "status"):
@@ -273,7 +274,7 @@ def test_seed_fills_the_payroll_database(seeded):
     periods = sorted(by_period)  # Jul 20, Aug 3, Aug 17, Aug 31, Sep 14 (approved periods)
     assert len(periods) == 5
     for period in periods[:3]:  # oldest: paid (plus the correction in the first one)
-        assert set(by_period[period]) <= {"PAID", "SUPERSEDED", "CURRENT"}
+        assert set(by_period[period]) <= {"PAID", "SUPERSEDED", "SETTLED"}
         assert by_period[period]["PAID"] > 0
     assert set(by_period[periods[3]]) == {"EXPORTED"}
     assert set(by_period[periods[4]]) == {"CURRENT"}
@@ -284,13 +285,21 @@ def test_seed_fills_the_payroll_database(seeded):
 
     (correction,) = corrections()
     assert correction.old.status == "SUPERSEDED" and correction.old.paid_at is not None
-    assert correction.new.version == 2 and correction.new.status == "CURRENT"
+    assert correction.new.version == 2 and correction.new.status == "SETTLED"  # not re-exported
     assert correction.difference == 60
+    (adjustment,) = PayrollAdjustment.objects.all()
+    assert correction.adjustment == adjustment and adjustment.status == "CURRENT"  # Scheduled
+    assert (adjustment.regular_minutes, adjustment.total_minutes) == (60, 60)
+    # Carried to the first period without an export batch: Sep 13, whose weeks still wait to
+    # be exported, so the +1 h goes out in that same pay run (D-121).
+    assert adjustment.week_period_start == periods[0] and adjustment.period_start == periods[4]
     clerk = Employee.objects.get(email="payroll@yourcompany.com")
     assert set(
         AuditLog.objects.filter(action__in=["EXPORT", "PAY"]).values_list("actor", flat=True)
     ) == {clerk.pk}
-    assert AuditLog.objects.filter(action="PUBLISH").count() == PayrollWeek.objects.count()
+    published = AuditLog.objects.filter(action="PUBLISH")
+    assert published.filter(entity_type="PayrollWeek").count() == PayrollWeek.objects.count()
+    assert published.filter(entity_type="PayrollAdjustment").count() == 1
 
 
 def test_seed_still_refuses_when_payroll_has_data(seeded):
