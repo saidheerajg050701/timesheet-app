@@ -60,11 +60,22 @@ class Cell:
         return hours_text(self.minutes) if self.slots else ""
 
     @property
+    def slot_times(self):
+        """ "08:00–13:00, 14:00–17:00" (leave: "4.00 h, 3.50 h"): the cell's tooltip (D-127)."""
+        return ", ".join(
+            f"{s.start}–{s.end}"
+            if s.category in TimeEntry.TIMED
+            else f"{hours_text(slot_minutes(s))} h"
+            for s in self.slots
+        )
+
+    @property
     def aria_label(self):
         count = len(self.slots)
         slots = f"{count} slot{'' if count == 1 else 's'}" if count else "empty"
+        times = f" ({self.slot_times})" if count > 1 else ""
         errors = ", has errors" if self.errors else ""
-        return f"{self.label}: {self.hours or '0.00'} hours, {slots}{errors}"
+        return f"{self.label}: {self.hours or '0.00'} hours, {slots}{times}{errors}"
 
 
 @dataclass
@@ -129,7 +140,7 @@ class Grid:
 
     @property
     def template_slot(self):
-        """The empty slot each cell dialog clones for "+ Add time slot" (grid.js fills N)."""
+        """The empty slot a cell dialog clones for "+ Add another time slot" (grid.js fills N)."""
         return EntryRow(index="__INDEX__")
 
 

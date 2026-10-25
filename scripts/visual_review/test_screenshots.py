@@ -131,7 +131,7 @@ def test_screenshots(live_server, browser, settings):
                 overflow = page.evaluate(OVERFLOW_JS)
                 assert not overflow, (size, who, name)  # tables scroll, the page never does
                 if name.endswith("-dialog"):
-                    page.locator("#entries .cell-button:has(.cell-count)").first.click()
+                    page.locator("#entries .cell-button[title]").first.click()
                     page.locator("dialog[open]").wait_for()
                 path = out / f"{size}-{who or 'visitor'}-{name}.png"
                 if name.endswith("-dialog"):  # a modal covers the window, not the whole page

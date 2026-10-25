@@ -87,9 +87,13 @@ uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
 ## Timesheets
 `/timesheets/` lists your recent weeks. A week is a **grid**: one row per project or category,
 a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours** column and footer. **+ Add row** adds a
-category (and a project for Project work). Click a day to enter time: work and Break use one or
-more time slots with a start, an end and a reason (15-minute steps, same day, no overlaps);
-leave (PTO, Sick, Holiday) uses hours and a reason. Break is unpaid and never counted in Total
+category (and a project for Project work); each project or category has one row, so using
+**+ Add row** again for one that is already there takes you to its row. Click a day to enter
+time: work and Break use one or more time slots with a start, an end and a reason (15-minute
+steps, same day, no overlaps). To work on the same project twice in a day (for example 08:00–13:00
+and 14:00–17:00 around a Break), click the day again: its slots are listed with an empty new one
+ready to fill, or use **+ Add another time slot**; the cell then shows e.g. "8.00 · 2 slots" and
+its tooltip lists the times. Leave (PTO, Sick, Holiday) uses hours and a reason. Break is unpaid and never counted in Total
 worked hours; leave is shown separately. The day summary below shows first start, last end,
 hours worked, expected hours, Break and Leave. **Save draft** or **Submit** before Saturday
 12:00 company time; after that an unsubmitted week is locked and counted as missed. All rules are

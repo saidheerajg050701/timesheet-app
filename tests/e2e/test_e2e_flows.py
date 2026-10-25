@@ -26,6 +26,7 @@ def status_of(page):
 
 
 PORTAL = "PRJ-001 Customer Portal / Project work"
+BREAK = "Break (unpaid)"
 
 
 def cell(page, row, day):
@@ -71,32 +72,57 @@ def test_signup_refused_then_accepted(e2e_org, anonymous):
 
 
 def test_save_draft_then_submit_before_the_deadline(e2e_org, open_as):
-    """T-147: E2E save a draft, reopen it, then submit before Saturday 12:00."""
+    """T-147: E2E save a draft with two slots around a break, reopen it, then submit in time."""
     page = open_as(e2e_org.dev1)
     page.goto(week_url(THIS_WEEK))
     expect(status_of(page)).to_have_text("Not started")
     add_row(page, "Project work", "PRJ-001 Customer Portal")
     panel = open_cell(page, PORTAL, MONDAY)
-    panel.get_by_label("Start").fill("09:00")
-    panel.get_by_label("End").fill("17:00")
+    panel.get_by_label("Start").fill("08:00")
+    panel.get_by_label("End").fill("13:00")
     panel.get_by_label("Reason").fill("Login page")
     panel.get_by_role("button", name="Done").click()
-    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00")
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("5.00")
+    add_row(page, "Break time")
+    panel = open_cell(page, BREAK, MONDAY)
+    panel.get_by_label("Start").fill("13:00")
+    panel.get_by_label("End").fill("14:00")
+    panel.get_by_label("Reason").fill("Lunch")
+    panel.get_by_role("button", name="Done").click()
+
+    add_row(page, "Project work", "PRJ-001 Customer Portal")  # again: points at its row (D-127)
+    expect(page.locator("[data-week-grid]").get_by_role("status")).to_contain_text(
+        "already has a row"
+    )
+    panel = open_cell(page, PORTAL, MONDAY)  # lists the slot and offers an empty one
+    expect(panel.locator(".grid-slot")).to_have_count(2)
+    expect(panel.get_by_label("Start").nth(1)).to_be_focused()
+    panel.get_by_label("Start").nth(1).fill("14:00")
+    panel.get_by_label("End").nth(1).fill("17:00")
+    panel.get_by_label("Reason").nth(1).fill("Code review")
+    panel.get_by_role("button", name="Done").click()
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00 · 2 slots")
+    expect(page.locator("#entries [data-role=week-total]")).to_have_text("8.00")  # Break not in it
     page.get_by_role("button", name="Save draft").click()
     expect(status_of(page)).to_have_text("Draft")
+    assert TimeEntry.objects.count() == 3
 
-    page.goto(week_url(THIS_WEEK))  # reopened: the slot is still there
-    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00")
+    page.goto(week_url(THIS_WEEK))  # reopened: both slots are still there
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00 · 2 slots")
+    expect(cell(page, PORTAL, MONDAY)).to_have_attribute("title", "08:00–13:00, 14:00–17:00")
     panel = open_cell(page, PORTAL, MONDAY)
-    expect(panel.get_by_label("Reason")).to_have_value("Login page")
+    expect(panel.get_by_label("Reason").first).to_have_value("Login page")
+    expect(panel.get_by_label("Reason").nth(1)).to_have_value("Code review")
     panel.get_by_role("button", name="Done").click()
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00 · 2 slots")  # the offered slot dropped
     page.get_by_role("button", name="Submit").click()
     expect(status_of(page)).to_have_text("Submitted")
     expect(page.get_by_role("button", name="Save draft")).to_have_count(0)
     expect(page.locator("#entries input")).to_have_count(0)  # read-only now
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00 · 2 slots")
     panel = open_cell(page, PORTAL, MONDAY)
     expect(panel).to_contain_text("Login page")
-    expect(panel).to_contain_text("09:00")
+    expect(panel).to_contain_text("14:00")
 
 
 def test_week_locks_after_the_deadline(e2e_org, make_week, open_as, clock):
@@ -131,7 +157,7 @@ def test_change_request_then_manager_edits_directly(e2e_org, make_week, open_as)
     manager.locator("#open-requests").get_by_role("link").first.click()
     manager.get_by_role("link", name="Edit directly").click()
     panel = open_cell(manager, PORTAL, week + timedelta(days=1))  # Monday
-    panel.get_by_label("End").fill("18:00")
+    panel.get_by_label("End").first.fill("18:00")  # the saved slot; an empty one is offered too
     panel.get_by_role("button", name="Done").click()
     expect(cell(manager, PORTAL, week + timedelta(days=1))).to_have_text("9.00")
     manager.get_by_label("Note to the employee (optional)").fill("Fixed Monday")
@@ -187,7 +213,7 @@ def test_reject_with_comment_then_resubmit(e2e_org, make_week, open_as):
         employee.goto(week_url(week))
         if week == PERIOD:
             panel = open_cell(employee, PORTAL, PERIOD + timedelta(days=5))  # Friday
-            panel.get_by_label("Reason").fill("Feature work and demo")
+            panel.get_by_label("Reason").first.fill("Feature work and demo")
             panel.get_by_role("button", name="Done").click()
         employee.get_by_role("button", name="Submit").click()
         expect(status_of(employee)).to_have_text("Submitted")
@@ -280,9 +306,9 @@ def test_weekly_grid_in_the_browser(e2e_org, make_week, open_as):
     page = open_as(e2e_org.dev1)
     page.goto(week_url(THIS_WEEK))
     add_row(page, "Project work", "PRJ-001 Customer Portal")
-    add_row(page, "Project work", "PRJ-001 Customer Portal")  # a duplicate is refused
-    expect(page.locator("dialog[open]")).to_contain_text("That row is already in the grid")
-    page.locator("dialog[open]").get_by_role("button", name="Cancel").click()
+    add_row(page, "Project work", "PRJ-001 Customer Portal")  # no second row (D-127, T-183)
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    expect(page.locator('#entries tr[data-row-key^="PROJECT:"]')).to_have_count(1)
 
     tuesday = THIS_WEEK + timedelta(days=2)
     button = cell(page, PORTAL, tuesday)
@@ -293,7 +319,7 @@ def test_weekly_grid_in_the_browser(e2e_org, make_week, open_as):
     panel.get_by_label("End").fill("12:00")
     panel.get_by_label("Reason").fill("Bug fixes")
     expect(button).to_have_text("4.00")  # live while typing
-    panel.get_by_role("button", name="+ Add time slot").click()
+    panel.get_by_role("button", name="+ Add another time slot").click()
     panel.get_by_label("Start").nth(1).fill("13:00")
     panel.get_by_label("End").nth(1).fill("17:30")
     panel.get_by_label("Reason").nth(1).fill("Code review")
@@ -337,3 +363,34 @@ def test_weekly_grid_in_the_browser(e2e_org, make_week, open_as):
     assert first.evaluate("e => getComputedStyle(e).position") == "sticky"
     box = first.bounding_box()
     assert box["x"] < 20  # still at the left edge while the days scroll
+
+
+def test_add_row_for_an_existing_row_points_at_it(e2e_org, open_as):
+    """T-183: E2E "+ Add row" for a row already there: no error, it is highlighted and focused."""
+    page = open_as(e2e_org.dev1)
+    page.goto(week_url(THIS_WEEK))
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    add_row(page, "Meetings")
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    expect(page.locator("dialog[open]")).to_have_count(0)  # closed; no error to dismiss
+    expect(page.get_by_role("alert")).to_have_count(0)
+    expect(page.locator("[data-week-grid]").get_by_role("status")).to_have_text(
+        "PRJ-001 Customer Portal / Project work already has a row. Click a day to add another "
+        "time slot (for example 2:00 PM – 5:00 PM)."
+    )
+    rows = page.locator("#entries tr.grid-row")
+    expect(rows).to_have_count(2)
+    expect(page.locator('#entries tr[data-row-key^="PROJECT:"]')).to_have_count(1)
+    portal = rows.filter(has_text="PRJ-001 Customer Portal")
+    expect(portal).to_have_class(re.compile(r"\bis-highlighted\b"))
+    expect(cell(page, PORTAL, THIS_WEEK)).to_be_focused()  # its first day, Sunday
+    expect(portal).not_to_have_class(re.compile(r"\bis-highlighted\b"), timeout=5000)  # brief
+
+    add_row(page, "PTO")
+    add_row(page, "PTO")  # leave rows get the leave wording
+    expect(page.locator("[data-week-grid]").get_by_role("status")).to_have_text(
+        "PTO already has a row. Click a day to enter or change its hours."
+    )
+    expect(cell(page, "PTO", THIS_WEEK)).to_be_focused()
+    expect(rows).to_have_count(3)
+    assert TimeEntry.objects.count() == 0  # nothing saved by any of this

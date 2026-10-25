@@ -1,5 +1,6 @@
-// The weekly grid (Change 2, D-106–D-110). Convenience only: open a cell's dialog, add and
-// remove time slots, add rows, keep the cell / row / day totals live, and warn before leaving
+// The weekly grid (Change 2, D-106–D-110; Change 5, D-127). Convenience only: open a cell's
+// dialog, add and remove time slots, add rows (or point at the row that is already there),
+// keep the cell / row / day totals and the multi-slot hint live, and warn before leaving
 // with unsaved changes. Every slot is posted as the usual entry-N-* fields and the server
 // checks every rule again when saving; it also recomputes the day summary below the grid.
 (function () {
@@ -34,6 +35,28 @@
     return (minutes / 60).toFixed(2);
   }
 
+  function slotTime(slot) {
+    // "08:00–13:00" (leave: "4.00 h"), as Cell.slot_times writes it on the server.
+    var hours = slot.querySelector("[data-role=hours]");
+    if (hours) return text(leaveMinutes(hours.value)) + " h";
+    return slot.querySelector("[data-role=start]").value + "–" + slot.querySelector("[data-role=end]").value;
+  }
+
+  function showHint(cell, filled, minutes) {
+    // "8.00 · 2 slots" with the slot times as tooltip and in the accessible name (D-127).
+    var button = cell.querySelector(".cell-button");
+    var count = filled.length;
+    var times = filled.map(slotTime).join(", ");
+    cell.querySelector("[data-role=cell-hours]").textContent = count ? text(minutes) : "";
+    cell.querySelector("[data-role=cell-meta]").textContent = count > 1 ? " · " + count + " slots" : "";
+    if (count > 1) button.title = times;
+    else button.removeAttribute("title");
+    button.setAttribute("aria-label", button.dataset.label + ": " + (count ? text(minutes) : "0.00")
+      + " hours, " + (count ? count + " slot" + (count === 1 ? "" : "s") : "empty")
+      + (count > 1 ? " (" + times + ")" : "")
+      + (button.getAttribute("aria-invalid") === "true" ? ", has errors" : ""));
+  }
+
   // --- totals -------------------------------------------------------------------------
   function refresh(grid) {
     var dayTotals = [0, 0, 0, 0, 0, 0, 0];
@@ -49,9 +72,8 @@
           var shown = slot.querySelector("[data-role=slot-hours]");
           if (shown) shown.textContent = value ? text(value) + " h" : "";
         });
-        cell.querySelector("[data-role=cell-hours]").textContent = slots.length ? text(minutes) : "";
-        var count = cell.querySelector(".cell-count");
-        if (count) count.textContent = slots.length > 1 ? slots.length : "";
+        // The empty slot offered when the dialog opens isn't a slot yet (it is never posted).
+        showHint(cell, Array.from(slots).filter(function (slot) { return !isEmpty(slot); }), minutes);
         rowTotal += minutes;
         if (row.dataset.kind === "work") dayTotals[day] += minutes;
       });
@@ -105,7 +127,13 @@
     opener = from || null;
     if (!dialog.open) dialog.showModal();
     var slots = dialog.querySelector("[data-role=slots]");
-    if (slots && !slots.children.length) addSlot(dialog); // an empty cell starts with one slot
+    var row = dialog.closest("tr.grid-row");
+    // An empty cell starts with one slot; a work or Break cell that already has slots lists
+    // them and offers one more, empty and focused, ready to fill (D-127). Leave keeps one.
+    if (slots && (!slots.children.length || row.dataset.kind !== "leave")) {
+      addSlot(dialog); // focuses the new slot's first field
+      return;
+    }
     var first = dialog.querySelector("input:not([type=hidden]), select, [data-grid-action=close]");
     if (first) first.focus();
   }
@@ -123,18 +151,51 @@
   }, true);
 
   // --- add a row ----------------------------------------------------------------------
+  function notice(grid, message) {
+    var area = grid.querySelector("[data-role=grid-notice]");
+    area.textContent = "";
+    if (!message) return;
+    var p = document.createElement("p");
+    p.className = "grid-notice";
+    p.textContent = message;
+    area.appendChild(p);
+  }
+
+  function pointAt(grid, row) {
+    // "+ Add row" for a row that is already there: no error, show that row instead (D-127).
+    var label = row.dataset.rowLabel;
+    notice(grid, row.dataset.kind === "leave"
+      ? label + " already has a row. Click a day to enter or change its hours."
+      : label + " already has a row. Click a day to add another time slot (for example 2:00 PM – 5:00 PM).");
+    row.classList.remove("is-highlighted");
+    void row.offsetWidth; // restart the highlight when it is pointed at twice in a row
+    row.classList.add("is-highlighted");
+    clearTimeout(row.highlightTimer);
+    row.highlightTimer = setTimeout(function () { row.classList.remove("is-highlighted"); }, 3000);
+    var first = row.querySelector(".cell-button");
+    first.focus({ preventScroll: true });
+    var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({ block: "center", inline: "nearest", behavior: still ? "auto" : "smooth" });
+  }
+
   function addRow(dialog) {
     var category = dialog.querySelector("[data-role=new-category]").value;
     var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
     var error = dialog.querySelector("[data-role=add-row-error]");
     var grid = dialog.closest("[data-week-grid]");
     var problem = !category ? "Choose a category."
-      : category === "PROJECT" && !project ? "Choose a project."
-      : grid.querySelector('tr[data-row-key="' + category + ":" + project + '"]')
-        ? "That row is already in the grid; click one of its days instead." : "";
+      : category === "PROJECT" && !project ? "Choose a project." : "";
     error.textContent = problem;
     error.hidden = !problem;
     if (problem) return;
+    var existing = grid.querySelector('tr[data-row-key="' + category + ":" + project + '"]');
+    if (existing) {
+      opener = null; // focus goes to the existing row, not back to "+ Add row"
+      dialog.close();
+      pointAt(grid, existing);
+      return;
+    }
+    notice(grid, "");
     var body = grid.querySelector("[data-role=grid-rows]");
     htmx.ajax("GET", dialog.dataset.rowUrl, {
       target: body, swap: "beforeend", values: { category: category, project: project },

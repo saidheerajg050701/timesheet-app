@@ -1,13 +1,13 @@
 {# One grid row (D-106): label, seven day cells with their dialogs, row total. Context: row, grid. #}{% load timesheet_tags %}
-<tr class="grid-row kind-{{ row.kind }}" data-row-key="{{ row.key }}" data-kind="{{ row.kind }}">
+<tr class="grid-row kind-{{ row.kind }}" data-row-key="{{ row.key }}" data-kind="{{ row.kind }}" data-row-label="{{ row.label }}">
   <th scope="row" class="grid-label">
     <span class="grid-label-text">{{ row.name }}{% if row.sub %} <span class="grid-label-sub">{{ row.sub }}</span>{% endif %}</span>{% if row.kind == "break" %} <span class="grid-tag">not counted</span>{% elif row.kind == "leave" %} <span class="grid-tag">leave</span>{% endif %}
     {% if grid.editable %}<input type="hidden" name="grid-row" value="{{ row.key }}">{% endif %}
   </th>
   {% for cell in row.cells %}
     <td class="grid-cell{% if cell.day.weekday >= 5 %} is-weekend{% endif %}{% if cell.errors %} has-error{% endif %}">
-      <button type="button" class="cell-button" data-grid-action="open" aria-controls="{{ cell.id }}" aria-haspopup="dialog" aria-label="{{ cell.aria_label }}"{% if cell.errors %} aria-invalid="true"{% endif %}>
-        <span class="cell-hours" data-role="cell-hours">{{ cell.hours }}</span>{% if cell.slots|length > 1 %}<span class="cell-count" aria-hidden="true">{{ cell.slots|length }}</span>{% endif %}
+      <button type="button" class="cell-button" data-grid-action="open" aria-controls="{{ cell.id }}" aria-haspopup="dialog" data-label="{{ cell.label }}" aria-label="{{ cell.aria_label }}"{% if cell.slots|length > 1 %} title="{{ cell.slot_times }}"{% endif %}{% if cell.errors %} aria-invalid="true"{% endif %}>
+        <span class="cell-hours" data-role="cell-hours">{{ cell.hours }}</span><span class="cell-meta" data-role="cell-meta" aria-hidden="true">{% if cell.slots|length > 1 %} · {{ cell.slots|length }} slots{% endif %}</span>
       </button>
       <dialog class="cell-dialog" id="{{ cell.id }}" aria-labelledby="{{ cell.id }}-title" data-day="{{ cell.day|date:'Y-m-d' }}">
         <div class="cell-dialog-head">
@@ -19,7 +19,7 @@
           <div class="grid-slots" data-role="slots">{% for slot in cell.slots %}{% include "timesheets/_grid_slot.html" %}{% endfor %}</div>
           <template data-role="slot-template">{% include "timesheets/_grid_slot.html" with slot=grid.template_slot %}</template>
           <div class="cell-dialog-actions">
-            <button type="button" class="btn btn-sm btn-outline-primary" data-grid-action="add-slot">+ Add {% if row.kind == "leave" %}leave{% else %}time slot{% endif %}</button>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-grid-action="add-slot">+ Add another {% if row.kind == "leave" %}leave entry{% else %}time slot{% endif %}</button>
             <button type="button" class="btn btn-sm btn-primary" data-grid-action="close">Done</button>
           </div>
         {% else %}

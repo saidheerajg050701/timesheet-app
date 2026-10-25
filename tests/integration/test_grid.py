@@ -7,7 +7,7 @@ import pytest
 from django.urls import reverse
 
 from tests.factories import ProjectFactory, TimeEntryFactory, TimesheetFactory
-from tests.forms import form, leave, work
+from tests.forms import brk, form, leave, work
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import entries_snapshot
@@ -42,6 +42,17 @@ def dialog(html, cell_id):
 
 def slots(html):
     return len(re.findall(r'class="grid-slot" data-index="\d+"', html))
+
+
+def button(html, cell_id):
+    """A cell's button, opening tag and contents."""
+    return re.search(rf'<button[^>]*aria-controls="{cell_id}".*?</button>', html, re.S)[0]
+
+
+def summary_row(html, heading):
+    """A Day summary row's cells, Sun…Sat then the week: ["8:00", "0:00", …]."""
+    row = html.split('id="day-summary"')[1].split(f">{heading}</th>")[1].split("</tr>")[0]
+    return re.findall(r"<td[^>]*>([^<]*)</td>", row)
 
 
 def entry(
@@ -249,3 +260,86 @@ def test_existing_week_renders_the_same(dev1, org, project, mixed_week):
     again = dev1.get(url())
     assert again.content.decode().split('id="day-summary"')[1].split("</table>")[0] == day_summary
     assert [m for _, m, _ in again.context["grid"].footer] == [m for _, m, _ in grid.footer]
+
+
+def two_slots_and_a_break(project, *more):
+    """The reported case (D-127): one project around a break, all on Sunday."""
+    return form(
+        work(WEEK, "08:00", "13:00", project, reason="Login page"),
+        brk(WEEK, "13:00", "14:00"),
+        work(WEEK, "14:00", "17:00", project, reason="Code review"),
+        *more,
+    )
+
+
+def test_two_slots_for_one_project_on_one_day(dev1, project):
+    """T-184: 08:00–13:00 and 14:00–17:00 for one project around a 13:00–14:00 Break."""
+    assert dev1.post(url(), two_slots_and_a_break(project)).status_code == 302
+    assert TimeEntry.objects.filter(work_date=WEEK).count() == 3
+    response = dev1.get(url())
+    html = response.content.decode()
+    grid = response.context["grid"]
+    assert [r.label for r in grid.rows] == [
+        "PRJ-001 Customer Portal / Project work",
+        "Break (unpaid)",
+    ]  # one row for the project, not two
+    target = cell("PROJECT", project, WEEK)
+    assert cell_hours(html, target) == "8.00"
+    assert cell_hours(html, cell("BREAK", None, WEEK)) == "1.00" and "not counted</span>" in html
+    assert slots(dialog(html, target)) == 2
+    assert grid.footer[0][1] == 480 and 'data-role="week-total">8.00<' in html
+    assert summary_row(html, "Hours worked")[0] == "8:00"  # Sunday
+    assert summary_row(html, "Break (unpaid)")[0] == "1:00"
+    assert 'id="week-worked">8:00<' in html and 'id="week-break">1:00<' in html
+
+
+def test_overlapping_third_slot_is_refused_on_its_cell(dev1, project):
+    """T-185: a third slot 16:00–18:00 overlapping 14:00–17:00 is refused on the project cell."""
+    assert dev1.post(url(), two_slots_and_a_break(project)).status_code == 302
+    before = entries_snapshot(TimeEntry.objects.select_related("project"))
+    posted = two_slots_and_a_break(project, work(WEEK, "16:00", "18:00", project, reason="Demo"))
+    response = dev1.post(url(), posted)
+    html = response.content.decode()
+    assert response.status_code == 200  # shown again, not saved
+    assert entries_snapshot(TimeEntry.objects.select_related("project")) == before
+    message = "Sun 18 Oct: 14:00–17:00 PRJ-001 and 16:00–18:00 PRJ-001 overlap."
+    target = cell("PROJECT", project, WEEK)
+    assert re.search(rf'aria-controls="{target}"[^>]*aria-invalid="true"', html)
+    assert message in dialog(html, target) and slots(dialog(html, target)) == 3
+    assert 'aria-invalid="true"' not in button(html, cell("BREAK", None, WEEK))
+    summary = html.split('id="errors"')[1].split("</div>")[0]
+    assert message in summary
+
+
+@pytest.mark.django_db(databases=["default", "payroll"])
+def test_multi_slot_hint(org, project, login_as, fixed_now):
+    """T-186: "8.00 · 2 slots" with the slot times as title, editable and read-only; not for one."""
+    client = login_as(org.dev1)
+    assert client.post(url(), two_slots_and_a_break(project)).status_code == 302
+    hint = '<span class="cell-meta" data-role="cell-meta" aria-hidden="true"> · 2 slots</span>'
+    times = "08:00–13:00, 14:00–17:00"
+    sheet = TimesheetFactory(employee=org.dev1, week_start=LAST_WEEK, status="SUBMITTED")
+    entry(sheet, LAST_WEEK, time(8), time(13), project=project, reason="Login page")
+    entry(sheet, LAST_WEEK, time(14), time(17), project=project, reason="Code review")
+    entry(sheet, LAST_WEEK + timedelta(days=1), time(9), time(17), project=project)
+    pages = [
+        (org.dev1, url(), WEEK, True),  # editable
+        (org.dev1, url(LAST_WEEK), LAST_WEEK, False),  # submitted: read-only
+        (org.manager, reverse("team_member_week", args=["DEV1", LAST_WEEK]), LAST_WEEK, False),
+    ]
+    for person, page_url, day, editable in pages:
+        html = login_as(person).get(page_url).content.decode()
+        two = button(html, cell("PROJECT", project, day))
+        assert hint in two and '<span class="cell-hours" data-role="cell-hours">8.00</span>' in two
+        assert f'title="{times}"' in two, page_url
+        assert f"8.00 hours, 2 slots ({times})" in two
+        grid = html.split('class="table week-grid')[1].split("</table>\n  </div>")[0]
+        assert ("<input" in grid) is editable
+        panel = dialog(html, cell("PROJECT", project, day))
+        assert "Login page" in panel and "Code review" in panel
+    html = login_as(org.dev1).get(url(LAST_WEEK)).content.decode()
+    one = button(html, cell("PROJECT", project, LAST_WEEK + timedelta(days=1)))
+    assert "title=" not in one and "slots" not in one  # a single slot has no hint
+    assert 'aria-hidden="true"></span>' in one and '8.00 hours, 1 slot"' in one
+    html = login_as(org.dev1).get(url()).content.decode()
+    assert "+ Add another time slot" in html

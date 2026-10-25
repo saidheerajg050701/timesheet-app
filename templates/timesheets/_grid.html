@@ -24,6 +24,7 @@
     </table>
   </div>
   {% if grid.editable %}
+    <div class="grid-notice-area" data-role="grid-notice" role="status"></div>
     <button type="button" class="btn btn-outline-secondary mt-3" data-grid-action="add-row">+ Add row</button>
     <dialog class="cell-dialog" id="add-row-dialog" aria-labelledby="add-row-title" data-row-url="{{ row_url }}">
       <div class="cell-dialog-head">
