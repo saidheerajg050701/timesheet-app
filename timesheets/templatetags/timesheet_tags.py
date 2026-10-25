@@ -2,6 +2,7 @@ from datetime import date, timedelta
 
 from django import template
 
+from timesheets.grid import hours_text, slot_minutes
 from timesheets.models import TimeEntry
 from timesheets.services.validation import CATEGORY_LABELS, day_label
 from timesheets.services.weeks import STATUS_LABELS
@@ -119,6 +120,12 @@ def iso_day(value):
 def is_timed(category):
     """Work and Break rows: hours come from start and end (D-37)."""
     return category in TimeEntry.TIMED
+
+
+@register.filter
+def slot_hours(row):
+    """A grid slot's hours as typed: "3.50" (Change 2)."""
+    return hours_text(slot_minutes(row))
 
 
 @register.filter

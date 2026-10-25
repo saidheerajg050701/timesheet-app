@@ -20,7 +20,8 @@ ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")  # D-03
 # Company settings (B.1)
 COMPANY_EMAIL_DOMAIN = env("COMPANY_EMAIL_DOMAIN", default="@yourcompany.com")
 COMPANY_TZ = env("COMPANY_TZ", default="America/Chicago")
-PAY_PERIOD_ANCHOR = date.fromisoformat(env("PAY_PERIOD_ANCHOR", default="2026-01-05"))
+# A Sunday: pay periods start on the first day of a week (D-113, checked by timesheets.E001).
+PAY_PERIOD_ANCHOR = date.fromisoformat(env("PAY_PERIOD_ANCHOR", default="2026-01-04"))
 DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 
 INSTALLED_APPS = [

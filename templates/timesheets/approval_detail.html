@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load timesheet_tags %}
+{% load static timesheet_tags %}
 
 {% block title %}Approve {{ row.employee.first_name }} {{ row.employee.last_name }} — Timesheets{% endblock %}
 
@@ -21,7 +21,7 @@
   <span class="badges ms-1">{% include "timesheets/_flags.html" with flags=row.flags only %}</span>
 </p>
 
-{% for week, rows in weeks %}
+{% for week, grid, grid_id in weeks %}
   <section class="mb-4" id="week-{{ week.number }}">
     <h2 class="section-title">
       Week {{ week.number }} · {{ week.week_start|date:"M j" }} – {{ week.week_start|add_days:6|date:"M j" }}
@@ -39,16 +39,7 @@
       </form>
     {% endif %}
     {% if week.required %}
-      <div class="table-responsive">
-        <table class="table table-sm align-middle bg-body">
-          <thead><tr><th>Day</th><th>Category</th><th>Project</th><th>Start</th><th>End</th><th class="text-end">Hours</th><th>Reason</th><th></th></tr></thead>
-          <tbody>
-            {% for row in rows %}{% include "timesheets/_row.html" with editable=False %}{% empty %}
-              <tr><td colspan="8" class="text-body-secondary">No entries.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+      {% include "timesheets/_grid.html" with grid_id=grid_id %}
       {% include "timesheets/_summary.html" with summary=week.summary live=False %}
     {% else %}
       <p class="text-body-secondary">Not employed this week — not needed for approval.</p>
@@ -80,3 +71,5 @@
   </div>
 {% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{% static 'js/grid.js' %}"></script>{% endblock %}

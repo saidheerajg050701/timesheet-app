@@ -41,7 +41,7 @@ def range_weeks(value):
 
 
 def week_starts(now, weeks):
-    """The last `weeks` Mondays, oldest first, ending with the current week (D-74)."""
+    """The last `weeks` week starts (Sundays), oldest first, ending with the current week (D-74)."""
     current = week_start_for(now.astimezone(company_tz()).date())
     return [current - timedelta(weeks=i) for i in reversed(range(weeks))]
 

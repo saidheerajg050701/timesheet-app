@@ -10,8 +10,8 @@ from tests.factories import TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, work
 from timesheets.models import ChangeRequest, TimeEntry
 
-THIS_WEEK = date(2026, 10, 19)  # employee page: current week (fixed_now is Wed 21 Oct)
-LAST_WEEK = date(2026, 10, 12)  # Edit directly: dev1's submitted week with an open request
+THIS_WEEK = date(2026, 10, 18)  # employee page: current week (fixed_now is Wed 21 Oct)
+LAST_WEEK = date(2026, 10, 11)  # Edit directly: dev1's submitted week with an open request
 FRIDAY = {THIS_WEEK: date(2026, 10, 23), LAST_WEEK: date(2026, 10, 16)}
 
 
@@ -37,12 +37,18 @@ def page(request, org, project, login_as, fixed_now):
     return client, url, sheet.week_start
 
 
-def row_count(html):
-    return len(re.findall(r'<tr id="row-', html))
+def slot_count(html):
+    """Slots shown in the grid (each cell's empty template slot has no number yet)."""
+    return len(re.findall(r'class="grid-slot" data-index="\d+"', html))
 
 
-def hours_values(html):
-    return dict(re.findall(r'name="entry-(\d+)-hours" value="([^"]*)"', html))
+def cell_hours(html):
+    """{cell id: hours shown on its button} for every cell with time."""
+    return dict(
+        re.findall(
+            r'aria-controls="(cell-[^"]+)"[^>]*>\s*<span class="cell-hours"[^>]*>([^<]+)<', html
+        )
+    )
 
 
 FIELDS = {
@@ -57,28 +63,33 @@ FIELDS = {
 
 
 def browser_post(response, **changes):
-    """What the browser sends back: every row exactly as rendered, untouched blanks included."""
-    data = {"action": "save"}
-    for row in response.context["rows"]:
-        data.update({f"entry-{row.index}-{f}": getattr(row, a) for f, a in FIELDS.items()})
+    """What the browser sends back: every slot of the grid exactly as rendered, plus its rows."""
+    grid = response.context["grid"]
+    data = {"action": "save", "grid-row": [row.key for row in grid.rows]}
+    for row in grid.rows:
+        for cell in row.cells:
+            for slot in cell.slots:
+                data.update(
+                    {f"entry-{slot.index}-{f}": getattr(slot, a) for f, a in FIELDS.items()}
+                )
     data.update(changes)
     return data
 
 
 def test_completely_empty_rows_are_ignored(page, project):
-    """T-89: rows with nothing typed (day pre-filled only) are ignored on save, on both forms."""
+    """T-89: no blank slots in the grid; an empty entry is ignored, a partial one refused."""
     client, url, week = page
     friday = FRIDAY[week]
-    # A row with only hours, or only a reason, is not empty: it is checked and refused.
+    # An entry with only hours, or only a reason, is not empty: it is checked and refused.
     for field, value in (("hours", "2"), ("reason", "Forgot this")):
         partial = {"date": friday.isoformat(), field: value}
         bad = form(work(friday, "08:30", "12:00", project), partial)
         assert "choose a category" in client.post(url, bad).content.decode()
 
     page_load = client.get(url)
-    assert row_count(page_load.content.decode()) == 3  # one saved row + two blank, day filled
+    assert slot_count(page_load.content.decode()) == 1  # the saved entry only, no blank slots
     data = browser_post(page_load, **{"entry-0-reason": "Release work"})
-    assert data["entry-1-date"] == data["entry-2-date"] == friday.isoformat()
+    data["entry-7-date"] = friday.isoformat()  # an entry with nothing typed: ignored
     response = client.post(url, data)
     assert response.status_code == 302
     saved = TimeEntry.objects.get(timesheet__week_start=week)
@@ -86,23 +97,27 @@ def test_completely_empty_rows_are_ignored(page, project):
 
 
 def test_rerender_after_an_error_adds_no_rows(page, project):
-    """T-90: re-rendering after a failed save shows the posted rows only — no extra blanks."""
+    """T-90: re-rendering after a failed save shows exactly the posted slots and rows."""
     client, url, week = page
+    friday = FRIDAY[week]
     data = browser_post(client.get(url), **{"entry-0-reason": ""})  # missing reason → error
+    data["grid-row"] = data["grid-row"] + ["MEETING:"]  # a row added without slots yet
+    data.update({f"entry-5-{k}": v for k, v in brk(friday, "12:00", "12:30").items()})
     first = client.post(url, data)
     html = first.content.decode()
-    assert "a reason is required" in html and row_count(html) == 3
+    assert "a reason is required" in html and slot_count(html) == 2
+    assert 'data-row-key="MEETING:"' in html  # the empty new row is kept
     second = client.post(url, browser_post(first)).content.decode()
-    assert "a reason is required" in second and row_count(second) == 3
-    assert "choose a category" not in second  # the blank rows were ignored both times
+    assert "a reason is required" in second and slot_count(second) == 2
+    assert "choose a category" not in second
 
 
 def test_hours_are_shown_for_every_row(page, project):
-    """T-91: Hours is calculated for every timed row on load and after an error (both forms)."""
+    """T-91: each cell shows its hours (2 decimals) on page load and after an error (both forms)."""
     client, url, week = page
-    html = client.get(url).content.decode()
-    assert hours_values(html)["0"] == "3.50"  # 08:30–12:00 on page load
     friday = FRIDAY[week]
+    project_cell = f"cell-project-{project.pk}-{friday.isoformat()}"
+    assert cell_hours(client.get(url).content.decode()) == {project_cell: "3.50"}  # 08:30–12:00
     rows = form(
         work(friday, "08:30", "12:00", project),
         brk(friday, "12:00", "12:45"),
@@ -111,17 +126,21 @@ def test_hours_are_shown_for_every_row(page, project):
     )
     after_error = client.post(url, rows).content.decode()
     assert "a reason is required" in after_error
-    assert hours_values(after_error) == {"0": "3.50", "1": "0.75", "2": "4.50", "3": "1.5"}
-    assert "readonly" in after_error.split('name="entry-0-hours"')[1].split(">")[0]
-    assert (
-        "readonly" not in after_error.split('name="entry-3-hours"')[1].split(">")[0]
-    )  # leave: typed
+    day = friday.isoformat()
+    assert cell_hours(after_error) == {
+        project_cell: "3.50",
+        f"cell-break-0-{day}": "0.75",
+        f"cell-meeting-0-{day}": "4.50",
+        f"cell-pto-0-{day}": "1.50",
+    }
+    meeting = f"cell-meeting-0-{day}"
+    assert re.search(rf'aria-controls="{meeting}"[^>]*aria-invalid="true"', after_error)
 
 
-def test_hours_script_calculates_while_typing():
-    """Helper check: the shared script fills Hours from start/end as the user types."""
+def test_grid_script_keeps_totals_live():
+    """Helper check: the grid script recalculates totals while typing and guards unsaved work."""
     from pathlib import Path
 
-    script = Path("static/js/timesheet.js").read_text()
+    script = Path("static/js/grid.js").read_text()
     assert 'addEventListener("input"' in script and "toFixed(2)" in script
-    assert "el.readOnly = timed" in script
+    assert "beforeunload" in script and "showModal" in script

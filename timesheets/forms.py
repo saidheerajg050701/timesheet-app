@@ -24,6 +24,7 @@ class ParsedEntries:
     entries: list = field(default_factory=list)  # EntryData that could be read
     rows: list = field(default_factory=list)  # EntryRow, as typed, to show the form again
     errors: list = field(default_factory=list)
+    problems: list = field(default_factory=list)  # (EntryRow, problem): the grid's cell errors
 
 
 def parse_hours(text):
@@ -62,6 +63,17 @@ def day_choices(week_start):
     return [(d.isoformat(), day_label(d)) for d in week_days(week_start)]
 
 
+def parse_grid_keys(post):
+    """The weekly grid's rows as posted ("PROJECT:3", "MEETING:"), including rows that have no
+    time slots yet, so a failed save shows them again (D-107)."""
+    keys = []
+    for key in post.getlist("grid-row"):
+        category, _, project = key.partition(":")
+        if category in CATEGORY_LABELS and (project == "" or project.isdigit()):
+            keys.append((category, project))
+    return keys
+
+
 def parse_entries(post, week_start):
     """Every row in the POST, any number of them (D-35). Completely blank rows are ignored.
 
@@ -95,6 +107,7 @@ def parse_entries(post, week_start):
                 f" ({day_label(days[row.work_date])})" if row.work_date in days else ""
             )
             parsed.errors.extend(f"{where}: {problem}" for problem in problems)
+            parsed.problems.extend((row, problem) for problem in problems)
         else:
             parsed.entries.append(entry)
     return parsed

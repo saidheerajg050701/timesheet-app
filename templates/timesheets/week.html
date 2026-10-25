@@ -62,53 +62,32 @@
 {% if errors %}
   <div class="alert alert-danger" role="alert" id="errors">
     <p class="fw-semibold mb-1">Nothing was saved. Please fix:</p>
-    <ul class="mb-0">{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    <ul class="mb-0">{% for message, target in errors %}<li>{% if target %}<button type="button" class="btn btn-link p-0 align-baseline text-start error-link" data-grid-action="open" aria-controls="{{ target }}">{{ message }}</button>{% else %}{{ message }}{% endif %}</li>{% endfor %}</ul>
   </div>
 {% endif %}
 
 <form method="post" id="week-form" novalidate>
   {% csrf_token %}
-  <div class="table-responsive">
-    <table class="table table-sm align-middle bg-body" id="entries">
-      <thead>
-        <tr>
-          <th scope="col" style="min-width: 8rem">Day</th>
-          <th scope="col" style="min-width: 10rem">Category</th>
-          <th scope="col" style="min-width: 12rem">Project</th>
-          <th scope="col" style="min-width: 7rem">Start</th>
-          <th scope="col" style="min-width: 7rem">End</th>
-          <th scope="col" style="min-width: 5rem" class="text-end">Hours</th>
-          <th scope="col" style="min-width: 14rem">Reason</th>
-          <th scope="col"><span class="visually-hidden">Remove</span></th>
-        </tr>
-      </thead>
-      <tbody id="entry-rows">
-        {% for row in rows %}{% include "timesheets/_row.html" with editable=state.editable %}{% empty %}
-          <tr><td colspan="8" class="text-body-secondary">No entries.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {% include "timesheets/_grid.html" %}
   {% if state.editable %}
-    <div class="d-flex flex-wrap gap-2 mb-2">
-      <button type="button" class="btn btn-outline-secondary" id="add-row"
-              hx-get="{% url 'timesheet_row' state.week_start %}" hx-target="#entry-rows" hx-swap="beforeend"
-              hx-vals='js:{index: Math.max(-1, ...Array.from(document.querySelectorAll("#entry-rows > tr[data-index]"), r => +r.dataset.index)) + 1, date: ((document.querySelector("#entry-rows > tr:last-child select[name$=-date]") || {}).value || "")}'>Add row</button>
+    <div class="d-flex flex-wrap gap-2 mt-3 mb-2">
       <button type="submit" name="action" value="save" class="btn btn-outline-primary">Save draft</button>
       <button type="submit" name="action" value="submit" class="btn btn-primary"
               onclick="return confirm('Submit this week? It becomes read-only.')">Submit</button>
     </div>
     <p class="small text-body-secondary">
-      Work and Break rows need a start and end time (15-minute steps, same day, no overlaps); leave
-      (PTO, Sick, Holiday) is entered in hours. Every row needs a reason. Break time is unpaid and not
-      counted in Hours worked. Everything is checked again when you save.
+      Click a day to enter time. Work and Break need a start and end time (15-minute steps, same
+      day, no overlaps); leave (PTO, Sick, Holiday) is entered in hours. Every entry needs a
+      reason. Break time is unpaid and never counted in Total worked hours. Everything is checked
+      again when you save.
     </p>
   {% endif %}
+  <h2 class="section-title">Day summary</h2>
   {% include "timesheets/_summary.html" with live=state.editable %}
 </form>
 {% endblock %}
 
 {% block scripts %}
 <script src="{% static 'js/countdown.js' %}"></script>
-<script src="{% static 'js/timesheet.js' %}"></script>
+<script src="{% static 'js/grid.js' %}"></script>
 {% endblock %}

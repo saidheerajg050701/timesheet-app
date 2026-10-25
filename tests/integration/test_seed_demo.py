@@ -15,10 +15,10 @@ from payroll.services.publish import out_of_sync
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
 from timesheets.services.validation import validate_entries
 
-# fixed_now = Wednesday 2026-10-21, in week 2 of the pay period that starts 2026-10-12.
-CURRENT_PERIOD = date(2026, 10, 12)
-LAST_COMPLETED = date(2026, 9, 28)
-FIRST_WEEK = date(2026, 7, 20)  # 6 completed periods back (D-27)
+# fixed_now = Wednesday 2026-10-21, in week 2 of the pay period that starts Sun 2026-10-11.
+CURRENT_PERIOD = date(2026, 10, 11)
+LAST_COMPLETED = date(2026, 9, 27)
+FIRST_WEEK = date(2026, 7, 19)  # 6 completed periods back (D-27), a Sunday
 HISTORY = [FIRST_WEEK + timedelta(weeks=i) for i in range(13)]  # + week 1 of current period
 SIGNUP_CANDIDATES = ("qa1", "ops1", "ops2")
 MODELS = (
@@ -60,6 +60,11 @@ def test_seed_builds_the_demo_company(seeded, demo_password):
     assert "Demo company created" in seeded
     employees = list(Employee.objects.select_related("team", "manager"))
     assert len(employees) == 50
+    # Every week and pay period starts on a Sunday (D-111, D-113).
+    assert set(Timesheet.objects.dates("week_start", "day")) == set(HISTORY)
+    assert all(d.weekday() == 6 for d in HISTORY)
+    starts = PeriodApproval.objects.values_list("period_start", flat=True)
+    assert {d.weekday() for d in starts} == {6}
     assert Team.objects.count() == 9
     assert Team.objects.values("department").distinct().count() == 6
     assert max(depth(e) for e in employees) == 4

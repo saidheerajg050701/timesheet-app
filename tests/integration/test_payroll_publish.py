@@ -25,7 +25,7 @@ pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)
-PERIOD = date(2026, 9, 28)
+PERIOD = date(2026, 9, 27)  # weeks of Sun Sep 27 + Oct 4
 WEEK1, WEEK2 = PERIOD, PERIOD + timedelta(weeks=1)
 
 
@@ -58,7 +58,7 @@ def test_approval_publishes_two_week_records(org, make_week, project, approve):
     week2 = make_week(org.dev1, WEEK2, days=3)  # Mon–Wed work …
     TimeEntryFactory(  # … Thursday sick, Friday holiday
         timesheet=week2,
-        work_date=WEEK2 + timedelta(days=3),
+        work_date=WEEK2 + timedelta(days=4),  # Thursday
         category="SICK",
         project=None,
         start_time=None,
@@ -68,7 +68,7 @@ def test_approval_publishes_two_week_records(org, make_week, project, approve):
     )
     TimeEntryFactory(
         timesheet=week2,
-        work_date=WEEK2 + timedelta(days=4),
+        work_date=WEEK2 + timedelta(days=5),  # Friday
         category="HOLIDAY",
         project=None,
         start_time=None,
@@ -97,7 +97,7 @@ def test_overtime_and_pto_split(org, make_week, project, approve):
     week2 = make_week(org.dev1, WEEK2, end=time(18))  # 5 × 9 h = 45 h worked
     TimeEntryFactory(
         timesheet=week2,
-        work_date=WEEK2 + timedelta(days=5),
+        work_date=WEEK2 + timedelta(days=6),  # Saturday
         category="PTO",
         project=None,
         start_time=None,
@@ -106,7 +106,7 @@ def test_overtime_and_pto_split(org, make_week, project, approve):
         reason="Comp day",
     )
     approve(org.manager, org.dev1)
-    week = PayrollWeek.objects.using("payroll").get(status="CURRENT", week_start="2026-10-05")
+    week = PayrollWeek.objects.using("payroll").get(status="CURRENT", week_start="2026-10-04")
     assert (week.regular_minutes, week.overtime_minutes, week.pto_minutes) == (2400, 300, 480)
 
 
@@ -126,7 +126,9 @@ def test_approved_week_edited_later_gets_a_new_version(
     old = live(org.dev1, WEEK1)
     week1 = old.source_timesheet_id
     change = ChangeRequest.objects.create(timesheet_id=week1, requester=org.dev1, reason="Fix")
-    entries = [EntryData(WEEK1, "PROJECT", project, 180, "Fixed", time(9), time(12))]
+    entries = [
+        EntryData(WEEK1 + timedelta(days=1), "PROJECT", project, 180, "Fixed", time(9), time(12))
+    ]
     with django_capture_on_commit_callbacks(execute=True):
         edit_directly(change, org.manager, entries, now=NOW + timedelta(hours=1))
     old.refresh_from_db()
@@ -279,7 +281,9 @@ def test_supersede_failure_is_repaired_by_sync(
     change = ChangeRequest.objects.create(
         timesheet_id=week1.source_timesheet_id, requester=org.dev1, reason="Fix"
     )
-    entries = [EntryData(WEEK1, "PROJECT", project, 240, "Fixed", time(9), time(13))]
+    entries = [
+        EntryData(WEEK1 + timedelta(days=1), "PROJECT", project, 240, "Fixed", time(9), time(13))
+    ]
     with (
         mock.patch(
             "payroll.services.publish.supersede_week", side_effect=RuntimeError("payroll locked")

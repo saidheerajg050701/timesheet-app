@@ -65,7 +65,7 @@ class TimesheetFactory(DjangoModelFactory):
         model = Timesheet
 
     employee = factory.SubFactory(EmployeeFactory)
-    week_start = date(2026, 10, 19)
+    week_start = date(2026, 10, 18)  # a Sunday (D-111)
 
 
 class TimeEntryFactory(DjangoModelFactory):

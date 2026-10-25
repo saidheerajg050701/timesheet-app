@@ -4,7 +4,7 @@ from directory.models import Employee
 from timesheets.models import Project
 from timesheets.services.validation import EntryData, duration, validate_entries
 
-WEEK = date(2026, 10, 19)  # Monday
+WEEK = date(2026, 10, 18)  # Sunday: the week runs Sun 18 – Sat 24 Oct (D-111)
 TUESDAY = date(2026, 10, 20)
 ACTIVE = Project(code="PRJ-001", name="Customer Portal", active=True)
 INACTIVE = Project(code="PRJ-008", name="Legacy Billing", active=False)
@@ -59,9 +59,10 @@ def test_day_total_over_24_hours_is_rejected():
 
 def test_date_outside_week_or_inactive_project_is_rejected():
     """T-19: an entry dated outside the week, or on an inactive project, is rejected."""
-    assert has(errors_for(work(day=date(2026, 10, 26))), "not in the week")
-    assert has(errors_for(work(day=date(2026, 10, 18))), "not in the week")
-    assert errors_for(work(day=date(2026, 10, 25))) == []  # Sunday is in the week
+    assert has(errors_for(work(day=date(2026, 10, 25))), "not in the week")  # next Sunday
+    assert has(errors_for(work(day=date(2026, 10, 17))), "not in the week")  # Saturday before
+    assert errors_for(work(day=date(2026, 10, 18))) == []  # Sunday is the first day
+    assert errors_for(work(day=date(2026, 10, 24))) == []  # Saturday is the last day
     assert has(errors_for(work(project=INACTIVE)), "no longer active")
 
 

@@ -7,7 +7,7 @@ from timesheets.models import TimeEntry
 from timesheets.services.calendar import expected_minutes_for
 from timesheets.templatetags.timesheet_tags import hours2
 
-MONDAY = date(2026, 10, 5)
+WEEK = date(2026, 10, 4)  # Sun 4 – Sat 10 Oct
 
 
 def row(category, minutes, start=None, end=None):
@@ -38,7 +38,7 @@ def test_overtime_rule():
 
     # Partial week (D-19): hired Wednesday → expected 3/5 of 40 h = 24 h.
     joiner = Employee(hire_date=date(2026, 10, 7), expected_weekly_minutes=2400)
-    expected = expected_minutes_for(joiner, MONDAY)
+    expected = expected_minutes_for(joiner, WEEK)
     assert expected == 1440
     part = split_hours([row("PROJECT", 1620)], expected)
     assert (part.regular, part.overtime) == (1440, 180)

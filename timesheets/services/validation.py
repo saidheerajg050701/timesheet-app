@@ -139,3 +139,11 @@ def describe(entry):
     if entry.start_time is not None and entry.end_time is not None:
         text += f" {_span(entry)}"
     return text
+
+
+def mentions(entry):
+    """The texts that name `entry` in the messages above: its describe() prefix, and the
+    "09:00–12:00 PRJ-001" span used in overlap messages (None for leave). The weekly grid uses
+    them to show each message on the right cell (D-108); the rules don't."""
+    span = f"{_span(entry)} {_label(entry)}" if _has_valid_times(entry) else None
+    return describe(entry), span

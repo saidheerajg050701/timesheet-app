@@ -71,8 +71,8 @@ def test_one_status_badge_component(org, login_as, make_week, fixed_now):
     ]
     assert legacy == []
 
-    make_week(org.dev1, date(2026, 10, 12))
-    html = login_as(org.dev1).get(reverse("timesheet_week", args=[date(2026, 10, 12)]))
+    make_week(org.dev1, date(2026, 10, 11))
+    html = login_as(org.dev1).get(reverse("timesheet_week", args=[date(2026, 10, 11)]))
     page = html.content.decode()
     assert 'class="badge status-badge tone-submitted" id="week-status">Submitted<' in page
 

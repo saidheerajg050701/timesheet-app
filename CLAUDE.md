@@ -23,6 +23,8 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
+- Weeks run Sunday–Saturday and are identified by their Sunday; pay periods start on the Sunday
+  PAY_PERIOD_ANCHOR (D-111, D-113). Use timesheets/services/calendar.py, never weekday() arithmetic.
 - Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row
   (system actions use system_actor instead of actor, D-14).
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).

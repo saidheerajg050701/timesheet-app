@@ -8,12 +8,13 @@ from playwright.sync_api import expect
 from audit.models import AuditLog
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ, log_in
 from tests.factories import TEST_PASSWORD
-from timesheets.models import ChangeRequest, PeriodApproval
+from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
 from timesheets.services.approvals import approve_period
 
 pytestmark = E2E
 NEW_PASSWORD = "Brand-New-Pass-2026"
 WEEK2 = PERIOD + timedelta(weeks=1)
+MONDAY = THIS_WEEK + timedelta(days=1)  # weeks start on Sunday (D-111)
 
 
 def week_url(week):
@@ -22,6 +23,31 @@ def week_url(week):
 
 def status_of(page):
     return page.locator("#week-status")
+
+
+PORTAL = "PRJ-001 Customer Portal / Project work"
+
+
+def cell(page, row, day):
+    """A grid cell's button, e.g. cell(page, PORTAL, date(2026, 10, 19)) (D-106)."""
+    name = re.escape(f"{row}, {day:%a %b %-d}:").replace("/", r"\/")  # Playwright: /…/ regex
+    return page.get_by_role("button", name=re.compile(f"^{name}"))
+
+
+def open_cell(page, row, day):
+    cell(page, row, day).click()
+    panel = page.locator("dialog[open]")
+    expect(panel).to_be_visible()
+    return panel
+
+
+def add_row(page, category, project=None):
+    page.get_by_role("button", name="+ Add row").click()
+    panel = page.locator("dialog[open]")
+    panel.get_by_label("Category").select_option(label=category)
+    if project:
+        panel.get_by_label("Project").select_option(label=project)
+    panel.get_by_role("button", name="Add row", exact=True).click()
 
 
 def test_signup_refused_then_accepted(e2e_org, anonymous):
@@ -49,23 +75,28 @@ def test_save_draft_then_submit_before_the_deadline(e2e_org, open_as):
     page = open_as(e2e_org.dev1)
     page.goto(week_url(THIS_WEEK))
     expect(status_of(page)).to_have_text("Not started")
-    page.get_by_label("Day, row 1").select_option(THIS_WEEK.isoformat())
-    page.get_by_label("Category, row 1").select_option("PROJECT")
-    page.get_by_label("Project, row 1").select_option(label="PRJ-001 Customer Portal")
-    page.get_by_label("Start time, row 1").fill("09:00")
-    page.get_by_label("End time, row 1").fill("17:00")
-    page.get_by_label("Reason, row 1").fill("Login page")
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    panel = open_cell(page, PORTAL, MONDAY)
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("17:00")
+    panel.get_by_label("Reason").fill("Login page")
+    panel.get_by_role("button", name="Done").click()
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00")
     page.get_by_role("button", name="Save draft").click()
     expect(status_of(page)).to_have_text("Draft")
 
-    page.goto(week_url(THIS_WEEK))  # reopened: the row is still there
-    expect(page.get_by_label("Reason, row 1")).to_have_value("Login page")
-    expect(page.get_by_label("Hours, row 1")).to_have_value("8.00")
+    page.goto(week_url(THIS_WEEK))  # reopened: the slot is still there
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00")
+    panel = open_cell(page, PORTAL, MONDAY)
+    expect(panel.get_by_label("Reason")).to_have_value("Login page")
+    panel.get_by_role("button", name="Done").click()
     page.get_by_role("button", name="Submit").click()
     expect(status_of(page)).to_have_text("Submitted")
     expect(page.get_by_role("button", name="Save draft")).to_have_count(0)
-    expect(page.locator("#entry-rows input")).to_have_count(0)  # read-only now
-    expect(page.locator("#entry-rows")).to_contain_text("Login page")
+    expect(page.locator("#entries input")).to_have_count(0)  # read-only now
+    panel = open_cell(page, PORTAL, MONDAY)
+    expect(panel).to_contain_text("Login page")
+    expect(panel).to_contain_text("09:00")
 
 
 def test_week_locks_after_the_deadline(e2e_org, make_week, open_as, clock):
@@ -80,8 +111,8 @@ def test_week_locks_after_the_deadline(e2e_org, make_week, open_as, clock):
     expect(status_of(page)).to_have_text("Locked")
     expect(page.get_by_role("button", name="Submit")).to_have_count(0)
     expect(page.get_by_role("button", name="Save draft")).to_have_count(0)
-    expect(page.locator("#entry-rows input")).to_have_count(0)
-    expect(page.locator("#entry-rows")).to_contain_text("Feature work")
+    expect(page.locator("#entries input")).to_have_count(0)
+    expect(page.locator("#entries")).to_contain_text("Feature work")
 
 
 def test_change_request_then_manager_edits_directly(e2e_org, make_week, open_as):
@@ -99,7 +130,10 @@ def test_change_request_then_manager_edits_directly(e2e_org, make_week, open_as)
     manager.goto(reverse("request_inbox"))
     manager.locator("#open-requests").get_by_role("link").first.click()
     manager.get_by_role("link", name="Edit directly").click()
-    manager.get_by_label("End time, row 1").fill("18:00")
+    panel = open_cell(manager, PORTAL, week + timedelta(days=1))  # Monday
+    panel.get_by_label("End").fill("18:00")
+    panel.get_by_role("button", name="Done").click()
+    expect(cell(manager, PORTAL, week + timedelta(days=1))).to_have_text("9.00")
     manager.get_by_label("Note to the employee (optional)").fill("Fixed Monday")
     manager.get_by_role("button", name="Save and submit for the employee").click()
     expect(manager.get_by_role("alert")).to_have_text(
@@ -108,7 +142,7 @@ def test_change_request_then_manager_edits_directly(e2e_org, make_week, open_as)
 
     employee.goto(week_url(week))
     expect(status_of(employee)).to_have_text("Submitted")
-    expect(employee.locator("#row-0")).to_contain_text("18:00")
+    expect(open_cell(employee, PORTAL, week + timedelta(days=1))).to_contain_text("18:00")
     change = ChangeRequest.objects.get(timesheet__employee=e2e_org.dev1)
     row = AuditLog.objects.get(action="UPDATE", change_request=change)
     assert row.actor == e2e_org.manager
@@ -128,9 +162,9 @@ def test_approve_then_payroll_sees_the_records(e2e_org, make_week, open_as):
     payroll.goto(f"{reverse('payroll')}?period={PERIOD.isoformat()}")
     records = payroll.locator("#payroll-records tbody tr", has_text="John Kim")
     expect(records).to_have_count(2)
-    expect(records.filter(has_text="Sep 28")).to_contain_text("40.00")
-    expect(records.filter(has_text="Sep 28")).to_contain_text("2.00")  # overtime
-    expect(records.filter(has_text="Oct 5")).to_contain_text("Current")
+    expect(records.filter(has_text="Sep 27")).to_contain_text("40.00")
+    expect(records.filter(has_text="Sep 27")).to_contain_text("2.00")  # overtime
+    expect(records.filter(has_text="Oct 4")).to_contain_text("Current")
 
 
 def test_reject_with_comment_then_resubmit(e2e_org, make_week, open_as):
@@ -152,7 +186,9 @@ def test_reject_with_comment_then_resubmit(e2e_org, make_week, open_as):
     for week in (PERIOD, WEEK2):  # a resubmission sets the period back to pending
         employee.goto(week_url(week))
         if week == PERIOD:
-            employee.get_by_label("Reason, row 5").fill("Feature work and demo")
+            panel = open_cell(employee, PORTAL, PERIOD + timedelta(days=5))  # Friday
+            panel.get_by_label("Reason").fill("Feature work and demo")
+            panel.get_by_role("button", name="Done").click()
         employee.get_by_role("button", name="Submit").click()
         expect(status_of(employee)).to_have_text("Submitted")
 
@@ -237,3 +273,67 @@ def test_forbidden_pages(e2e_org, open_as):
             assert response.status == 403, (person, url)
             expect(page.get_by_role("heading", name="Not allowed")).to_be_visible()
     assert not PeriodApproval.objects.exists()
+
+
+def test_weekly_grid_in_the_browser(e2e_org, make_week, open_as):
+    """T-167: E2E grid: add rows, two slots by keyboard, live totals, unsaved warning, narrow."""
+    page = open_as(e2e_org.dev1)
+    page.goto(week_url(THIS_WEEK))
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    add_row(page, "Project work", "PRJ-001 Customer Portal")  # a duplicate is refused
+    expect(page.locator("dialog[open]")).to_contain_text("That row is already in the grid")
+    page.locator("dialog[open]").get_by_role("button", name="Cancel").click()
+
+    tuesday = THIS_WEEK + timedelta(days=2)
+    button = cell(page, PORTAL, tuesday)
+    button.focus()
+    page.keyboard.press("Enter")  # cells are buttons: the keyboard opens them
+    panel = page.locator("dialog[open]")
+    panel.get_by_label("Start").fill("08:00")
+    panel.get_by_label("End").fill("12:00")
+    panel.get_by_label("Reason").fill("Bug fixes")
+    expect(button).to_have_text("4.00")  # live while typing
+    panel.get_by_role("button", name="+ Add time slot").click()
+    panel.get_by_label("Start").nth(1).fill("13:00")
+    panel.get_by_label("End").nth(1).fill("17:30")
+    panel.get_by_label("Reason").nth(1).fill("Code review")
+    page.keyboard.press("Escape")  # Esc closes; focus goes back to the cell
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    expect(button).to_be_focused()
+    expect(button).to_contain_text("8.50")
+    expect(page.locator("#entries [data-role=week-total]")).to_have_text("8.50")
+
+    add_row(page, "PTO")
+    panel = open_cell(page, "PTO", tuesday + timedelta(days=1))
+    panel.get_by_label("Hours").fill("8")
+    panel.get_by_label("Reason").fill("Vacation")
+    panel.get_by_role("button", name="Done").click()
+    expect(page.locator("#entries [data-role=week-total]")).to_have_text("8.50")  # leave not in it
+
+    warnings = []
+    page.on("dialog", lambda dialog: warnings.append(dialog.type))
+    page.get_by_role("link", name="Dashboard").click()  # unsaved changes: the browser asks first
+    expect(page).to_have_url(re.compile(r"/$"))
+    assert "beforeunload" in warnings
+    page.goto(week_url(THIS_WEEK))
+    assert TimeEntry.objects.count() == 0  # nothing was saved by leaving
+
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    panel = open_cell(page, PORTAL, tuesday)
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("12:00")
+    panel.get_by_label("Reason").fill("Bug fixes")
+    panel.get_by_role("button", name="Done").click()
+    page.get_by_role("button", name="Save draft").click()
+    expect(status_of(page)).to_have_text("Draft")
+    assert TimeEntry.objects.count() == 1
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    scroller = page.locator(".grid-scroll")
+    assert scroller.evaluate("e => e.scrollWidth > e.clientWidth")  # the grid scrolls sideways
+    assert page.evaluate("() => { scrollTo(5000, 0); return scrollX; }") == 0  # the page doesn't
+    first = page.locator("#entries tbody th.grid-label").first
+    scroller.evaluate("e => e.scrollLeft = 300")
+    assert first.evaluate("e => getComputedStyle(e).position") == "sticky"
+    box = first.bounding_box()
+    assert box["x"] < 20  # still at the left edge while the days scroll

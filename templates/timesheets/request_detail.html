@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load timesheet_tags %}
+{% load static timesheet_tags %}
 
 {% block title %}Change request — Timesheets{% endblock %}
 
@@ -22,16 +22,8 @@
   {% endif %}
 </div>
 
-<div class="table-responsive">
-  <table class="table table-sm align-middle bg-body" id="entries">
-    <thead><tr><th>Day</th><th>Category</th><th>Project</th><th>Start</th><th>End</th><th class="text-end">Hours</th><th>Reason</th><th></th></tr></thead>
-    <tbody id="entry-rows">
-      {% for row in rows %}{% include "timesheets/_row.html" with editable=False %}{% empty %}
-        <tr><td colspan="8" class="text-body-secondary">No entries.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% include "timesheets/_grid.html" %}
+<h2 class="section-title">Day summary</h2>
 {% include "timesheets/_summary.html" with live=False %}
 
 {% if change.status == "OPEN" %}
@@ -51,3 +43,5 @@
   </form>
 {% endif %}
 {% endblock %}
+
+{% block scripts %}<script src="{% static 'js/grid.js' %}"></script>{% endblock %}

@@ -9,6 +9,8 @@
 
 | Version | Change | Details |
 |---|---|---|
+| 2.6 | **Change 3 – Sunday-to-Saturday week** | Weeks run Sunday → Saturday and are identified by their Sunday; the Saturday 12:00 deadline is now the last day of the week; pay periods are anchored on Sunday 2026-01-04 and a non-Sunday anchor stops the app; working days stay Mon–Fri; non-Sunday week links redirect; demo data rebuilt by the owner (D-111–D-117, T-168–T-172) |
+| 2.5 | **Change 2 – Weekly grid** | Timesheets are entered and shown as a weekly grid: one row per Project / Category, day cells (Sun–Sat since Change 3) with time slots in an accessible dialog, a Total worked hours column and footer; used on the week page, Edit directly, and read-only on submitted weeks, change requests, approvals and the Team week view. Same entries, rules, services and totals; no migration (D-106–D-110, T-160–T-167) |
 | 2.4 | **Change 1 – Modern UI** | Light, modern look on every page with one theme stylesheet (`static/css/theme.css`, design tokens), a shared status badge component, centered login/sign-up/profile/error cards, chart colours from the tokens, and a screenshot tool for visual review (D-100–D-105, T-157–T-159). Behaviour, URLs, permissions and rules unchanged |
 | 2.3 | **Version 1 complete** | Phases 0–12 built; decisions D-23–D-99 in B.12; 156 catalogued tests (T-01–T-156) including 10 Playwright e2e flows, all passing (status table in B.11); e2e mandatory in `test_all.sh` |
 | 2.2 | **Decisions log** | New **section B.12** (D-01…D-22) settles the open points from the spec review. B.1–B.11 and Part C updated to match; **B.12 wins** if anything still conflicts |
@@ -37,7 +39,9 @@
 | 10 | Team (hierarchy) analytics | `31aa771` | Done |
 | 11 | Admin polish: audited edits, deactivate, password reset, CSV | `f8513b8` | Done |
 | 12 | Full test pass, e2e, hardening, README | `bad0b31` | Done |
-| Change 1 | Modern UI (post-release, like Phase 5b) | (commit pending) | Done — ready to commit |
+| Change 1 | Modern UI (post-release, like Phase 5b) | `7f19f32` | Done |
+| Change 2 | Weekly grid (post-release) | (commit pending) | Done — ready to commit |
+| Change 3 | Sunday-to-Saturday week (post-release) | (commit pending) | Done — ready to commit; rebuild the demo data (D.3) |
 
 ---
 
@@ -161,10 +165,10 @@ What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew
 | 6 | Password storage | **Argon2** one-way hashing | **Decided** |
 | 7 | Testing | Automated tests for every phase + browser tests; see B.11 | **Decided** |
 | 8 | Company time zone | `America/Chicago` — `.env` → `COMPANY_TZ` | Default |
-| 9 | Work week | Monday → Sunday; a week is identified by its Monday | Default |
-| 10 | Weekly deadline | **Saturday 12:00 noon** company time, same week. Weekend hours may be entered in advance (D-09) | **Decided** |
+| 9 | Work week | **Sunday → Saturday**; a week is identified by its Sunday (D-111; until Change 3: Monday → Sunday) | **Decided** |
+| 10 | Weekly deadline | **Saturday 12:00 noon** company time, the last day of the week (D-112). The rest of Saturday may be entered in advance (D-09) | **Decided** |
 | 11 | Missed deadline | Week becomes **LOCKED** (missed). It must be unlocked — via the employee's **Change Request** or by the manager from the approval page — and then submitted. An unused reopen window returns the week to LOCKED (D-06, D-08) | **Decided** |
-| 12 | Biweekly period | 2 weeks, anchored on Monday `2026-01-05` — `.env` → `PAY_PERIOD_ANCHOR` | Default |
+| 12 | Biweekly period | 2 weeks, anchored on **Sunday** `2026-01-04` — `.env` → `PAY_PERIOD_ANCHOR`; must be a Sunday or the app refuses to start (D-113; until Change 3: Monday 2026-01-05) | **Decided** |
 | 13 | Approver | **Direct manager**; higher managers view only. Employees with **no manager** are approved by an Admin. **Nobody ever approves their own timesheet** (D-11) | **Decided** |
 | 14 | Analytics visibility | Roles add up (D-12). Everyone: own. Manager: + whole reporting tree. Admin: everyone. Payroll flag: adds payroll pages only | **Decided** |
 | 15 | Time categories | **Work** (start/end times): Project work, Meetings, Training, Other. **Break time** (start/end times, unpaid, D-39). **Leave** (hours only): PTO, Sick, Holiday (D-37, D-40) | Default |
@@ -181,7 +185,7 @@ DJANGO_DEBUG=True
 DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 COMPANY_EMAIL_DOMAIN=@yourcompany.com
 COMPANY_TZ=America/Chicago
-PAY_PERIOD_ANCHOR=2026-01-05
+PAY_PERIOD_ANCHOR=2026-01-04
 DEMO_PASSWORD=choose-a-strong-demo-password
 ```
 
@@ -263,7 +267,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Hours by project across the team
 - Click anyone in the tree → read-only view of their analytics and timesheets
 
-**FR-7 Biweekly approvals page.** For managers (and Admins, for employees with no manager). Nobody sees their own row (D-11). Details settled in B.12 D-54–D-63 (rows and periods, flags, partial weeks, reject, open requests, unlock, resubmission, payroll hook, bulk approve).
+**FR-7 Biweekly approvals page.** Pay periods are 14 days, two Sunday→Saturday weeks counted from the Sunday `PAY_PERIOD_ANCHOR` (D-113). For managers (and Admins, for employees with no manager). Nobody sees their own row (D-11). Details settled in B.12 D-54–D-63 (rows and periods, flags, partial weeks, reject, open requests, unlock, resubmission, payroll hook, bulk approve).
 - Pick a pay period (default: most recent completed)
 - One row per direct report: week 1 and week 2 status, total hours, flags (late, overtime, missing days)
 - Open a row → both weeks' entries → **Approve** or **Reject** (comment required)
@@ -273,7 +277,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 - Reject → both weeks become REOPENED with `reopen_until` set per D-21, and the manager's comment is shown to the employee (D-07)
 - **Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline
 
-**FR-8 Weekly timesheet and deadline.** Each week is a list of entry rows, as many as needed (D-35). Every row has a date, a category, a project (Project work only, D-18) and a required reason (D-36). Work rows (Project work, Meetings, Training, Other) and **Break** rows have a start and end time in 15-minute steps on the same day; the hours are calculated from the times (D-37). Timed rows on one day must not overlap (D-38). Leave rows (PTO, Sick, Holiday) have hours only (D-40). Break time is unpaid (D-39). **Hours worked** = work rows only; the page shows it per day and per week next to the expected hours, with separate Break and Leave totals and each day's first start and last end (D-41). Each day's work + Break + leave is at most 24 hours (D-42). A week needs at least one entry to be submitted, and a week with only Break rows cannot be submitted (D-32, D-43). Only the current week and earlier open (D-33). Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
+**FR-8 Weekly timesheet and deadline.** Each week is a **weekly grid** (D-106): one row per Project / Category (e.g. "PRJ-001 Customer Portal / Project work", "Meetings", "Break (unpaid)", "PTO"), columns Sun–Sat (the week runs Sunday → Saturday and is identified by its Sunday, D-111) headed with the day and date, then a **Total worked hours** column, and a footer with Total worked hours per day and for the week (work only; Break shown but never counted, leave shown and labelled). "+ Add row" picks a category, and a project for Project work (active projects only; no duplicate rows). Clicking a day cell opens a dialog for that row and day: work and Break cells hold one or more **time slots** (start, end, reason); leave cells hold hours and a reason. Each slot is one entry, as many as needed (D-35, D-107). Every entry has a date, a category, a project (Project work only, D-18) and a required reason (D-36). Work rows (Project work, Meetings, Training, Other) and **Break** rows have a start and end time in 15-minute steps on the same day; the hours are calculated from the times (D-37). Timed rows on one day must not overlap (D-38). Leave rows (PTO, Sick, Holiday) have hours only (D-40). Break time is unpaid (D-39). **Hours worked** = work rows only; the page shows it per day and per week next to the expected hours, with separate Break and Leave totals and each day's first start and last end (D-41). Each day's work + Break + leave is at most 24 hours (D-42). A week needs at least one entry to be submitted, and a week with only Break rows cannot be submitted (D-32, D-43). Only the current week and earlier open (D-33). Problems are shown on the cell they belong to and inside its dialog (D-108); the page warns before leaving with unsaved changes (D-110). The same grid is used read-only on submitted, approved and locked weeks, change requests, the approval page and the Team week view (D-109). Submit by **Saturday 12:00 noon** company time. Weekend hours may be entered in advance; any change after submitting goes through a change request (D-09). After submitting: read-only. After the deadline, an unsubmitted week is **LOCKED / missed** (worked out when the page opens, so no background job is needed). When a reopen window (unlock or reject; it ends at the later of +48 hours and the week's Saturday 12:00 deadline, D-21) ends without resubmission, the week becomes LOCKED; a week submitted after its original deadline keeps `is_late = True` (D-08). Weeks with no timesheet at all count as missed only while the person was employed (from `hire_date` to `end_date`); weeks fully outside employment are never missed (D-19).
 
 **FR-9 Manager changes on request.** Rules settled in B.12 D-46–D-53 (which weeks, who handles, notes, edit/unlock behaviour, late flag, payroll hook).
 1. Employee opens a submitted or locked week → **Request change** → writes a reason.
@@ -311,6 +315,8 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 | LOCKED / SUBMITTED / APPROVED | Change request → manager edits directly | **SUBMITTED** (approval reset to PENDING; payroll record superseded) |
 | REOPENED | Employee resubmits | **SUBMITTED** (`is_late` stays True if past the original deadline, D-08) |
 | REOPENED | `reopen_until` passes without resubmission | **LOCKED** (D-08, D-21) |
+
+**Week and deadline (D-111, D-112):** a week runs Sunday → Saturday, so the Saturday 12:00 deadline falls on its last day; Saturday afternoon may be entered in advance (D-09).
 
 **Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline. A week unlocked on Wednesday therefore stays editable until Saturday 12:00.
 
@@ -378,7 +384,7 @@ class Timesheet(models.Model):             # one per employee per week
     class Status(models.TextChoices):
         DRAFT="DRAFT"; SUBMITTED="SUBMITTED"; LOCKED="LOCKED"; REOPENED="REOPENED"; APPROVED="APPROVED"
     employee = models.ForeignKey("directory.Employee", on_delete=models.PROTECT, related_name="timesheets")
-    week_start = models.DateField()        # always a Monday
+    week_start = models.DateField()        # always a Sunday (D-111)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
     # to/from APPROVED only via timesheets/services/approvals.py (D-10)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -414,7 +420,7 @@ class PeriodApproval(models.Model):        # one per employee per 2-week period
     class Status(models.TextChoices):
         PENDING="PENDING"; APPROVED="APPROVED"; REJECTED="REJECTED"
     employee = models.ForeignKey("directory.Employee", on_delete=models.PROTECT)
-    period_start = models.DateField()      # Monday of week 1
+    period_start = models.DateField()      # Sunday of week 1 (D-113)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     approver = models.ForeignKey("directory.Employee", null=True, blank=True,
                                  on_delete=models.SET_NULL, related_name="approvals_made")
@@ -613,10 +619,10 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 
 | # | Function | Location |
 |---|---|---|
-| 1 | `week_start_for(d)` → Monday of that week | `timesheets/services/calendar.py` |
-| 2 | `deadline_for(week_start, tz)` → Saturday 12:00 company time | same |
+| 1 | `week_start_for(d)` → Sunday of that Sunday→Saturday week (D-111); `week_days` Sun…Sat; `working_days` Mon–Fri (D-114) | `timesheets/services/calendar.py` |
+| 2 | `deadline_for(week_start, tz)` → Saturday 12:00 company time, the week's last day (D-112) | same |
 | 3 | `effective_status(timesheet, now)` → DRAFT becomes LOCKED after deadline; REOPENED becomes LOCKED after `reopen_until` (D-08, D-21) | same |
-| 4 | `pay_period_for(d, anchor)` → `(period_start, week1, week2)` | same |
+| 4 | `pay_period_for(d, anchor)` → `(period_start, week1, week2)`; 14 days from a Sunday anchor, `ValueError` for any other day (D-113) | same |
 | 5 | `expected_minutes_for(employee, week_start)` → `expected_weekly_minutes × active weekdays (Mon–Fri, within hire_date…end_date) / 5`; 0 for weeks fully outside employment (D-19) | same |
 | 6 | `reporting_tree(employee)` → all reports, cycle-safe; built in memory from one `(id, manager_id)` query (D-86); `team_scope(viewer, scope)` → whole tree (everyone for admins) or direct reports, never the viewer (D-81) | `directory/services/permissions.py` |
 | 7 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` — `can_approve` = direct manager, or Admin for employees with no manager, never self (D-11); payroll flag grants nothing beyond `/payroll/` (D-12) | same |
@@ -674,7 +680,9 @@ tests/
   integration/
     test_auth_views.py
     test_timesheet_flow.py
-    test_entry_form.py     # shared entry-row form: blank rows, re-render, hours (T-89–T-91)
+    test_entry_form.py     # the grid on the week page and Edit directly: blank/partial entries, re-render, cell hours (T-89–T-91)
+    test_grid.py           # weekly grid: layout, totals, add row, slots, leave, errors on cells, read-only (T-160–T-166)
+    test_sunday_week.py    # Sunday-to-Saturday weeks: last-day deadline, redirects, daylight-saving week (T-169, T-171, T-172)
     test_change_requests.py
     test_approvals.py
     test_payroll_publish.py
@@ -711,11 +719,11 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-09 | Login | Correct password | Logged in |
 | T-10 | Login | 5 wrong attempts | Locked 15 minutes |
 | T-11 | Login | Inactive employee with an account | Cannot log in |
-| T-12 | Calendar | `week_start_for` on each weekday and Sunday | Correct Monday |
+| T-12 | Calendar | `week_start_for` on every day of the week | Its Sunday (D-111; until Change 3: Monday) |
 | T-13 | Calendar | Deadline at Saturday 11:59:59 | Still open |
 | T-14 | Calendar | Deadline at Saturday 12:00:00 | Locked |
-| T-15 | Calendar | Week containing daylight-saving change (March and November) | Deadline still 12:00 local |
-| T-16 | Calendar | `pay_period_for` across year boundary | Correct 2-week period |
+| T-15 | Calendar | Weeks around the daylight-saving changes (March and November; both now fall on a week's first day, Sunday) | Deadline still Saturday 12:00 local |
+| T-16 | Calendar | `pay_period_for` across year boundary (Sunday anchor 2026-01-04) | Correct 2-week period starting on a Sunday |
 | T-17 | Validation | Times or leave hours not in 15-minute steps | Rejected |
 | T-18 | Validation | Day total (work + Break + leave) over 24 h | Rejected (D-42) |
 | T-19 | Validation | Entry date outside the week / inactive project | Rejected |
@@ -778,7 +786,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-76 | Validation | PTO/Sick/Holiday with a start or end time; work row without times | Rejected (D-37, D-40) |
 | T-77 | Timesheet | Day with work, a Break and leave | Hours worked counts only work rows; Break and Leave shown separately; first start/last end; per-day and week totals (D-41) |
 | T-78 | Timesheet | Submit a week whose only rows are Breaks | Refused; nothing submitted (D-43) |
-| T-79 | Timesheet | 20 rows on one day, plus rows on other days | All saved and shown; no row limit; the 24-hour rule still applies (D-35, D-42) |
+| T-79 | Timesheet | 20 entries on one day, plus entries on other days | All saved and shown (22 grid slots); no limit; the 24-hour rule still applies (D-35, D-42) |
 | T-80 | Seed | `seed_demo` history | Every week passes `validate_entries`; every row has a reason; timed rows have times; lunch breaks and leave rows exist; Break never has a project (D-44) |
 | T-81 | Change request | Request on DRAFT, NOT_STARTED, REOPENED or future week; second OPEN request on a week | Refused; first request on SUBMITTED/LOCKED/APPROVED (incl. a missed week with no timesheet) accepted (D-46) |
 | T-82 | Change request | Who handles: employee with a manager, the CEO (no manager), an admin's own request | Direct manager only; HR admin for the CEO; nobody handles their own; others get 403 on detail and actions (D-47) |
@@ -788,15 +796,15 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-86 | Timesheet | Unlocked week from two weeks ago | Employee can open and save it until `reopen_until`; saves write an UPDATE audit with before/after; after the window → LOCKED (D-51) |
 | T-87 | Timesheet | Late flag after reopening | Missed week unlocked and submitted later → is_late True; on-time week reopened and resubmitted after Saturday → stays on time (D-08, D-52) |
 | T-88 | Layout | Open-request count in the menu | Handlers see "Change requests" with the count of open requests they may handle; employees without reports don't see it |
-| T-89 | Timesheet | Save the week page or Edit directly with untouched blank rows (day pre-filled only) | Blank rows ignored, never validated; a row with only hours or only a reason is refused ("choose a category") |
-| T-90 | Timesheet | Save with an error, then again, on the week page and Edit directly | The form is shown with exactly the posted rows; no extra blank rows are added on re-render |
-| T-91 | Timesheet | Hours column on the week page and Edit directly | Calculated for every work/Break row from start/end (e.g. 08:30–12:00 → 3.50) on page load and after an error; read-only for timed rows, typed for leave |
+| T-89 | Timesheet | Week page and Edit directly (weekly grid since Change 2) with untouched or partial entries | The grid renders no blank slots; an entry with nothing typed is ignored; one with only hours or only a reason is refused ("choose a category") (D-35, D-107) |
+| T-90 | Timesheet | Save with an error, then again, on the week page and Edit directly (grid) | The grid shows exactly the posted slots, and a row added without slots is kept; nothing extra is added on re-render (D-107) |
+| T-91 | Timesheet | Cell hours on the week page and Edit directly (grid) | Each cell shows its hours with 2 decimals (08:30–12:00 → 3.50; Break 0.75; leave as typed, 1.50) on page load and after an error; the cell with the error is marked invalid (D-107, D-108) |
 | T-92 | Approvals | Unlock a LOCKED week from the approval page (with and without an open employee request; missed week with no timesheet) | REOPENED per D-21; manager-authored UNLOCKED ChangeRequest or the open request resolved; UNLOCK audit (D-06, D-59) |
 | T-93 | Approvals | Reject with a comment, employee resubmits | Comment shown on the employee's week page; after resubmission the period is PENDING again (audited) and approvable once both weeks are submitted (D-07, D-60) |
 | T-94 | Approvals | Approve calls the payroll hook inside its transaction | Hook called once with the approval; if the hook itself fails, nothing changes (PeriodApproval, weeks, audit). A failure of the later payroll *write* does not undo the approval — see T-107 (D-10, D-61, D-65) |
 | T-95 | Approvals | Who sees and approves which rows | Manager: direct reports only (not indirect, never self); HR admin: the CEO; CEO never sees own row; approving self or a non-direct report → 403 (D-11, D-54) |
 | T-96 | Approvals | Bulk approve | Only clean rows have a checkbox; posted ineligible rows are skipped with a reason; each eligible employee approved in its own transaction; summary of approved and skipped (D-63) |
-| T-97 | Approvals | Pay-period dates | 14-day periods from the anchor; default = most recent completed period; any date snaps to its period start; future periods refused; Previous/Next links (D-54) |
+| T-97 | Approvals | Pay-period dates | 14-day periods from the Sunday anchor (D-113); default = most recent completed period; any date snaps to its period start; future periods refused; Previous/Next links (D-54) |
 | T-98 | Approvals | Flags | Late, overtime (Hours worked above prorated expected; Break never counts) and missing days (employed weekday with no entries; leave counts) per D-55 |
 | T-99 | Approvals | 403 cases | Non-manager on list, detail, bulk and POST actions; manager on someone not their direct report; admin on an employee who has a manager; anyone on themselves |
 | T-100 | Approvals | Period with one week outside employment (hired in week 2, or left in week 1) | Approvable when the employed week is SUBMITTED; the other week shows "not employed" (D-56) |
@@ -829,7 +837,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-127 | Team | Admin sees everyone | Admin's whole-tree list = every employee except themselves; direct = own direct reports only (empty state if none); admin can drill into anyone (D-81) |
 | T-128 | Team | This week's compliance | Before Saturday 12:00 "Not submitted yet", after it "Missed"; people who submitted and people not employed this week are not listed (D-83) |
 | T-129 | Team | Inactive employees | Shown only with a timesheet in the range, marked "inactive" (D-81) |
-| T-130 | Team | Read-only drill-down and week view | Phase 9 parts for that person; no form, edit, submit, approve or "Open this week" controls; week view shows the rows read-only with status badges; non-Monday redirects, future week 404 (D-85) |
+| T-130 | Team | Read-only drill-down and week view | Phase 9 parts for that person; no form, edit, submit, approve or "Open this week" controls; week view shows the rows read-only with status badges; non-Sunday redirects, future week 404 (D-85) |
 | T-131 | Team | Viewing writes nothing | No INSERT/UPDATE/DELETE on the team page, drill-down and week view (D-34) |
 | T-132 | Team | Fixed query count with large data | ~500 employees over 4 levels with 12 weeks of entries in the test DB: CEO (everyone), a director (125) and a manager (24) cost the same number of queries for 4 and 26 weeks (an admin one fewer: no "manages anyone?" check); `time_team_page` prints time, people, queries and 0 writes (D-86) |
 | T-133 | Admin | Edit an employee in Admin (details, team, manager, expected hours, flags) | Saved; one UPDATE audit row, actor = the admin, before/after only for the changed fields; an unchanged save writes nothing; a failing audit write rolls back the edit (D-88) |
@@ -859,10 +867,23 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-157 | UI | The theme stylesheet | Logged-in and login pages link `/static/css/theme.css` after the vendored Bootstrap; with DEBUG off it is served (200, `text/css`) and defines the `--ts-accent` token (D-100) |
 | T-158 | UI | One status badge component | Every Timesheet, PeriodApproval, ChangeRequest and PayrollWeek status, plus Not started, Not employed, In progress and the Late/Missed/Overtime/Missing/Change requested/Read-only flags, has a tone with a CSS rule; no page template uses Bootstrap `text-bg-*` badges or the old `status_badge` filter; the week page renders `id="week-status">Submitted<` through the component (D-102) |
 | T-159 | UI | Contrast | Every badge tone (text on its background), body and muted text, white on the accent and success buttons, the active menu item and error text reach at least 4.5:1, computed from the tokens in theme.css (D-100, WCAG AA) |
+| T-160 | Grid | Layout and totals | A week with two projects, a meeting, a Break and PTO: one row per Project/Category in the set order (projects by code, then Meetings, Training, Other, Break (unpaid), leave); headers "Mon" / "Oct 19, 2026"; cell, row and footer totals with 2 decimals; the footer counts work only and equals the day summary's Hours worked; Break tagged "not counted", leave tagged "leave"; the day summary stays below (D-106) |
+| T-161 | Grid | Add a row | The endpoint returns an empty row with 7 cells for a category or an active project; unknown category, missing or inactive project → 400; a row added without slots is kept through a failed save; bad keys ignored; never two rows for one key (D-107) |
+| T-162 | Grid | Multi-slot cell | Two slots in one cell save as two entries; the cell shows the sum (8.50); its dialog shows both slots with times and reasons (D-107) |
+| T-163 | Grid | Leave cell | Hours and a reason, no times (saved with no start/end); the cell shows 7.50 and the row is tagged leave; it is not in Total worked hours; the day summary shows it as Leave (D-40, D-106) |
+| T-164 | Grid | Overlap error on the right cell | Overlapping slots in two rows on one day: nothing saved; both cells marked invalid with the unchanged overlap message inside their dialogs; the error summary links to the cell; other cells unmarked (D-38, D-108) |
+| T-165 | Grid | Read-only grids | Submitted week, change-request detail, approval detail and Team week view: no inputs, selects or slot templates; each cell's dialog lists its slots' times, hours and reasons; no "+ Add row" (D-109) |
+| T-166 | Grid | Existing week renders the same | An existing week with multi-slot cells, Break and leave: grid worked/Break/leave totals equal `summarize()`; one slot per entry; saving it unchanged keeps the entries identical and the day summary byte-identical (D-106, D-107) |
+| T-167 | E2E | Weekly grid in a real browser | Add a row; a duplicate is refused; a cell opens with Enter, two slots typed with live totals, Esc closes and focus returns to the cell; leave not in the footer; leaving with unsaved changes asks first and saves nothing; Save draft saves; at 390 px the grid scrolls sideways with the first column fixed and the page doesn't (D-110) |
+| T-168 | Calendar | Week boundaries | Saturday 2026-10-24 23:59:59 belongs to the week of Sun 18 Oct and is already locked/missed; Sunday 25 Oct 00:00 starts the next week (open, deadline Sat 31 Oct 12:00); `week_days` Sun…Sat; `working_days` Mon…Fri; expected hours 40 h, prorated for a Wednesday hire (D-111, D-114) |
+| T-169 | Timesheet | Deadline on the last day | At Sat 24 Oct 11:59:59 a week with Monday work and a Saturday 13:00–15:00 entry entered in advance submits on time (D-09); at 12:00:00 another draft week is LOCKED and missed, saving refused (403) (D-112) |
+| T-170 | Calendar | Pay-period anchor must be a Sunday | System check `timesheets.E001` for 2026-01-05 ("is a Monday; it must be a Sunday", hint with `PAY_PERIOD_ANCHOR=2026-01-04`); none for 2026-01-04; `pay_period_for` with a Monday anchor raises `ValueError`; 14-day periods both ways from the anchor start on Sundays (D-113) |
+| T-171 | Timesheet | Redirect from a non-Sunday date | `/timesheets/2026-10-19/` (old Monday), Wednesday and Saturday → 302 to `/timesheets/2026-10-18/`; an old Monday of a past week → its Sunday; the Sunday opens; the Team week view redirects the same way (D-115) |
+| T-172 | Calendar | Daylight-saving week | Week of Sun 1 Nov 2026 (clocks go back that night): Nov 1 and Sat Nov 7 belong to it; deadline Sat 7 Nov 12:00 CST = 18:00 UTC (the week before: 12:00 CDT = 17:00 UTC); a Sunday 09:00–17:00 entry saves as 8:00; expected 40 h; the draft locks at exactly 12:00 local (D-116) |
 
-### Status of every test (Phase 12, updated for Change 1)
+### Status of every test (Phase 12, updated for Changes 1–3)
 
-Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, all passing); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24, 2026 (fixed clocks, test databases only): **237 test cases, all passed** (parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167 and Change 3 T-168–T-172, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.16 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
@@ -877,7 +898,7 @@ Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24,
 | T-09 | Login | `integration/test_auth_views.py::test_correct_password_logs_in` | ✅ Pass |
 | T-10 | Login | `integration/test_auth_views.py::test_five_wrong_attempts_lock_the_account_for_15_minutes` | ✅ Pass |
 | T-11 | Login | `integration/test_auth_views.py::test_inactive_employee_cannot_log_in` | ✅ Pass |
-| T-12 | Calendar | `unit/test_calendar.py::test_week_start_for_every_day_is_monday` | ✅ Pass |
+| T-12 | Calendar | `unit/test_calendar.py::test_week_start_for_every_day_is_sunday` | ✅ Pass |
 | T-13 | Calendar | `unit/test_calendar.py::test_week_still_open_at_1159` | ✅ Pass |
 | T-14 | Calendar | `unit/test_calendar.py::test_week_locked_at_noon` | ✅ Pass |
 | T-15 | Calendar | `unit/test_calendar.py::test_deadline_stays_noon_local_across_daylight_saving` | ✅ Pass |
@@ -1025,6 +1046,19 @@ Result of `uv run pytest --browser-channel chrome --junitxml=…` on October 24,
 | T-157 | UI | `integration/test_ui_theme.py::test_theme_stylesheet_is_loaded_and_served` | ✅ Pass |
 | T-158 | UI | `integration/test_ui_theme.py::test_one_status_badge_component` | ✅ Pass |
 | T-159 | UI | `integration/test_ui_theme.py::test_theme_contrast_meets_wcag_aa` | ✅ Pass |
+| T-160 | Grid | `integration/test_grid.py::test_grid_layout_and_totals` | ✅ Pass |
+| T-161 | Grid | `integration/test_grid.py::test_add_row` | ✅ Pass |
+| T-162 | Grid | `integration/test_grid.py::test_multi_slot_cell` | ✅ Pass |
+| T-163 | Grid | `integration/test_grid.py::test_leave_cell` | ✅ Pass |
+| T-164 | Grid | `integration/test_grid.py::test_overlap_error_is_shown_on_the_right_cells` | ✅ Pass |
+| T-165 | Grid | `integration/test_grid.py::test_read_only_grids` | ✅ Pass |
+| T-166 | Grid | `integration/test_grid.py::test_existing_week_renders_the_same` | ✅ Pass |
+| T-167 | E2E | `e2e/test_e2e_flows.py::test_weekly_grid_in_the_browser` | ✅ Pass |
+| T-168 | Calendar | `unit/test_calendar.py::test_week_boundaries_saturday_night_and_sunday_midnight` | ✅ Pass |
+| T-169 | Timesheet | `integration/test_sunday_week.py::test_deadline_is_on_the_last_day` | ✅ Pass |
+| T-170 | Calendar | `unit/test_calendar.py::test_pay_period_anchor_must_be_a_sunday` | ✅ Pass |
+| T-171 | Timesheet | `integration/test_sunday_week.py::test_non_sunday_dates_redirect_to_their_week` | ✅ Pass |
+| T-172 | Calendar | `integration/test_sunday_week.py::test_daylight_saving_week` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -1128,7 +1162,7 @@ Run it at the end of **every** phase, before committing.
 
 ## B.12 Decisions log
 
-Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-105 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
+Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-45 on October 22, 2026; D-46–D-63 on October 23, 2026; D-64–D-117 on October 24, 2026). **If B.12 conflicts with anything else in this guide, B.12 wins.**
 
 | ID | Area | Decision | Affects |
 |---|---|---|---|
@@ -1166,7 +1200,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-32 | Timesheet | Submitting requires at least one entry ("Add at least one entry before submitting"); leave is entered as PTO, Sick or Holiday. | B.4 FR-8, C.4 P5 |
 | D-33 | Timesheet | Employees can open only the current week and earlier weeks; future weeks cannot be opened or saved. The current week can be submitted any time before Saturday 12:00, including weekend hours entered in advance (D-09). Future weeks are never counted as missed. | B.4 FR-8, B.8, C.4 P5 |
 | D-34 | Timesheet | LOCKED and "missed" are worked out when read (`effective_status`, `week_state`); opening a page never writes. The stored status changes only through actions (save, submit, and later unlock/approve), so a locked week may still be stored as DRAFT. | B.4 FR-8, B.5, B.9 #3, C.4 P5–P7 |
-| D-35 | Timesheet | Unlimited rows: **Add row** (HTMX) adds as many rows as needed on any day of the week, and rows of an editable (draft) week can be removed. There is no row limit; the time rules and the 24-hour rule are the only limits. | B.4 FR-8, C.4 P5 |
+| D-35 | Timesheet | Unlimited rows: **Add row** (HTMX) adds as many rows as needed on any day of the week, and rows of an editable (draft) week can be removed. There is no row limit; the time rules and the 24-hour rule are the only limits. *Since Change 2 the rows are the time slots of the weekly grid (D-106, D-107); there is still no limit.* | B.4 FR-8, C.4 P5 |
 | D-36 | Timesheet | Every row has a date, category, project (Project work only, D-18) and a **required reason** (max 255 characters). `TimeEntry.notes` is renamed to `reason`. | B.4 FR-8, B.6 |
 | D-37 | Timesheet | Work rows (Project work, Meetings, Training, Other) and Break rows have a start and end time ("login to logout" for that row) in 15-minute steps; end must be after start and the row cannot cross midnight (latest end 23:45). Hours are calculated from the times and stored as whole minutes. | B.1 row 15, B.4 FR-8, B.6, B.9 |
 | D-38 | Timesheet | Rows with times on the same day must not overlap, breaks included; back-to-back rows (end = next start) are fine. | B.4 FR-8, B.9 |
@@ -1237,6 +1271,18 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-103 | UI | **Charts use the tokens**: `dashboard.js` and `team.js` read `--ts-chart-series` (the accent `#2563eb`, which passes the palette validator against the light surface), `--ts-chart-muted` and `--ts-chart-grid` with `getComputedStyle`, falling back to the same values. Every chart keeps its table or text version (D-80). | B.4 FR-5/FR-6 |
 | D-104 | UI | **Django Admin: light branding only.** `site_header`/`site_title` = "Timesheets Admin"; `templates/admin/base_site.html` sets the admin's own colour variables (primary, header, breadcrumbs) to the accent and slate tokens in light mode and makes the site name dark. The admin's pages and dark mode are not restyled. | B.4 FR-10 |
 | D-105 | UI | **Visual review tool** (not part of `test_all.sh`): `SCREENSHOTS_DIR=<folder outside the repo> uv run pytest scripts/visual_review --browser-channel chrome`. It starts a live test server on the **test databases**, runs `seed_demo` there with a fixed clock (Wed 2026-10-21 10:00, also in the browser), logs in as dev1, eng.manager, payroll and hr, checks each page's status code and that the page never scrolls sideways, and saves full-page screenshots at 1440×900 and 390×844. It never touches `db.sqlite3` or `payroll.sqlite3`. | B.11 |
+| D-106 | Grid | **Change 2 – Weekly grid.** The week's entries are shown as a grid instead of a list: one row per Project / Category (project rows by code as "PRJ-001 Customer Portal / Project work", then Meetings, Training, Other, "Break (unpaid)", then PTO, Sick, Holiday tagged "leave"); columns Mon–Sun headed with the day and date ("Mon" / "Oct 26, 2026"), then **Total worked hours**; a footer with Total worked hours per day and for the week. The footer counts work rows only; Break and leave rows show their own totals and are never added to it — exactly as `summarize` (D-39, D-41). The day summary (first start, last end, hours worked, expected, break, leave) stays below the grid. Week, deadline and pay periods are unchanged. *Column order superseded by D-111: the columns run Sun–Sat since Change 3.* | B.4 FR-8, B.8 |
+| D-107 | Grid | **Cells and slots.** A cell is a button showing its hours (2 decimals) and opens a dialog for that row and day: work and Break cells hold one or more time slots (start, end, reason; "+ Add time slot", Remove); leave cells hold hours and a reason. Each slot is posted as one entry with the same `entry-N-*` fields as before (day, category and project fixed by its cell), so `parse_entries`, `validate_entries`, `save_week`, `edit_directly`, audit and approval/payroll hooks are reused unchanged; no model change, no migration. Slots left empty are dropped before posting; the server still ignores blank entries. "+ Add row" (HTMX, `timesheet_row`) offers a category and, for Project work, an active project (D-18); duplicates are refused; a row added without slots survives a failed save (`grid-row` keys) and disappears after a successful one. | B.4 FR-8, D-35 |
+| D-108 | Grid | **Errors on the right cell.** Messages are unchanged. Reading problems (`ParsedEntries.problems`) go to the slot's cell; rule messages go to every cell whose entry they name, matched with `validation.mentions(entry)` (the same "Tue 20 Oct, PRJ-001 09:00–12:00" texts the messages are built from); an overlap marks both cells; the 24-hour rule marks the day's footer total; anything else (e.g. an empty week) is listed at the top. Marked cells are outlined with `aria-invalid`, list their messages inside the dialog, and the summary at the top links to them. | B.9 #9 |
+| D-109 | Grid | **One grid component**: `templates/timesheets/_grid.html` (+ `_grid_row.html`, `_grid_slot.html`) built by `timesheets/grid.py → build_grid`. Editable on the employee's week page and on Edit directly (same rules and audit as before); read-only on submitted, approved and locked weeks, the change-request detail, both weeks of the approval page and the Team week view, where a cell's dialog lists its slots' times, hours and reasons without inputs. It replaces `_row.html` and `timesheet.js`. | B.8, D-85 |
+| D-110 | Grid | **Comfort and accessibility**: live cell, row and footer totals while typing (convenience; the server recomputes, and the HTMX day summary still updates); the browser asks before leaving with unsaved changes (never after Save/Submit); cells are buttons with descriptive names ("PRJ-001 Customer Portal / Project work, Mon Oct 26: 8.00 hours, 2 slots"); native `<dialog>`: focus moves in, Esc closes, focus returns to the cell; Enter inside a slot doesn't submit the week. On narrow windows the grid scrolls sideways with the first column fixed; the page itself never scrolls sideways. Vendored HTMX and plain JavaScript only (`static/js/grid.js`). | B.10 |
+| D-111 | Calendar | **Change 3 – weeks run Sunday → Saturday** and are identified by their Sunday; `Timesheet.week_start` is always a Sunday. The rule lives only in `timesheets/services/calendar.py` (`WEEK_START_WEEKDAY = 6`, `week_start_for`, `week_days` Sun…Sat); every page and service (timesheet list and week, grid and day summary columns, countdown, change requests, approvals and the pay-period picker, payroll labels/filters/CSV, dashboard, team analytics, seed) uses it. **Supersedes** B.1 row 9 (Monday → Sunday) and the column order of D-106. | B.1 row 9, B.9 #1, FR-8 |
+| D-112 | Calendar | The deadline stays **Saturday 12:00 noon company time**, now the **last day** of the week (`DEADLINE_DAY_OFFSET = 6`). D-09 still applies (the rest of Saturday may be entered in advance). LOCKED/missed, late (D-08, D-52), the reopen window (D-21: later of +48 h and that week's Saturday 12:00) and "missed = never submitted" (D-75) are unchanged. | B.1 row 10, B.5, FR-8 |
+| D-113 | Calendar | **Pay periods**: 14 days anchored on **Sunday 2026-01-04** (`PAY_PERIOD_ANCHOR`, settings default and `.env.example`). The anchor must be a Sunday: system check `timesheets.E001` makes `runserver`, `migrate`, `seed_demo` and every management command refuse to start with "PAY_PERIOD_ANCHOR … is a Monday; it must be a Sunday …", and `pay_period_for` raises `ValueError` for a non-Sunday anchor. Tests set the anchor themselves (`tests/conftest.py`), whatever `.env` says. **Supersedes** B.1 row 12 (Monday 2026-01-05). | B.1 row 12, FR-7 |
+| D-114 | Calendar | **Working days stay Monday–Friday** (D-19): `working_days(week_start)` = Mon…Fri (the week's days 2–6), used by expected hours and partial weeks, the day summary's expected column (and so the missing-day flag, D-55) and the seed. Sunday and Saturday are the weekend at the two ends of the week. | B.9 #5, D-19 |
+| D-115 | Calendar | **Week links use the Sunday.** Any other date in `/timesheets/<date>/` (e.g. an old Monday link) or the Team week view redirects to the week that contains it; future weeks stay 404 (D-33). HTMX endpoints (day summary, add row) accept any date of the week. | B.8 |
+| D-116 | Calendar | **Daylight saving**: the US change on Sunday 2026-11-01 (and 2026-03-08) now falls on the first day of a week. Deadlines are built with `zoneinfo`, so Saturday 12:00 stays local either side; time entries remain wall-clock times as before (D-37). | B.9 #2, T-15 |
+| D-117 | Data | **No data conversion**: there is no data migration and no schema change (`week_start` stays a date; comments only). Existing Monday-week databases must be rebuilt by the owner (D.3 "Start over"). `seed_demo` creates Sunday weeks, history aligned to whole pay periods (D-27) with the current week empty, and the same scenarios (dev1/dev2 period pending, one rejected period, one open change request, one manager edit, exported/paid batches and one correction); decisions stay on Mondays, exports on Fridays and recent hires on Wednesdays. | B.7, D-27, D.3 |
 
 ---
 

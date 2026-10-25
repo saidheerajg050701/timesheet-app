@@ -26,8 +26,8 @@ os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 
 TZ = ZoneInfo("America/Chicago")
 WEDNESDAY = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # the same fixed clock as tests/conftest.py
-THIS_WEEK = date(2026, 10, 19)
-PERIOD = date(2026, 9, 28)  # the most recent completed pay period: Sep 28 + Oct 5
+THIS_WEEK = date(2026, 10, 18)  # Sun 18 – Sat 24 Oct (D-111)
+PERIOD = date(2026, 9, 27)  # the most recent completed pay period: Sep 27 + Oct 4
 expect.set_options(timeout=10_000)
 
 
@@ -85,7 +85,7 @@ def make_week(e2e_org):
     """A week of 09:00–17:00 Project work rows (a longer Monday adds overtime)."""
 
     def make(employee, week, status="SUBMITTED", monday_end=time(17)):
-        on_time = datetime.combine(week + timedelta(days=4), time(16), tzinfo=TZ)
+        on_time = datetime.combine(week + timedelta(days=5), time(16), tzinfo=TZ)  # Friday
         sheet = TimesheetFactory(
             employee=employee,
             week_start=week,
@@ -96,7 +96,7 @@ def make_week(e2e_org):
             end = monday_end if offset == 0 else time(17)
             TimeEntryFactory(
                 timesheet=sheet,
-                work_date=week + timedelta(days=offset),
+                work_date=week + timedelta(days=1 + offset),  # Mon–Fri
                 project=e2e_org.project,
                 end_time=end,
                 minutes=(end.hour - 9) * 60,

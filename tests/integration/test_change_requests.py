@@ -12,12 +12,17 @@ from tests.forms import brk, form, leave, work
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
 
 TZ = ZoneInfo("America/Chicago")
-NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wednesday of the week of 19 Oct
-THIS_WEEK = date(2026, 10, 19)
-LAST_WEEK = date(2026, 10, 12)  # deadline Sat 17 Oct 12:00 (passed)
-TWO_WEEKS_AGO = date(2026, 10, 5)
-PERIOD = date(2026, 9, 28)  # pay period Sep 28 + Oct 5 (anchor 2026-01-05)
+NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wednesday of the week of Sun 18 Oct
+THIS_WEEK = date(2026, 10, 18)
+LAST_WEEK = date(2026, 10, 11)  # deadline Sat 17 Oct 12:00 (passed)
+TWO_WEEKS_AGO = date(2026, 10, 4)
+PERIOD = date(2026, 9, 27)  # pay period: weeks of Sun Sep 27 + Oct 4 (anchor 2026-01-04)
 HOOK = "timesheets.services.approvals.supersede_payroll_week"
+
+
+def monday(week):
+    """Entries go on the week's Monday, its first working day (D-114)."""
+    return week + timedelta(days=1)
 
 
 @pytest.fixture
@@ -26,7 +31,7 @@ def weeks(org, project, fixed_now):
 
     def make(employee, week, status, **extra):
         sheet = TimesheetFactory(employee=employee, week_start=week, status=status, **extra)
-        TimeEntryFactory(timesheet=sheet, work_date=week, project=project)
+        TimeEntryFactory(timesheet=sheet, work_date=monday(week), project=project)
         return sheet
 
     on_time = datetime(2026, 10, 16, 16, 0, tzinfo=TZ)
@@ -76,7 +81,7 @@ def test_unlock_reopens_until_later_of_48h_and_deadline(org, weeks, login_as, pr
     with time_machine.travel(NOW + timedelta(hours=48), tick=False):
         page = client.get(url).content.decode()
         assert 'id="week-status">Locked<' in page
-        rows = form(work(LAST_WEEK, "09:00", "17:00", project))
+        rows = form(work(monday(LAST_WEEK), "09:00", "17:00", project))
         assert client.post(url, rows).status_code == 403
 
 
@@ -84,9 +89,9 @@ def test_edit_directly_writes_before_and_after(org, weeks, login_as, project):
     """T-25: the manager edits directly → AuditLog UPDATE with before/after times and reasons."""
     _, change = raise_as(login_as, org.dev1, LAST_WEEK)
     rows = form(
-        work(LAST_WEEK, "08:30", "12:00", project, reason="Release work"),
-        brk(LAST_WEEK, "12:00", "12:30"),
-        work(LAST_WEEK, "12:30", "17:00", project, reason="Release work"),
+        work(monday(LAST_WEEK), "08:30", "12:00", project, reason="Release work"),
+        brk(monday(LAST_WEEK), "12:00", "12:30"),
+        work(monday(LAST_WEEK), "12:30", "17:00", project, reason="Release work"),
         note="Added the release hours you mentioned.",
     )
     client = login_as(org.manager)
@@ -144,9 +149,9 @@ def test_requests_only_on_submitted_locked_or_approved_weeks(org, weeks, login_a
     future = raise_as(login_as, org.dev2, THIS_WEEK + timedelta(weeks=1))[0]
     assert future.status_code == 404
 
-    make(org.dev2, date(2026, 9, 28), "APPROVED")
-    make(org.dev2, date(2026, 9, 21), "DRAFT")  # stored DRAFT, effectively LOCKED
-    for week in (date(2026, 9, 28), date(2026, 9, 21), TWO_WEEKS_AGO):  # Oct 5: no timesheet
+    make(org.dev2, date(2026, 9, 27), "APPROVED")
+    make(org.dev2, date(2026, 9, 20), "DRAFT")  # stored DRAFT, effectively LOCKED
+    for week in (date(2026, 9, 27), date(2026, 9, 20), TWO_WEEKS_AGO):  # Oct 4: no timesheet
         response, change = raise_as(login_as, org.dev2, week)
         assert response.status_code == 302 and change.timesheet.week_start == week
     assert Timesheet.objects.get(employee=org.dev2, week_start=TWO_WEEKS_AGO).status == "LOCKED"
@@ -154,7 +159,7 @@ def test_requests_only_on_submitted_locked_or_approved_weeks(org, weeks, login_a
     client = login_as(org.dev2)
     again = client.post(reverse("request_change", args=[TWO_WEEKS_AGO]), {"reason": "Again"})
     assert "already has an open change request" in client.get(again.url).content.decode()
-    blank = client.post(reverse("request_change", args=[date(2026, 9, 14)]), {"reason": "  "})
+    blank = client.post(reverse("request_change", args=[date(2026, 9, 13)]), {"reason": "  "})
     assert "Explain what needs to change" in client.get(blank.url).content.decode()
     assert ChangeRequest.objects.filter(timesheet__employee=org.dev2).count() == 3
 
@@ -188,16 +193,16 @@ def test_each_step_is_audited(org, weeks, login_as, project):
     """T-83: raise, reject, unlock and edit each write one AuditLog row with the right actor."""
     make = weeks["make"]
     make(org.dev1, TWO_WEEKS_AGO, "SUBMITTED")
-    make(org.dev1, date(2026, 9, 28), "SUBMITTED")
+    make(org.dev1, date(2026, 9, 27), "SUBMITTED")
     _, first = raise_as(login_as, org.dev1, LAST_WEEK)
     _, second = raise_as(login_as, org.dev1, TWO_WEEKS_AGO)
-    _, third = raise_as(login_as, org.dev1, date(2026, 9, 28))
+    _, third = raise_as(login_as, org.dev1, date(2026, 9, 27))
     manager = login_as(org.manager)
     act(manager, first, "reject", "Hours look right to me.")
     act(manager, second, "unlock")
     manager.post(
         reverse("request_edit", args=[third.pk]),
-        form(work(date(2026, 9, 28), "09:00", "16:00", project)),
+        form(work(monday(date(2026, 9, 27)), "09:00", "16:00", project)),
     )
 
     created = AuditLog.objects.filter(action="CREATE", entity_type="ChangeRequest")
@@ -224,7 +229,7 @@ def test_edit_directly_uses_the_same_rules(org, weeks, login_as, project):
     _, change = raise_as(login_as, org.dev1, LAST_WEEK)
     client = login_as(org.manager)
     url = reverse("request_edit", args=[change.pk])
-    day = LAST_WEEK
+    day = monday(LAST_WEEK)
     cases = {
         "overlap": form(work(day, "09:00", "12:00", project), brk(day, "11:30", "12:15")),
         "a reason is required": form(work(day, "09:00", "12:00", project, reason="")),
@@ -262,7 +267,7 @@ def test_changing_an_approved_week_resets_the_period(org, weeks, login_as, proje
     client = login_as(org.manager)
     with mock.patch(HOOK) as hook:
         if action == "edit":
-            rows = form(work(TWO_WEEKS_AGO, "09:00", "15:00", project))
+            rows = form(work(monday(TWO_WEEKS_AGO), "09:00", "15:00", project))
             assert client.post(reverse("request_edit", args=[change.pk]), rows).status_code == 302
         else:
             assert act(client, change, "unlock").status_code == 302
@@ -290,7 +295,7 @@ def test_reset_is_all_or_nothing(org, weeks, login_as, project):
     with mock.patch(HOOK, side_effect=RuntimeError("payroll down")), pytest.raises(RuntimeError):
         client.post(
             reverse("request_edit", args=[change.pk]),
-            form(work(TWO_WEEKS_AGO, "09:00", "15:00", project)),
+            form(work(monday(TWO_WEEKS_AGO), "09:00", "15:00", project)),
         )
     second.refresh_from_db()
     change.refresh_from_db()
@@ -308,7 +313,7 @@ def test_reopened_past_week_is_editable_until_window_ends(org, weeks, login_as, 
     url = reverse("timesheet_week", args=[TWO_WEEKS_AGO])
     page = client.get(url).content.decode()
     assert "Reopened by your manager" in page and 'value="save"' in page
-    rows = form(work(TWO_WEEKS_AGO, "08:00", "17:00", project, reason="Added early start"))
+    rows = form(work(monday(TWO_WEEKS_AGO), "08:00", "17:00", project, reason="Added early start"))
     assert client.post(url, rows).status_code == 302
     audit = AuditLog.objects.get(action="UPDATE", entity_type="Timesheet")
     assert audit.actor == org.dev1
@@ -336,7 +341,7 @@ def test_late_flag_is_decided_by_the_first_submission(org, weeks, login_as, proj
     act(manager, on_time, "unlock")
     client = login_as(org.dev1)
     for week in (TWO_WEEKS_AGO, LAST_WEEK):
-        rows = form(work(week, "09:00", "17:00", project), action="submit")
+        rows = form(work(monday(week), "09:00", "17:00", project), action="submit")
         assert client.post(reverse("timesheet_week", args=[week]), rows).status_code == 302
     missed_week = Timesheet.objects.get(employee=org.dev1, week_start=TWO_WEEKS_AGO)
     on_time_week = Timesheet.objects.get(employee=org.dev1, week_start=LAST_WEEK)
@@ -382,6 +387,8 @@ def test_request_totals_use_the_employees_hours(org, weeks, login_as, project):
     html = client.get(reverse("request_edit", args=[change.pk])).content.decode()
     assert 'id="week-expected">20:00<' in html
     url = reverse("request_totals", args=[change.pk])
-    totals = client.post(url, form(work(LAST_WEEK, "09:00", "11:30", project))).content.decode()
+    totals = client.post(
+        url, form(work(monday(LAST_WEEK), "09:00", "11:30", project))
+    ).content.decode()
     assert 'id="week-worked">2:30<' in totals and f'hx-post="{url}"' in totals
     assert TimeEntry.objects.get(timesheet__employee=org.dev1).end_time.hour == 17  # unsaved

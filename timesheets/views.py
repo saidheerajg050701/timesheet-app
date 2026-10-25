@@ -2,29 +2,27 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.core.exceptions import ValidationError
-from django.http import Http404
+from django.http import Http404, HttpResponseBadRequest
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from timesheets.forms import CATEGORY_GROUPS, day_choices, parse_entries, project_choices
-from timesheets.models import ChangeRequest, Timesheet
+from timesheets.forms import CATEGORY_GROUPS, parse_entries, parse_grid_keys, project_choices
+from timesheets.grid import build_grid
+from timesheets.models import ChangeRequest, Project, TimeEntry, Timesheet
 from timesheets.services.approvals import approval_for_week
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.changes import can_request_change, open_request_for, raise_request
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import (
     STATUS_LABELS,
-    EntryRow,
     WeekLocked,
     entry_rows,
     load_sheet,
     my_weeks,
     save_week,
 )
-
-BLANK_ROWS = 2  # empty rows offered under the existing ones; "Add row" adds more (D-35)
 
 
 def placeholder(request, title, phase):
@@ -49,61 +47,77 @@ def timesheet_list(request):
 
 
 def _own_week(request, week):
-    """The logged-in employee's Monday for `week`; future weeks don't open (D-33)."""
-    monday = week_start_for(week)
+    """The logged-in employee's Sunday for `week`; future weeks don't open (D-33, D-111)."""
+    week_start = week_start_for(week)
     today = timezone.now().astimezone(company_tz()).date()
-    if monday > week_start_for(today):
-        raise Http404("Future weeks open on their Monday.")
-    return request.user.employee, monday
+    if week_start > week_start_for(today):
+        raise Http404("Future weeks open on their Sunday.")
+    return request.user.employee, week_start
 
 
 def timesheet_week(request, week):
     """The week's entry rows: Save draft / Submit. Always the logged-in employee's own week."""
     if week_start_for(week) != week:
         return redirect("timesheet_week", week=week_start_for(week))
-    me, monday = _own_week(request, week)
+    me, week_start = _own_week(request, week)
     now = timezone.now()
-    state = week_state(me, monday, load_sheet(me, monday), now)
-    rows, entries, errors = None, None, []
+    state = week_state(me, week_start, load_sheet(me, week_start), now)
+    attempt = None
     if request.method == "POST":
         if not state.editable:
             raise WeekLocked("This week can't be changed.")
         submit = request.POST.get("action") == "submit"
-        parsed = parse_entries(request.POST, monday)
-        rows, entries, errors = parsed.rows, parsed.entries, parsed.errors
-        if not errors:
+        attempt = SaveAttempt(request.POST, week_start)
+        if not attempt.errors:
             try:
-                save_week(me, monday, parsed.entries, now=now, submit=submit)
+                save_week(me, week_start, attempt.entries, now=now, submit=submit)
             except ValidationError as exc:
-                errors = exc.messages
+                attempt.rule_errors(exc.messages)
             else:
                 messages.success(request, "Week submitted." if submit else "Draft saved.")
-                return redirect("timesheet_week", week=monday)
-    context = _week_context(me, state, rows, entries, errors, now)
+                return redirect("timesheet_week", week=week_start)
+    context = _week_context(me, state, attempt, now)
     return render(request, "timesheets/week.html", context)
 
 
-def form_rows(sheet, posted_rows=None, *, editable=True):
-    """Rows for the entry form, shared by the week page and Edit directly.
+class SaveAttempt:
+    """A posted week that didn't save: the grid is shown again exactly as posted (D-107),
+    with each problem on its cell (D-108). Shared by the week page and Edit directly."""
 
-    After a failed save the rows are shown exactly as posted — no extra blank rows. A fresh
-    page shows the saved rows plus BLANK_ROWS empty ones (day pre-filled; ignored if unused).
-    """
-    if posted_rows is not None:
-        return posted_rows
-    rows = entry_rows(sheet)
-    if not editable:
-        return rows
-    start = max((r.index for r in rows), default=-1) + 1
-    default_day = rows[-1].work_date if rows else ""
-    return rows + [EntryRow(index=start + i, work_date=default_day) for i in range(BLANK_ROWS)]
+    def __init__(self, post, week_start):
+        self.week_start = week_start
+        self.parsed = parse_entries(post, week_start)
+        self.keys = parse_grid_keys(post)
+        self.entries = self.parsed.entries
+        self.errors = list(self.parsed.errors)
+        self.messages = []
+
+    def rule_errors(self, messages):
+        self.errors = self.messages = list(messages)
+
+    def grid(self):
+        return build_grid(
+            self.parsed.rows,
+            self.week_start,
+            editable=True,
+            entries=self.entries,
+            problems=self.parsed.problems,
+            messages=self.messages,
+            keys=self.keys,
+        )
 
 
-def _week_context(me, state, rows, entries, errors, now):
+def week_grid(sheet, week_start, attempt=None, *, editable):
+    """The grid for a saved week, or for a failed save (D-109)."""
+    if attempt is not None:
+        return attempt.grid()
+    return build_grid(entry_rows(sheet), week_start, editable=editable)
+
+
+def _week_context(me, state, attempt, now):
     sheet = state.timesheet
-    if rows is None:
-        entries = list(sheet.entries.all()) if sheet else []
-    rows = form_rows(sheet, rows, editable=state.editable)
+    entries = attempt.entries if attempt else list(sheet.entries.all()) if sheet else []
+    grid = week_grid(sheet, state.week_start, attempt, editable=state.editable)
     open_until = None
     if state.editable:
         reopened = sheet and sheet.status == Timesheet.Status.REOPENED
@@ -113,38 +127,39 @@ def _week_context(me, state, rows, entries, errors, now):
         "state": state,
         "status_label": STATUS_LABELS[state.status],
         "sheet": sheet,
-        "rows": rows,
+        "grid": grid,
         "summary": summarize(entries, me, state.week_start),
         "summary_url": reverse("timesheet_totals", args=[state.week_start]),
         "change_request": open_request_for(sheet),
         "approval": approval_for_week(sheet),
         "can_request_change": can_request_change(state, now),
-        "errors": errors,
+        "errors": grid.errors,
         "open_until": open_until,
         "now": now,
         "previous_week": state.week_start - timedelta(weeks=1),
         "next_week": state.week_start + timedelta(weeks=1)
         if state.week_start < current_week
         else None,
-        **_row_choices(state.week_start, rows),
+        **grid_choices(state.week_start),
     }
 
 
-def _row_choices(week_start, rows=()):
+def grid_choices(week_start):
+    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18)."""
     return {
-        "day_choices": day_choices(week_start),
+        "row_url": reverse("timesheet_row", args=[week_start]),
         "category_groups": CATEGORY_GROUPS,
-        "project_choices": project_choices([r.project for r in rows if r.project.isdigit()]),
+        "project_choices": project_choices(),
     }
 
 
 @require_POST
 def timesheet_totals(request, week):
     """HTMX: the day summary recomputed on the server from the rows as typed. Never saves."""
-    me, monday = _own_week(request, week)
-    entries = parse_entries(request.POST, monday).entries
+    me, week_start = _own_week(request, week)
+    entries = parse_entries(request.POST, week_start).entries
     context = {
-        "summary": summarize(entries, me, monday),
+        "summary": summarize(entries, me, week_start),
         "summary_url": request.path,
         "live": True,
     }
@@ -153,29 +168,32 @@ def timesheet_totals(request, week):
 
 @require_GET
 def timesheet_row(request, week):
-    """HTMX: one more empty row ("Add row"); no limit on the number of rows (D-35)."""
-    _, monday = _own_week(request, week)
-    try:
-        index = int(request.GET.get("index", ""))
-    except ValueError:
-        raise Http404 from None
-    day = request.GET.get("date", "")
-    row = EntryRow(index=index, work_date=day if day in dict(day_choices(monday)) else "")
-    context = {"row": row, "editable": True, **_row_choices(monday)}
-    return render(request, "timesheets/_row.html", context)
+    """HTMX: one empty grid row for "+ Add row" (D-107). Active projects only (D-18)."""
+    _, week_start = _own_week(request, week)
+    category = request.GET.get("category", "")
+    project = request.GET.get("project", "")
+    if category not in dict(TimeEntry.Category.choices):
+        return HttpResponseBadRequest("Choose a category.")
+    if category == TimeEntry.Category.PROJECT:
+        if not (project.isdigit() and Project.objects.filter(pk=project, active=True).exists()):
+            return HttpResponseBadRequest("Choose an active project.")
+    else:
+        project = ""
+    grid = build_grid([], week_start, editable=True, keys=[(category, project)])
+    return render(request, "timesheets/_grid_row.html", {"row": grid.rows[0], "grid": grid})
 
 
 @require_POST
 def request_change(request, week):
     """The employee asks their manager to change a submitted, locked or approved week."""
-    me, monday = _own_week(request, week)
+    me, week_start = _own_week(request, week)
     try:
-        raise_request(me, monday, request.POST.get("reason", ""), now=timezone.now())
+        raise_request(me, week_start, request.POST.get("reason", ""), now=timezone.now())
     except ValidationError as exc:
         messages.error(request, " ".join(exc.messages))
     else:
         messages.success(request, "Change requested. Your manager will see it in their inbox.")
-    return redirect("timesheet_week", week=monday)
+    return redirect("timesheet_week", week=week_start)
 
 
 def request_list(request):

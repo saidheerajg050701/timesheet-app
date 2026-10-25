@@ -21,7 +21,7 @@ database. The full specification is [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md).
    uv run python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste as DJANGO_SECRET_KEY
    ```
    Then edit `.env`: the secret key, `DEMO_PASSWORD` (12+ characters), `COMPANY_EMAIL_DOMAIN`,
-   `COMPANY_TZ`, and keep `DJANGO_DEBUG=False` for daily use (error pages then never show code
+   `COMPANY_TZ`, `PAY_PERIOD_ANCHOR` (a **Sunday**, e.g. `2026-01-04`; the app refuses to start otherwise), and keep `DJANGO_DEBUG=False` for daily use (error pages then never show code
    or settings).
 4. Create both databases and, if you want, the demo company:
    ```bash
@@ -85,13 +85,15 @@ uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
 ```
 
 ## Timesheets
-`/timesheets/` lists your recent weeks; open one and add as many rows as you need. Each row has
-a day, category, project (Project work only) and a reason. Work and Break rows use start and end
-times (15-minute steps, same day, no overlaps); leave (PTO, Sick, Holiday) uses hours. Break time
-is unpaid and not counted in Hours worked. The day summary shows Hours worked, Break, Leave,
-expected hours and each day's first start and last end. **Save draft** or **Submit** before
-Saturday 12:00 company time; after that an unsubmitted week is locked and counted as missed.
-All rules are checked on the server when you save.
+`/timesheets/` lists your recent weeks. A week is a **grid**: one row per project or category,
+a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours** column and footer. **+ Add row** adds a
+category (and a project for Project work). Click a day to enter time: work and Break use one or
+more time slots with a start, an end and a reason (15-minute steps, same day, no overlaps);
+leave (PTO, Sick, Holiday) uses hours and a reason. Break is unpaid and never counted in Total
+worked hours; leave is shown separately. The day summary below shows first start, last end,
+hours worked, expected hours, Break and Leave. **Save draft** or **Submit** before Saturday
+12:00 company time; after that an unsubmitted week is locked and counted as missed. All rules are
+checked on the server when you save, and problems are shown on the cell they belong to.
 
 ## Change requests
 On a submitted, locked or approved week, **Request change** sends a reason to your manager
@@ -103,7 +105,7 @@ changing an approved week puts its pay period back to pending.
 
 ## Approvals
 Managers (and admins, for employees with no manager) open **Approvals** to pick a pay period
-(14 days, default: the most recent completed one) and review each direct report's two weeks:
+(14 days, two Sunday-to-Saturday weeks counted from `PAY_PERIOD_ANCHOR`, a Sunday; default: the most recent completed one) and review each direct report's two weeks:
 hours worked (Break never counts), leave, and Late / Overtime / Missing days flags. A period
 can be approved or rejected (with a comment) once its weeks are submitted; a locked week has an
 Unlock button. Clean rows can be bulk approved. Nobody approves their own timesheet.

@@ -8,7 +8,8 @@ from directory.models import Employee
 from directory.services.permissions import can_view, ensure, team_required
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.summary import summarize
-from timesheets.services.weeks import entry_rows, load_sheet, my_weeks
+from timesheets.services.weeks import load_sheet, my_weeks
+from timesheets.views import week_grid
 
 
 @team_required
@@ -89,7 +90,7 @@ def team_member_week(request, employee_code, week):
         {
             "target": target,
             "state": week_state(target, week, sheet, now),
-            "rows": entry_rows(sheet),
+            "grid": week_grid(sheet, week, editable=False),
             "summary": summarize(list(sheet.entries.all()) if sheet else [], target, week),
         },
     )

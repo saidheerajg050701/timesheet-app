@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load timesheet_tags %}
+{% load static timesheet_tags %}
 
 {% block title %}{{ target.first_name }} {{ target.last_name }}, week of {{ state.week_start|date:"M j" }} — Timesheets{% endblock %}
 
@@ -12,15 +12,9 @@
   <div class="page-actions"><a class="btn btn-sm btn-outline-secondary" href="{% url 'team_member' target.employee_code %}">&larr; {{ target.first_name }}'s overview</a></div>
 </header>
 
-<div class="table-responsive">
-  <table class="table table-sm align-middle bg-body" id="entries">
-    <thead><tr><th scope="col">Day</th><th scope="col">Category</th><th scope="col">Project</th><th scope="col">Start</th><th scope="col">End</th><th scope="col" class="text-end">Hours</th><th scope="col">Reason</th><th scope="col"></th></tr></thead>
-    <tbody>
-      {% for row in rows %}{% include "timesheets/_row.html" with editable=False %}{% empty %}
-        <tr><td colspan="8" class="text-body-secondary">No entries this week.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+{% include "timesheets/_grid.html" %}
+<h2 class="section-title">Day summary</h2>
 {% include "timesheets/_summary.html" with summary=summary live=False %}
 {% endblock %}
+
+{% block scripts %}<script src="{% static 'js/grid.js' %}"></script>{% endblock %}

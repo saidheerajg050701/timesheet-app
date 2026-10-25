@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)
-PERIOD = date(2026, 9, 28)
+PERIOD = date(2026, 9, 27)  # weeks of Sun Sep 27 + Oct 4
 WEEK1, WEEK2 = PERIOD, PERIOD + timedelta(weeks=1)
 
 
@@ -52,10 +52,10 @@ def test_export_csv(org, approved, login_as):
     assert 'filename="payroll-EXP-0001.csv"' in download["Content-Disposition"]
     rows = read_csv(download)
     assert [(r["employee_code"], r["week_start"]) for r in rows] == [
-        ("DEV1", "2026-09-28"),
-        ("DEV1", "2026-10-05"),
-        ("DEV2", "2026-09-28"),
-        ("DEV2", "2026-10-05"),
+        ("DEV1", "2026-09-27"),
+        ("DEV1", "2026-10-04"),
+        ("DEV2", "2026-09-27"),
+        ("DEV2", "2026-10-04"),
     ]
     first = rows[0]
     assert (first["regular_hours"], first["overtime_hours"], first["total_hours"]) == (

@@ -13,12 +13,12 @@ def test_range_weeks_accepts_only_4_12_26():
 
 
 def test_week_starts_end_with_the_current_week():
-    """Helper check: Mondays oldest first, the last one is this week (company time)."""
-    sunday_night = datetime(2026, 10, 25, 23, 30, tzinfo=TZ)
-    assert week_starts(sunday_night, 3) == [
-        date(2026, 10, 5),
-        date(2026, 10, 12),
-        date(2026, 10, 19),
+    """Helper check: Sundays oldest first, the last one is this week (company time)."""
+    saturday_night = datetime(2026, 10, 24, 23, 30, tzinfo=TZ)  # already Sunday in UTC
+    assert week_starts(saturday_night, 3) == [
+        date(2026, 10, 4),
+        date(2026, 10, 11),
+        date(2026, 10, 18),
     ]
 
 

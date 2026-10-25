@@ -1,0 +1,20 @@
+{# One time slot = one entry (D-107). Context: slot (EntryRow), row (GridRow), cell. #}
+<fieldset class="grid-slot" data-index="{{ slot.index }}">
+  <legend class="visually-hidden">{% if row.kind == "leave" %}Leave{% else %}Time slot{% endif %}</legend>
+  <input type="hidden" name="entry-{{ slot.index }}-date" value="{{ cell.day|date:'Y-m-d' }}">
+  <input type="hidden" name="entry-{{ slot.index }}-category" value="{{ row.category }}">
+  <input type="hidden" name="entry-{{ slot.index }}-project" value="{{ row.project }}">
+  {% if row.kind == "leave" %}
+    <label class="slot-field slot-hours-field">Hours
+      <input type="text" inputmode="decimal" class="form-control form-control-sm" name="entry-{{ slot.index }}-hours" value="{{ slot.hours }}" data-role="hours" placeholder="e.g. 8 or 7.5"></label>
+  {% else %}
+    <label class="slot-field">Start
+      <input type="time" step="900" class="form-control form-control-sm" name="entry-{{ slot.index }}-start" value="{{ slot.start }}" data-role="start"></label>
+    <label class="slot-field">End
+      <input type="time" step="900" class="form-control form-control-sm" name="entry-{{ slot.index }}-end" value="{{ slot.end }}" data-role="end"></label>
+    <span class="slot-total" aria-live="polite" data-role="slot-hours"></span>
+  {% endif %}
+  <label class="slot-field slot-reason">Reason
+    <input type="text" maxlength="255" class="form-control form-control-sm" name="entry-{{ slot.index }}-reason" value="{{ slot.reason }}" data-role="reason"></label>
+  <button type="button" class="btn btn-sm btn-outline-danger slot-remove" data-grid-action="remove-slot" aria-label="Remove this {% if row.kind == 'leave' %}leave{% else %}time slot{% endif %}">Remove</button>
+</fieldset>

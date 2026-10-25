@@ -16,8 +16,8 @@ from timesheets.models import PeriodApproval, TimeEntry, Timesheet
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now
-THIS_WEEK = date(2026, 10, 19)
-W1, W2, W3 = date(2026, 10, 12), date(2026, 10, 5), date(2026, 9, 28)  # 1–3 weeks back
+THIS_WEEK = date(2026, 10, 18)
+W1, W2, W3 = date(2026, 10, 11), date(2026, 10, 4), date(2026, 9, 27)  # 1–3 weeks back
 
 
 def board_of(client, **params):
@@ -37,12 +37,12 @@ def known_team(org, make_week, project, fixed_now):
     """The director's tree (MANAGER, DEV1, DEV2) with known weeks in the last 4 weeks."""
     make_week(org.dev1, W3)  # 40 h on time
     make_week(org.dev1, W2, end=time(18), is_late=True)  # 45 h late → 5 h overtime
-    # dev1, Oct 12: nothing → missed
+    # dev1, Oct 11: nothing → missed
     make_week(org.dev1, THIS_WEEK, "DRAFT", days=1)  # 8 h draft this week
     week = make_week(org.dev2, W3, days=4)  # 32 h + 8 h PTO on Friday
     TimeEntryFactory(
         timesheet=week,
-        work_date=W3 + timedelta(days=4),
+        work_date=W3 + timedelta(days=5),  # Friday
         category="PTO",
         project=None,
         start_time=None,
@@ -102,7 +102,7 @@ def test_utilization_rule(org, make_week, project, login_as, fixed_now):
     for offset in range(5):  # … long breaks never count as hours worked
         TimeEntryFactory(
             timesheet=week,
-            work_date=W1 + timedelta(days=offset),
+            work_date=W1 + timedelta(days=1 + offset),  # Mon–Fri
             category="BREAK",
             project=None,
             start_time=time(13),
@@ -114,7 +114,7 @@ def test_utilization_rule(org, make_week, project, login_as, fixed_now):
     for offset in range(5):
         TimeEntryFactory(
             timesheet=leave,
-            work_date=W1 + timedelta(days=offset),
+            work_date=W1 + timedelta(days=1 + offset),  # Mon–Fri
             category="PTO",
             project=None,
             start_time=None,
@@ -131,7 +131,7 @@ def test_utilization_rule(org, make_week, project, login_as, fixed_now):
         s = stats[code]
         return s.worked, s.finished_worked, s.available, s.utilization
 
-    # 4 weeks = Sep 28, Oct 5, Oct 12 (finished) + Oct 19 (current, not counted)
+    # 4 weeks = Sep 27, Oct 4, Oct 11 (finished) + Oct 18 (current, not counted)
     assert numbers("PT1") == (1200, 1200, 3 * 1200, 33)
     assert numbers("DEV1") == (1200 + 3600, 1200, 3 * 2400, 17)  # breaks add nothing
     assert numbers("DEV2") == (0, 0, 2 * 2400, 0)  # the PTO week is not available
@@ -214,7 +214,7 @@ def test_inactive_employees_only_with_timesheets(org, make_week, login_as, fixed
     gone = EmployeeFactory(manager=org.manager, status="INACTIVE", employee_code="GONE2")
     make_week(gone, W2)
     old = EmployeeFactory(manager=org.manager, status="INACTIVE", employee_code="GONE3")
-    make_week(old, date(2026, 6, 1))  # outside a 4-week range
+    make_week(old, date(2026, 5, 31))  # outside a 4-week range
     client = login_as(org.manager)
     listed = set(codes(board_of(client, weeks=4)))
     assert "GONE2" in listed and "GONE1" not in listed and "GONE3" not in listed
@@ -238,8 +238,8 @@ def test_drill_down_is_read_only(known_team, login_as):
     entries = week.split('id="entries"')[1].split("</table>")[0]
     assert "Feature development" in entries and "<input" not in entries and "<select" not in entries
     assert 'id="week-status">Submitted<' in week and "Late" in week
-    off_monday = client.get(reverse("team_member_week", args=["DEV1", W2 + timedelta(days=2)]))
-    assert off_monday.status_code == 302
+    off_sunday = client.get(reverse("team_member_week", args=["DEV1", W2 + timedelta(days=2)]))
+    assert off_sunday.status_code == 302
     future = reverse("team_member_week", args=["DEV1", THIS_WEEK + timedelta(weeks=1)])
     assert client.get(future).status_code == 404
 
@@ -303,7 +303,7 @@ def build_large_company(project, staff_per_manager=24):
         (
             TimeEntry(
                 timesheet=s,
-                work_date=s.week_start + timedelta(days=d),
+                work_date=s.week_start + timedelta(days=1 + d),  # Mon–Fri
                 category="PROJECT",
                 project=project,
                 start_time=time(9),

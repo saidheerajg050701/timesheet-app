@@ -2,6 +2,10 @@
 
 week_start_for, deadline_for and pay_period_for were built early for seed_demo (D-25).
 Status is worked out when read; opening a page never writes anything (D-34).
+
+A week runs Sunday → Saturday and is identified by its Sunday (D-111); the deadline is its
+last day, Saturday 12:00 (D-112); working days are Monday–Friday (D-114). This module is the
+only place those rules live.
 """
 
 from dataclasses import dataclass
@@ -12,18 +16,20 @@ from django.conf import settings
 
 from timesheets.models import Timesheet
 
-DEADLINE_WEEKDAY_OFFSET = 5  # Saturday = Monday + 5 days
+WEEK_START_WEEKDAY = 6  # Sunday (date.weekday(): Monday = 0 … Sunday = 6) (D-111)
+DEADLINE_DAY_OFFSET = 6  # Saturday = Sunday + 6 days: the last day of the week (D-112)
 DEADLINE_TIME = time(12, 0)  # noon company time (B.1 row 10)
+WORKING_WEEKDAYS = range(0, 5)  # Monday–Friday (D-19, D-114)
 
 
 def week_start_for(d: date) -> date:
-    """Monday of the Monday→Sunday week containing d."""
-    return d - timedelta(days=d.weekday())
+    """Sunday of the Sunday→Saturday week containing d (D-111)."""
+    return d - timedelta(days=(d.weekday() - WEEK_START_WEEKDAY) % 7)
 
 
 def deadline_for(week_start: date, tz) -> datetime:
     """Saturday 12:00 company time of the given week. zoneinfo handles daylight saving."""
-    saturday = week_start + timedelta(days=DEADLINE_WEEKDAY_OFFSET)
+    saturday = week_start + timedelta(days=DEADLINE_DAY_OFFSET)
     return datetime.combine(saturday, DEADLINE_TIME, tzinfo=tz)
 
 
@@ -35,11 +41,28 @@ def reopen_until_for(week_start: date, at: datetime) -> datetime:
 def pay_period_for(d: date, anchor: date) -> tuple[date, date, date]:
     """(period_start, week1, week2) of the 2-week pay period containing d.
 
-    Periods repeat every 14 days from `anchor` (a Monday), in both directions.
+    Periods repeat every 14 days from `anchor`, which must be a Sunday (D-113), in both
+    directions.
     """
+    check_anchor(anchor)
     weeks_since_anchor = (week_start_for(d) - anchor).days // 7
     period_start = anchor + timedelta(weeks=weeks_since_anchor - weeks_since_anchor % 2)
     return period_start, period_start, period_start + timedelta(weeks=1)
+
+
+def anchor_problem(anchor: date) -> str | None:
+    """Why `anchor` can't start pay periods, or None if it can (D-113)."""
+    if anchor.weekday() != WEEK_START_WEEKDAY:
+        return (
+            f"PAY_PERIOD_ANCHOR {anchor.isoformat()} is a {anchor:%A}; it must be a Sunday "
+            f"(the first day of a week), e.g. {week_start_for(anchor).isoformat()}."
+        )
+    return None
+
+
+def check_anchor(anchor: date) -> None:
+    if problem := anchor_problem(anchor):
+        raise ValueError(problem)
 
 
 def company_tz():
@@ -72,9 +95,14 @@ def week_days(week_start: date) -> list[date]:
     return [week_start + timedelta(days=i) for i in range(7)]
 
 
+def working_days(week_start: date) -> list[date]:
+    """Monday–Friday of the week; Sunday and Saturday are the weekend at its ends (D-114)."""
+    return [day for day in week_days(week_start) if day.weekday() in WORKING_WEEKDAYS]
+
+
 def active_weekdays(employee, week_start: date) -> int:
     """Employed days Monday–Friday in the week (D-19)."""
-    return sum(employed_on(employee, day) for day in week_days(week_start)[:5])
+    return sum(employed_on(employee, day) for day in working_days(week_start))
 
 
 def expected_minutes_for(employee, week_start: date) -> int:
@@ -133,7 +161,7 @@ def week_state(employee, week_start: date, timesheet, now: datetime) -> WeekStat
 
 
 def period_start_for(day: date) -> date:
-    """Monday of week 1 of the 14-day pay period containing `day` (PAY_PERIOD_ANCHOR)."""
+    """Sunday of week 1 of the 14-day pay period containing `day` (PAY_PERIOD_ANCHOR)."""
     return pay_period_for(day, settings.PAY_PERIOD_ANCHOR)[0]
 
 

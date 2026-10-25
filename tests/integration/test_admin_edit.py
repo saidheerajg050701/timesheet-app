@@ -17,7 +17,7 @@ from payroll.models import PayrollWeek
 from tests.factories import TEST_PASSWORD, EmployeeFactory, ProjectFactory, UserFactory
 from timesheets.models import ChangeRequest, PeriodApproval, Project, Timesheet
 
-PERIOD = date(2026, 9, 28)  # most recent completed period at fixed_now: Sep 28 + Oct 5
+PERIOD = date(2026, 9, 27)  # most recent completed period at fixed_now: Sep 27 + Oct 4
 TEMP = "Temporary-Pass-2026"
 
 
@@ -237,7 +237,7 @@ def test_deactivate(org, make_week, login_as, django_capture_on_commit_callbacks
 
 def test_deactivate_and_reactivate_rules(org, make_week, login_as, fixed_now):
     """T-138: refusals leave everyone unchanged; reactivate clears the end date (D-90)."""
-    make_week(org.dev2, date(2026, 10, 12))  # entries up to Oct 16
+    make_week(org.dev2, date(2026, 10, 11))  # entries Mon 12 – Fri 16 Oct
     today = date(2026, 10, 21)
 
     def refused(actor, people, end_date=today):

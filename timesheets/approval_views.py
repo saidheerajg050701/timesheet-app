@@ -26,7 +26,7 @@ from timesheets.services.calendar import (
     recent_periods,
 )
 from timesheets.services.changes import unlock_from_approvals
-from timesheets.services.weeks import entry_rows
+from timesheets.views import week_grid
 
 
 def _period_from(value, now):
@@ -104,7 +104,17 @@ def approval_detail(request, period, employee_code):
     return render(
         request,
         "timesheets/approval_detail.html",
-        {"row": row, "weeks": [(week, entry_rows(week.sheet)) for week in row.weeks]},
+        {
+            "row": row,
+            "weeks": [
+                (
+                    week,
+                    week_grid(week.sheet, week.week_start, editable=False),
+                    f"entries-week-{week.number}",  # two grids on one page
+                )
+                for week in row.weeks
+            ],
+        },
     )
 
 

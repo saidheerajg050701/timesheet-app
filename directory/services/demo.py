@@ -23,7 +23,12 @@ from audit.services.log import backdate, build, bulk_record
 from directory.models import Employee, Team, User
 from directory.services.importer import REQUIRED_COLUMNS, import_employees
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
-from timesheets.services.calendar import deadline_for, pay_period_for, week_start_for
+from timesheets.services.calendar import (
+    deadline_for,
+    pay_period_for,
+    week_start_for,
+    working_days,
+)
 
 SYSTEM_ACTOR = "seed_demo"
 logger = logging.getLogger(__name__)
@@ -186,7 +191,7 @@ def seed_payroll(now):
 
     batches = {"exported": 0, "paid": 0}
     for period in paid + exported_only:
-        exported_at = datetime.combine(period + timedelta(days=18), time(10), tzinfo=tz)
+        exported_at = datetime.combine(period + timedelta(days=19), time(10), tzinfo=tz)  # Fri
         batch = export_period(period, actor=clerk, at=exported_at)
         batches["exported"] += 1
         if period in paid:
@@ -194,7 +199,7 @@ def seed_payroll(now):
             batches["paid"] += 1
     if correction:
         fixed_at = datetime.combine(
-            correction.period_start + timedelta(days=28), time(10), tzinfo=tz
+            correction.period_start + timedelta(days=29), time(10), tzinfo=tz  # a Monday
         )
         publish_period(correction, system_actor=SYSTEM_ACTOR, at=min(fixed_at, now))
     return {
@@ -326,7 +331,7 @@ class _Seeder:
 
         # Recent hires, hired on the Wednesday of a period's week 1: partial first week (D-19).
         for team, period_index in (("Platform", -4), ("Support", -3), ("Sales", -2)):
-            hire = self.periods[period_index] + timedelta(days=2)
+            hire = self.periods[period_index] + timedelta(days=3)  # Sunday + 3 = Wednesday
             rows[team_members[team][-1]]["hire_date"] = hire.isoformat()
 
         self.rejected_code = team_members["Platform"][0]
@@ -393,7 +398,7 @@ class _Seeder:
         for employee in with_account:
             team_projects = [projects[c] for c in TEAM_PROJECTS[employee.team.name]]
             for week_start in self.week_starts:
-                workdays = [d for d in _days(week_start, 5) if self._employed(employee, d)]
+                workdays = [d for d in working_days(week_start) if self._employed(employee, d)]
                 if not workdays:
                     continue  # fully outside employment: never missed (D-19)
                 kind = forced.get((employee.employee_code, week_start)) or self._random_kind(
@@ -435,7 +440,7 @@ class _Seeder:
         if kind == "on_time":
             if self.rng.random() < 0.5:  # Friday afternoon
                 week.submitted_at = datetime.combine(
-                    week_start + timedelta(days=4), time(15), tzinfo=self.tz
+                    week_start + timedelta(days=5), time(15), tzinfo=self.tz
                 ) + timedelta(minutes=15 * self.rng.randint(0, 12))
             else:  # Saturday morning, before the noon deadline
                 week.submitted_at = deadline - timedelta(minutes=15 * self.rng.randint(1, 16))
@@ -469,7 +474,7 @@ class _Seeder:
             extra = self.rng.choice((60, 90, 120)) if overtime_week and roll < 0.75 else 0
             entries.extend(self._workday(day, daily + extra, team_projects))
         if weekend and days and self.rng.random() < 0.03:  # weekend hours entered in advance (D-09)
-            saturday = days[0] - timedelta(days=days[0].weekday()) + timedelta(days=5)
+            saturday = week_start_for(days[0]) + timedelta(days=6)  # the week's last day
             minutes = self.rng.choice((120, 180, 240))
             entries.append(
                 _timed(
@@ -583,7 +588,8 @@ class _Seeder:
                 continue  # most recent completed period stays PENDING (B.7)
             if not both_submitted:
                 continue  # a LOCKED week blocks approval (D-06)
-            base = datetime.combine(period_start + timedelta(days=14), time(9), tzinfo=self.tz)
+            # Decided on the Monday after the period (it ends on a Saturday).
+            base = datetime.combine(period_start + timedelta(days=15), time(9), tzinfo=self.tz)
             decided = base + timedelta(days=self.rng.randint(0, 2), hours=self.rng.randint(0, 8))
             latest = max(w.last_event for w in period_weeks)
             approval.status = PeriodApproval.Status.APPROVED
@@ -597,7 +603,7 @@ class _Seeder:
 
     def _reject(self, approval, period_weeks, employees):
         decided = min(
-            datetime.combine(approval.period_start + timedelta(days=14), time(10), tzinfo=self.tz),
+            datetime.combine(approval.period_start + timedelta(days=15), time(10), tzinfo=self.tz),
             self.now - timedelta(hours=1),
         )
         approval.status = PeriodApproval.Status.REJECTED
@@ -759,10 +765,6 @@ class _Seeder:
             "approvals": dict(sorted(approvals.items())),
             "change_requests": ChangeRequest.objects.count(),
         }
-
-
-def _days(start, count):
-    return [start + timedelta(days=i) for i in range(count)]
 
 
 def _timed(day, category, start_minute, minutes, reason, project=None):

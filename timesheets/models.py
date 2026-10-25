@@ -22,7 +22,7 @@ class Timesheet(models.Model):  # one per employee per week
     employee = models.ForeignKey(
         "directory.Employee", on_delete=models.PROTECT, related_name="timesheets"
     )
-    week_start = models.DateField()  # always a Monday
+    week_start = models.DateField()  # always a Sunday: weeks run Sunday–Saturday (D-111)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
     # to/from APPROVED only via timesheets/services/approvals.py (D-10)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -88,7 +88,7 @@ class PeriodApproval(models.Model):  # one per employee per 2-week period
         REJECTED = "REJECTED"
 
     employee = models.ForeignKey("directory.Employee", on_delete=models.PROTECT)
-    period_start = models.DateField()  # Monday of week 1
+    period_start = models.DateField()  # Sunday of week 1 (D-113)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     approver = models.ForeignKey(
         "directory.Employee",

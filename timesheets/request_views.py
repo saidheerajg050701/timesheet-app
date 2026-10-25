@@ -20,8 +20,7 @@ from timesheets.services.changes import (
     unlock_request,
 )
 from timesheets.services.summary import summarize
-from timesheets.services.weeks import entry_rows
-from timesheets.views import _row_choices, form_rows
+from timesheets.views import SaveAttempt, grid_choices, week_grid
 
 RECENT = 20
 
@@ -73,7 +72,7 @@ def request_detail(request, pk):
         {
             "change": change,
             "sheet": sheet,
-            "rows": entry_rows(sheet),
+            "grid": week_grid(sheet, sheet.week_start, editable=False),
             "summary": summarize(list(sheet.entries.all()), sheet.employee, sheet.week_start),
         },
     )
@@ -83,33 +82,33 @@ def request_edit(request, pk):
     """Edit directly: the employee's rows with the same checks as their own page (D-49)."""
     change = _handleable(request, pk, open_only=True)
     sheet = change.timesheet
-    rows, entries, errors = None, None, []
+    attempt = None
     if request.method == "POST":
-        parsed = parse_entries(request.POST, sheet.week_start)
-        rows, entries, errors = parsed.rows, parsed.entries, parsed.errors
-        if not errors:
+        attempt = SaveAttempt(request.POST, sheet.week_start)
+        if not attempt.errors:
             note = request.POST.get("note", "")
             try:
-                edit_directly(change, request.user.employee, entries, note, now=timezone.now())
+                edit_directly(
+                    change, request.user.employee, attempt.entries, note, now=timezone.now()
+                )
             except ValidationError as exc:
-                errors = exc.messages
+                attempt.rule_errors(exc.messages)
             else:
                 messages.success(request, "Week edited and submitted on the employee's behalf.")
                 return redirect("request_inbox")
-    if rows is None:
-        entries = list(sheet.entries.all())
-    rows = form_rows(sheet, rows)
+    entries = attempt.entries if attempt else list(sheet.entries.all())
+    grid = week_grid(sheet, sheet.week_start, attempt, editable=True)
     return render(
         request,
         "timesheets/request_edit.html",
         {
             "change": change,
             "sheet": sheet,
-            "rows": rows,
-            "errors": errors,
+            "grid": grid,
+            "errors": grid.errors,
             "summary": summarize(entries, sheet.employee, sheet.week_start),
             "summary_url": reverse("request_totals", args=[change.pk]),
-            **_row_choices(sheet.week_start, rows),
+            **grid_choices(sheet.week_start),
         },
     )
 

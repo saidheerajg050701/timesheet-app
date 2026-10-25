@@ -19,6 +19,13 @@ from tests.factories import (
 )
 
 
+@pytest.fixture(autouse=True)
+def pay_period_anchor(settings):
+    """Every test uses the Sunday anchor, whatever .env says (D-113)."""
+    settings.PAY_PERIOD_ANCHOR = date(2026, 1, 4)
+    return settings.PAY_PERIOD_ANCHOR
+
+
 @pytest.fixture
 def company_tz():
     return ZoneInfo(settings.COMPANY_TZ)
@@ -69,7 +76,23 @@ def org(db):
     ceo → finance (payroll + manager) → payroll (payroll only).
     """
 
+    # Fixed names: random ones depend on test order and can collide with searches ("Kim").
+    names = {
+        "CEO": ("Asha", "Rao"),
+        "HR": ("Hana", "Reed"),
+        "DIRECTOR": ("Mark", "Lee"),
+        "MANAGER": ("Priya", "Shah"),
+        "DEV1": ("John", "Kim"),
+        "DEV2": ("Sara", "Ng"),
+        "OPSMGR": ("Omar", "Diaz"),
+        "OPS1": ("Lena", "Park"),
+        "FINANCE": ("Fay", "Moss"),
+        "PAYROLL": ("Paul", "Ames"),
+    }
+
     def person(code, manager=None, **extra):
+        first, last = names[code]
+        extra = {"first_name": first, "last_name": last, **extra}
         return EmployeeFactory(
             employee_code=code, email=f"{code.lower()}@yourcompany.com", manager=manager, **extra
         )
@@ -79,7 +102,7 @@ def org(db):
     hr = person("HR", ceo, is_admin=True, job_title="HR Manager")
     director = person("DIRECTOR", ceo, job_title="Engineering Director")
     manager = person("MANAGER", director, job_title="Engineering Manager", team=platform)
-    dev1 = person("DEV1", manager, first_name="John", last_name="Kim", team=platform)
+    dev1 = person("DEV1", manager, team=platform)
     dev2 = person("DEV2", manager, team=platform)
     ops_manager = person("OPSMGR", ceo, job_title="Operations Manager")
     ops1 = person("OPS1", ops_manager, job_title="Operations Analyst")
@@ -117,14 +140,15 @@ def project(db):
 
 
 @pytest.fixture
-def draft_sheet_week_of_oct_19(db):
-    """A DRAFT timesheet for the week of Monday 2026-10-19 (deadline Sat 24 Oct 12:00)."""
-    return TimesheetFactory(week_start=date(2026, 10, 19))
+def draft_sheet_week_of_oct_18(db):
+    """A DRAFT timesheet for the week of Sunday 2026-10-18 (deadline Sat 24 Oct 12:00)."""
+    return TimesheetFactory(week_start=date(2026, 10, 18))
 
 
 @pytest.fixture
 def make_week(project, fixed_now):
-    """A week with full 09:00–17:00 days Mon–Fri (40 h, no flags) unless told otherwise."""
+    """A week (its Sunday) with full 09:00–17:00 days Mon–Fri (40 h, no flags) unless told
+    otherwise; `days` counts working days from Monday (D-114)."""
 
     def make(employee, week, status="SUBMITTED", days=5, end=time(17), **extra):
         on_time = datetime(2026, 10, 2, 16, 0, tzinfo=ZoneInfo("America/Chicago"))
@@ -134,7 +158,7 @@ def make_week(project, fixed_now):
         for offset in range(days):
             TimeEntryFactory(
                 timesheet=sheet,
-                work_date=week + timedelta(days=offset),
+                work_date=week + timedelta(days=1 + offset),  # Monday is the week's 2nd day
                 project=project,
                 end_time=end,
                 minutes=minutes,

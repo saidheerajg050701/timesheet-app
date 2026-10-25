@@ -13,14 +13,14 @@ from timesheets.models import PeriodApproval
 from timesheets.services.approvals import approve_period
 
 TZ = ZoneInfo("America/Chicago")
-NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed of the week of Oct 19
-THIS_WEEK = date(2026, 10, 19)
-W = {n: THIS_WEEK - timedelta(weeks=n) for n in range(1, 13)}  # W[1] = Oct 12 … W[11] = Aug 3
+NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed of the week of Sun Oct 18
+THIS_WEEK = date(2026, 10, 18)
+W = {n: THIS_WEEK - timedelta(weeks=n) for n in range(1, 13)}  # W[1] = Oct 11 … W[11] = Aug 2
 ON_TIME = datetime(2026, 10, 2, 16, 0, tzinfo=TZ)
 
 
 def submitted(employee, week, *, late=False, status="SUBMITTED", **extra):
-    deadline = datetime.combine(week + timedelta(days=5), time(12), tzinfo=TZ)
+    deadline = datetime.combine(week + timedelta(days=6), time(12), tzinfo=TZ)  # Saturday
     at = deadline + timedelta(days=1) if late else deadline - timedelta(hours=20)
     return TimesheetFactory(
         employee=employee, week_start=week, status=status, submitted_at=at, is_late=late, **extra
@@ -31,7 +31,7 @@ def work_days(sheet, project, days=5, end=time(17)):
     for offset in range(days):
         TimeEntryFactory(
             timesheet=sheet,
-            work_date=sheet.week_start + timedelta(days=offset),
+            work_date=sheet.week_start + timedelta(days=1 + offset),  # from Monday
             project=project,
             end_time=end,
             minutes=(end.hour - 9) * 60,
@@ -51,9 +51,9 @@ def me(db):
 def test_dashboard_numbers_for_known_data(me, project, login_as, fixed_now):
     """T-40: on-time rate, overtime and hours by project for known data — exact numbers."""
     other = ProjectFactory(code="PRJ-002", name="Mobile App")
-    work_days(submitted(me, W[3]), project)  # Sep 28: on time, 40 h
-    work_days(submitted(me, W[2], late=True), project, end=time(18))  # Oct 5: late, 45 h
-    # Oct 12: no timesheet → missed
+    work_days(submitted(me, W[3]), project)  # Sep 27: on time, 40 h
+    work_days(submitted(me, W[2], late=True), project, end=time(18))  # Oct 4: late, 45 h
+    # Oct 11: no timesheet → missed
     draft = TimesheetFactory(employee=me, week_start=THIS_WEEK)  # current week, draft
     work_days(draft, other, days=1, end=time(18))  # 9 h, not counted for overtime (draft)
 
@@ -151,15 +151,15 @@ def test_dashboard_overtime_matches_payroll(
     org, make_week, login_as, django_capture_on_commit_callbacks
 ):
     """T-118: dashboard overtime equals the payroll split for approved weeks; drafts excluded."""
-    make_week(org.dev1, date(2026, 9, 28))
-    make_week(org.dev1, date(2026, 10, 5), end=time(18))  # 45 h → 5 h overtime
+    make_week(org.dev1, date(2026, 9, 27))
+    make_week(org.dev1, date(2026, 10, 4), end=time(18))  # 45 h → 5 h overtime
     with django_capture_on_commit_callbacks(execute=True):
-        approve_period(org.manager, org.dev1, date(2026, 9, 28), now=NOW)
+        approve_period(org.manager, org.dev1, date(2026, 9, 27), now=NOW)
     draft = TimesheetFactory(employee=org.dev1, week_start=THIS_WEEK)
     for offset in range(3):  # 3 × 15 h draft days: would be overtime, but drafts don't count
         TimeEntryFactory(
             timesheet=draft,
-            work_date=THIS_WEEK + timedelta(days=offset),
+            work_date=THIS_WEEK + timedelta(days=1 + offset),  # Mon–Wed
             start_time=time(6),
             end_time=time(21),
             minutes=900,
@@ -199,7 +199,7 @@ def test_viewing_writes_nothing_and_queries_are_bounded(me, project, login_as, f
     """T-121: viewing never writes; the same number of queries for 4 and 26 weeks (D-34)."""
     for n in range(1, 12):
         work_days(submitted(me, W[n], late=n % 3 == 0), project, days=2)
-    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 28), status="APPROVED")
+    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 27), status="APPROVED")
     client = login_as(me)
     client.get(reverse("home"))  # warm up the session
 
@@ -226,7 +226,7 @@ def test_categories_break_outcomes_and_current_week(me, project, login_as, fixed
     for category, start, end, minutes, prj in rows:
         TimeEntryFactory(
             timesheet=sheet,
-            work_date=W[3],
+            work_date=W[3] + timedelta(days=1),  # Monday
             category=category,
             project=prj,
             start_time=start,
@@ -235,7 +235,7 @@ def test_categories_break_outcomes_and_current_week(me, project, login_as, fixed
         )
     TimeEntryFactory(
         timesheet=sheet,
-        work_date=W[3] + timedelta(days=1),
+        work_date=W[3] + timedelta(days=2),  # Tuesday
         category="PTO",
         project=None,
         start_time=None,
@@ -243,16 +243,16 @@ def test_categories_break_outcomes_and_current_week(me, project, login_as, fixed
         minutes=480,
         reason="Vacation",
     )
-    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 28), status="APPROVED")
-    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 14), status="REJECTED")
+    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 27), status="APPROVED")
+    PeriodApproval.objects.create(employee=me, period_start=date(2026, 9, 13), status="REJECTED")
     client = login_as(me)
     dash = dash_of(client, weeks=12)
     assert dash.categories.rows == [("Project work", 180), ("Meetings", 300), ("PTO", 480)]
     assert dash.categories.total == 960 and dash.categories.break_minutes == 30
     assert dash.worked == 480  # Break and leave are not hours worked
     statuses = {p.period_start: p.status for p in dash.periods}
-    assert statuses[date(2026, 9, 28)] == "APPROVED" and statuses[date(2026, 9, 14)] == "REJECTED"
-    assert statuses[date(2026, 10, 12)] == "IN_PROGRESS" and statuses[date(2026, 8, 3)] == "PENDING"
+    assert statuses[date(2026, 9, 27)] == "APPROVED" and statuses[date(2026, 9, 13)] == "REJECTED"
+    assert statuses[date(2026, 10, 11)] == "IN_PROGRESS" and statuses[date(2026, 8, 2)] == "PENDING"
     assert dash.outcome_counts == {"APPROVED": 1, "REJECTED": 1, "PENDING": 3}
 
     html = client.get(reverse("home"), {"weeks": 12}).content.decode()

@@ -7,7 +7,12 @@ from dataclasses import dataclass, field
 from datetime import date, time
 
 from timesheets.models import TimeEntry
-from timesheets.services.calendar import employed_on, expected_minutes_for, week_days
+from timesheets.services.calendar import (
+    employed_on,
+    expected_minutes_for,
+    week_days,
+    working_days,
+)
 
 
 @dataclass
@@ -46,12 +51,11 @@ class WeekSummary:
 def summarize(entries, employee, week_start):
     """Per-day and week totals for any rows with work_date, category, minutes and times."""
     daily_expected = employee.expected_weekly_minutes / 5
+    workdays = set(working_days(week_start))  # Mon–Fri; the weekend ends get none (D-114)
     days = {
         day: DaySummary(
             day,
-            expected=round(daily_expected)
-            if day.weekday() < 5 and employed_on(employee, day)
-            else 0,
+            expected=round(daily_expected) if day in workdays and employed_on(employee, day) else 0,
         )
         for day in week_days(week_start)
     }

@@ -19,10 +19,10 @@ from timesheets.services.calendar import (
 )
 
 TZ = ZoneInfo("America/Chicago")
-NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed, in the period of Oct 12
-PERIOD = date(2026, 9, 28)  # most recent completed period: Sep 28 + Oct 5
+NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed, in the period of Oct 11
+PERIOD = date(2026, 9, 27)  # most recent completed period: weeks of Sun Sep 27 + Oct 4
 WEEK1, WEEK2 = PERIOD, PERIOD + timedelta(weeks=1)
-CURRENT = date(2026, 10, 12)  # current period: Oct 12 + Oct 19
+CURRENT = date(2026, 10, 11)  # current period: weeks of Sun Oct 11 + Oct 18
 HOOK = "timesheets.services.approvals.publish_payroll_period"
 
 
@@ -77,7 +77,7 @@ def test_approving_both_weeks(org, make_week, login_as):
     audit = AuditLog.objects.get(action="APPROVE")
     assert (audit.actor, audit.entity_id) == (org.manager, str(approval.pk))
     assert audit.after["worked_minutes"] == 2 * 2400 and audit.after["status"] == "APPROVED"
-    assert audit.before["weeks"] == {"2026-09-28": "SUBMITTED", "2026-10-05": "SUBMITTED"}
+    assert audit.before["weeks"] == {"2026-09-27": "SUBMITTED", "2026-10-04": "SUBMITTED"}
 
 
 def test_reject_needs_a_comment_and_reopens_both_weeks(org, make_week, login_as):
@@ -113,7 +113,7 @@ def test_non_manager_cannot_approve(org, make_week, login_as):
 
 def test_unlock_locked_week_from_approvals(org, make_week, login_as):
     """T-92: Unlock reuses Phase 6: manager-authored UNLOCKED request (or resolves the open one)."""
-    make_week(org.dev1, WEEK1)  # week 2 (Oct 5) has no timesheet at all: missed
+    make_week(org.dev1, WEEK1)  # week 2 (Oct 4) has no timesheet at all: missed
     client = login_as(org.manager)
     assert "Unlock week 2" in client.get(detail_url(org.dev1)).content.decode()
     post(client, org.dev1, "unlock", week=WEEK2.isoformat())
@@ -149,7 +149,7 @@ def test_rejected_period_comes_back_after_resubmission(org, make_week, login_as,
     week_page = employee.get(reverse("timesheet_week", args=[WEEK1])).content.decode()
     assert "Add Friday&#x27;s training." in week_page and "Rejected by" in week_page
 
-    rows = [work(WEEK1 + timedelta(days=d), "09:00", "17:00", project) for d in range(5)]
+    rows = [work(WEEK1 + timedelta(days=d), "09:00", "17:00", project) for d in range(1, 6)]
     employee.post(reverse("timesheet_week", args=[WEEK1]), form(*rows, action="submit"))
     assert decision(org.dev1).status == "PENDING"
     audit = AuditLog.objects.get(entity_type="PeriodApproval", action="UPDATE")
@@ -157,7 +157,7 @@ def test_rejected_period_comes_back_after_resubmission(org, make_week, login_as,
     manager = login_as(org.manager)
     assert "Week 2 is reopened" in manager.get(detail_url(org.dev1)).content.decode()
 
-    rows = [work(WEEK2 + timedelta(days=d), "09:00", "17:00", project) for d in range(5)]
+    rows = [work(WEEK2 + timedelta(days=d), "09:00", "17:00", project) for d in range(1, 6)]
     login_as(org.dev1).post(reverse("timesheet_week", args=[WEEK2]), form(*rows, action="submit"))
     post(login_as(org.manager), org.dev1, "approve")
     assert decision(org.dev1).status == "APPROVED"
@@ -228,23 +228,23 @@ def test_bulk_approve(org, make_week, login_as):
 
 def test_pay_period_dates(org, login_as):
     """T-97: 14-day periods from the anchor; default = last completed; snapping; no future."""
-    assert period_start_for(date(2026, 1, 5)) == date(2026, 1, 5)
-    assert period_start_for(date(2026, 1, 18)) == date(2026, 1, 5)
+    assert period_start_for(date(2026, 1, 4)) == date(2026, 1, 4)
+    assert period_start_for(date(2026, 1, 17)) == date(2026, 1, 4)
     assert period_start_for(date(2026, 10, 1)) == PERIOD
     assert current_period(NOW) == CURRENT and default_period(NOW) == PERIOD
-    assert recent_periods(NOW, 3) == [CURRENT, PERIOD, date(2026, 9, 14)]
+    assert recent_periods(NOW, 3) == [CURRENT, PERIOD, date(2026, 9, 13)]
 
     client = login_as(org.manager)
     page = client.get(reverse("approvals")).content.decode()
-    assert 'id="period-label">Sep 28 – Oct 11, 2026<' in page
-    assert 'href="?period=2026-09-14"' in page and 'href="?period=2026-10-12"' in page
+    assert 'id="period-label">Sep 27 – Oct 10, 2026<' in page
+    assert 'href="?period=2026-09-13"' in page and 'href="?period=2026-10-11"' in page
     snapped = client.get(reverse("approvals"), {"period": "2026-10-01"}).content.decode()
-    assert 'id="period-label">Sep 28 – Oct 11, 2026<' in snapped
+    assert 'id="period-label">Sep 27 – Oct 10, 2026<' in snapped
     current = client.get(reverse("approvals"), {"period": "2026-10-20"}).content.decode()
     assert (
-        'id="period-label">Oct 12 – Oct 25, 2026<' in current and 'id="next-period"' not in current
+        'id="period-label">Oct 11 – Oct 24, 2026<' in current and 'id="next-period"' not in current
     )
-    assert client.get(reverse("approvals"), {"period": "2026-10-26"}).status_code == 404
+    assert client.get(reverse("approvals"), {"period": "2026-10-25"}).status_code == 404
     assert client.get(reverse("approvals"), {"period": "soon"}).status_code == 404
     off_start = reverse("approval_detail", args=[date(2026, 10, 1), "DEV1"])
     assert client.get(off_start).url == detail_url(org.dev1)
@@ -258,7 +258,7 @@ def test_flags(org, make_week, login_as, project):
     week2 = make_week(org.dev2, WEEK2)
     TimeEntryFactory(  # a long break on Monday: never counts as hours worked
         timesheet=week2,
-        work_date=WEEK2,
+        work_date=WEEK2 + timedelta(days=1),
         category="BREAK",
         project=None,
         start_time=time(17),
@@ -268,7 +268,7 @@ def test_flags(org, make_week, login_as, project):
     )
     TimeEntryFactory(  # an hour of PTO on Thursday: leave, not hours worked
         timesheet=week1,
-        work_date=WEEK1 + timedelta(days=3),
+        work_date=WEEK1 + timedelta(days=4),  # Thursday
         category="PTO",
         project=None,
         start_time=None,
@@ -290,7 +290,7 @@ def test_leave_day_is_not_missing(org, make_week):
     make_week(org.dev1, WEEK2)
     TimeEntryFactory(
         timesheet=week1,
-        work_date=WEEK1 + timedelta(days=4),
+        work_date=WEEK1 + timedelta(days=5),  # Friday
         category="PTO",
         project=None,
         start_time=None,
