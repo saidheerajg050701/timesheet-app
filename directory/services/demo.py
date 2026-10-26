@@ -158,6 +158,7 @@ def seed_payroll(now):
     from payroll.services.register import finalize, mark_paid
 
     tz = ZoneInfo(settings.COMPANY_TZ)
+    approve_the_rest(now, tz)
     approvals = list(
         PeriodApproval.objects.filter(status=PeriodApproval.Status.APPROVED)
         .select_related("employee", "approver")
@@ -206,6 +207,27 @@ def seed_payroll(now):
         "paid_registers": PayrollRegister.objects.filter(status="PAID").count(),
         "corrections": PayrollWeek.objects.filter(status=PayrollWeek.Status.SUPERSEDED).count(),
     }
+
+
+def approve_the_rest(now, tz):
+    """Older periods are fully approved (Change 9, D-144): each manager also approves the
+    people the history left pending — a week locked without a submission (approved with what
+    was entered, still "not submitted by employee" and missed), or no timesheet at all (sign-up
+    candidates) — through the real approvals service. The most recent completed period stays
+    pending (B.7). Payroll is published right after, with everything else."""
+    from timesheets.services.approvals import approve_period, company_period_rows
+    from timesheets.services.calendar import default_period
+
+    hr = Employee.objects.get(employee_code=HR)
+    last_completed = default_period(now)
+    older = PeriodApproval.objects.filter(period_start__lt=last_completed)
+    for period in sorted(set(older.values_list("period_start", flat=True))):
+        decided = datetime.combine(period + timedelta(days=16), time(15), tzinfo=tz)  # Tuesday
+        for row in company_period_rows(period, decided):
+            if row.status == PeriodApproval.Status.APPROVED or row.blockers:
+                continue
+            approver = row.employee.manager or hr  # the CEO is approved by HR (D-11)
+            approve_period(approver, row.employee, period, now=decided, confirm_unsubmitted=True)
 
 
 def us_holidays(year):

@@ -40,6 +40,7 @@ TONES = {
     "READY": "info",  # pay period registers (D-132); OPEN is "warning" above
     "FINALIZED": "submitted",
     "OVERDUE": "danger",  # not approved after the approval deadline (D-133)
+    "UNSUBMITTED": "warning",  # locked or approved without the employee's submission (D-141)
 }
 LABELS = {
     **STATUS_LABELS,

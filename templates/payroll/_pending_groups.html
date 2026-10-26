@@ -1,0 +1,24 @@
+{# Who still has people to approve, per manager (D-143). Context: report (approvals.PendingReport). Read only. #}{% load timesheet_tags %}
+<p class="mb-2" id="pending-totals">Managers done <strong>{{ report.managers_done }} of {{ report.groups|length }}</strong> · people approved <strong>{{ report.approved }} of {{ report.required }}</strong> · approve by {{ report.deadline|date:"l, M j, g:i A" }}{% if report.overdue and report.open_groups %} {% include "includes/status_badge.html" with status="OVERDUE" label="Overdue" only %}{% endif %}</p>
+<div class="table-responsive mb-4">
+  <table class="table table-sm align-middle bg-body" id="pending-by-manager">
+    <thead><tr><th>Manager</th><th class="text-end">Pending</th><th>People still to approve</th></tr></thead>
+    <tbody>
+      {% for group in report.open_groups %}
+        <tr data-manager="{% if group.approver %}{{ group.approver.employee_code }}{% else %}ADMINS{% endif %}">
+          <td>{{ group.label }}{% if group.team %}<br><small class="text-body-secondary">{{ group.team }}</small>{% endif %}</td>
+          <td class="text-end">{{ group.pending|length }} of {{ group.total }}</td>
+          <td>
+            <ul class="list-unstyled mb-0">
+              {% for row, state in group.pending %}
+                <li data-employee="{{ row.employee.employee_code }}">{{ row.employee.first_name }} {{ row.employee.last_name }} <span class="text-body-secondary small">{{ row.employee.employee_code }}</span> — {{ state }}{% if report.overdue %} {% include "includes/status_badge.html" with status="OVERDUE" label="Overdue" only %}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          </td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="3" class="text-body-secondary">Every manager has approved everyone in this period.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -46,17 +46,19 @@ def read_csv(response):
 DETAIL = "payroll-detail_2026-09-27_to_2026-10-10_EXP-0001.csv"
 
 
-def test_export_csv(org, approved, login_as):
+def test_export_csv(org, approved, approve_everyone, login_as):
     """T-37: Finalize & export: the detailed CSV is correct; records EXPORTED in one numbered
     batch (since Change 8 the register's only batch, D-135)."""
     approved(org.dev1, org.dev2)
+    approve_everyone(PERIOD, NOW)  # READY only once everyone is approved (D-142)
     client = login_as(org.payroll)
     response = client.post(reverse("payroll_finalize", args=[PERIOD]))
     assert response.url == reverse("payroll_period", args=[PERIOD])
     download = client.get(reverse("payroll_detail_csv", args=[PERIOD]))
     assert download["Content-Type"] == "text/csv; charset=utf-8"
     assert f'filename="{DETAIL}"' in download["Content-Disposition"]
-    rows = read_csv(download)
+    everything = read_csv(download)
+    rows = [r for r in everything if r["employee_code"].startswith("DEV")]  # others: 0.00 weeks
     assert [(r["employee_code"], r["week_start"]) for r in rows] == [
         ("DEV1", "2026-09-27"),
         ("DEV1", "2026-10-04"),
@@ -77,12 +79,15 @@ def test_export_csv(org, approved, login_as):
 
     again = client.post(reverse("payroll_finalize", args=[PERIOD]))
     assert "already finalized" in client.get(again.url).content.decode()
-    assert read_csv(client.get(reverse("payroll_detail_csv", args=[PERIOD]))) == rows  # again
+    assert read_csv(client.get(reverse("payroll_detail_csv", args=[PERIOD]))) == everything
     assert PayrollRegister.objects.get().export_batch == "EXP-0001"
 
-    approved(org.ops1, period=PERIOD)  # approved after finalizing → the next register (D-136)
+    newcomer = EmployeeFactory(  # added later with a start date inside the finalized period
+        employee_code="LATE1", manager=org.manager, hire_date=PERIOD + timedelta(days=1)
+    )
+    approved(newcomer, period=PERIOD)  # approved after finalizing → the next register (D-136)
     late = period_items(PERIOD + timedelta(weeks=2)).late
-    assert [(r.employee_code, r.status) for r in late] == [("OPS1", "CURRENT")] * 2
+    assert [(r.employee_code, r.status) for r in late] == [("LATE1", "CURRENT")] * 2
 
 
 def test_managers_and_employees_get_403(org, login_as):
@@ -103,7 +108,7 @@ def test_superseded_after_export_is_listed_in_corrections(org, approved, login_a
 
 
 def test_csv_cells_are_spreadsheet_safe(
-    org, make_week, login_as, django_capture_on_commit_callbacks
+    org, make_week, login_as, approve_everyone, django_capture_on_commit_callbacks
 ):
     """T-110: cells starting with = + - @ are escaped with a leading '; batches are sequential."""
     assert [safe_cell(v) for v in ("=SUM(A1)", "+1", "-2", "@cmd", "\tx", "Ok", "7.50")] == [
@@ -123,15 +128,21 @@ def test_csv_cells_are_spreadsheet_safe(
     with django_capture_on_commit_callbacks(execute=True):
         approve_period(org.manager, risky, PERIOD, now=NOW)
     client = login_as(org.payroll)
+    approve_everyone(PERIOD, NOW)
     client.post(reverse("payroll_finalize", args=[PERIOD]))
-    rows = read_csv(client.get(reverse("payroll_detail_csv", args=[PERIOD])))
+    rows = [
+        r
+        for r in read_csv(client.get(reverse("payroll_detail_csv", args=[PERIOD])))
+        if r["employee_code"] == "RISK1"
+    ]
     assert rows[0]["employee_name"] == '\'=HYPERLINK("x") @evil'
     assert rows[0]["batch"] == "EXP-0001" and rows[0]["regular_hours"] == "40.00"
 
 
-def test_who_can_open_payroll_pages(org, approved, login_as):
+def test_who_can_open_payroll_pages(org, approved, approve_everyone, login_as):
     """T-111: payroll users and admins only; payroll never opens other people's timesheets."""
     approved(org.dev1)
+    approve_everyone(PERIOD, NOW)
     finalize(PERIOD, system_actor="test", now=NOW)
     gets = [
         reverse("payroll"),
@@ -159,7 +170,7 @@ def test_who_can_open_payroll_pages(org, approved, login_as):
 
     # D-12: the payroll flag adds payroll pages only — never timesheet details of others.
     client = login_as(org.payroll)
-    sheet = PayrollWeek.objects.first().source_timesheet_id
+    sheet = PayrollWeek.objects.get(employee_code="DEV1", week_start=PERIOD).source_timesheet_id
     change = ChangeRequest.objects.create(timesheet_id=sheet, requester=org.dev1, reason="x")
     for url in (
         reverse("team_member", args=["DEV1"]),
@@ -178,27 +189,32 @@ def records_of(html):
     return re.findall(r"<tr>\s*<td>([^<]+)</td>", table)
 
 
-def test_payroll_page_filters_and_totals(org, approved, make_week, login_as):
-    """Helper check: the period's week records with filters; hours with 2 decimals."""
+def test_payroll_page_filters_and_totals(org, approved, approve_everyone, login_as):
+    """Helper check: the period's week records with filters; hours with 2 decimals. While
+    OPEN no hours are shown at all (Change 9, D-142)."""
     approved(org.dev1, org.ops1)
     client = login_as(org.payroll)
     url = reverse("payroll_period", args=[PERIOD])
     page = client.get(url).content.decode()
-    assert records_of(page) == ["John Kim", "John Kim", "Lena Park", "Lena Park"]
-    assert "80.00" in page.split('id="register"')[1]
+    assert 'id="register"' not in page and 'id="payroll-records"' not in page  # OPEN
+    approve_everyone(PERIOD, NOW)  # READY: the others' never-submitted weeks at 0.00
+    page = client.get(url).content.decode()
+    assert len(records_of(page)) == 20 and records_of(page).count("Lena Park") == 2
+    assert "80.00" in page.split('<tr data-employee="DEV1">')[1].split("</tr>")[0]
     filtered = client.get(url, {"team": "Platform"}).content.decode()
-    assert set(records_of(filtered)) == {"John Kim"}
+    assert set(records_of(filtered)) == {"John Kim", "Sara Ng", "Priya Shah"}
     department = client.get(url, {"department": "Technology"}).content.decode()
-    assert len(records_of(department)) == 4  # both factory employees are Technology
+    assert {"John Kim", "Lena Park"} <= set(records_of(department))
     assert len(records_of(client.get(url, {"employee": "kim"}).content.decode())) == 2
     exported = client.get(url, {"status": "EXPORTED"}).content.decode()
     assert records_of(exported) == [] and "No records." in exported
     assert client.get(reverse("payroll"), {"period": "nope"}).status_code == 404
 
 
-def test_mark_paid_from_the_page(org, approved, login_as):
+def test_mark_paid_from_the_page(org, approved, approve_everyone, login_as):
     """Helper check: the Mark as paid button pays the register's batch and returns to it."""
     approved(org.dev1)
+    approve_everyone(PERIOD, NOW)
     client = login_as(org.payroll)
     client.post(reverse("payroll_finalize", args=[PERIOD]))
     response = client.post(reverse("payroll_register_paid", args=[PERIOD]))

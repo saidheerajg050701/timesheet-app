@@ -115,7 +115,7 @@ def test_positive_overtime_adjustment_after_payment(org, payroll):
     assert [r.status for r in other] == ["SUPERSEDED", "SETTLED"]
 
 
-def test_negative_adjustment(org, payroll, login_as):
+def test_negative_adjustment(org, payroll, approve_everyone, login_as):
     """T-174: an exported (not yet paid) week reduced by 1.5 h → −1.50 regular, unescaped in CSV."""
     payroll.approved(org.dev1, PAID)
     export_period(PAID, system_actor="test", at=NOW)  # EXP-0001, not paid
@@ -123,10 +123,11 @@ def test_negative_adjustment(org, payroll, login_as):
     (adjustment,) = PayrollAdjustment.objects.all()
     assert (adjustment.regular_minutes, adjustment.overtime_minutes) == (-90, 0)
     assert adjustment.total_minutes == -90 and adjustment.period_start == LAST
+    approve_everyone(LAST, NOW)  # READY only once everyone is approved (D-142)
     page = login_as(org.payroll).get(reverse("payroll_period", args=[LAST]))
     assert "−1.50" in page.content.decode()  # in the register's carry-forward columns
     register = finalize(LAST, system_actor="test", now=NOW)
-    (row,) = rows_of(register.export_batch)
+    (row,) = [r for r in rows_of(register.export_batch) if r["row_type"] == "ADJUSTMENT"]
     assert row["row_type"] == "ADJUSTMENT" and row["batch"] == "EXP-0002"
     assert row["regular_hours"] == "-1.50" and row["total_hours"] == "-1.50"  # a number, not '-
     assert (row["week_start"], row["original_week"]) == ("", "2026-09-13")
@@ -165,7 +166,7 @@ def test_several_corrections_of_the_same_week(org, payroll):
     assert v4.status == "SETTLED" and PayrollAdjustment.objects.count() == 2
 
 
-def test_new_full_version_is_never_exported_twice(org, payroll, login_as):
+def test_new_full_version_is_never_exported_twice(org, payroll, approve_everyone, login_as):
     """T-177: after a correction the settled week stays out of every batch; only the difference."""
     payroll.approved(org.dev1, PAID)
     batch = export_period(PAID, system_actor="test", at=NOW)
@@ -173,16 +174,20 @@ def test_new_full_version_is_never_exported_twice(org, payroll, login_as):
     payroll.correct(org.dev1, WEEK, time(19))
     assert export_period(PAID, system_actor="test", at=NOW) is None  # nothing new for Sep 13
     payroll.approved(org.dev2, LAST)
+    approve_everyone(LAST, NOW)  # DEV1 has nothing in Sep 27 – Oct 10: approved with 0.00
     page = login_as(org.payroll).get(reverse("payroll_period", args=[LAST])).content.decode()
     dev1 = page.split('<tr data-employee="DEV1">')[1].split("</tr>")[0]
     assert "+2.00" in dev1 and "Sep 13 correction" in dev1  # only the difference is carried
     second = finalize(LAST, system_actor="test", now=NOW).export_batch
-    rows = rows_of(second)
-    assert [(r["employee_code"], r["row_type"]) for r in rows] == [
-        ("DEV1", "ADJUSTMENT"),
-        ("DEV2", "WEEK"),
-        ("DEV2", "WEEK"),
+    rows = [r for r in rows_of(second) if r["employee_code"] in ("DEV1", "DEV2")]
+    assert [(r["employee_code"], r["row_type"], r["total_hours"]) for r in rows] == [
+        ("DEV1", "WEEK", "0.00"),
+        ("DEV1", "WEEK", "0.00"),
+        ("DEV1", "ADJUSTMENT", "2.00"),
+        ("DEV2", "WEEK", "40.00"),
+        ("DEV2", "WEEK", "40.00"),
     ]
+    assert "2026-09-13" not in {r["week_start"] for r in rows}  # Sep 13 never re-exported
     assert all(r.export_batch == "" for r in PayrollWeek.objects.filter(status="SETTLED"))
     paid_hours = (
         sum(
@@ -219,13 +224,14 @@ def test_carry_forward_period(fixed_now):
     assert carry_period(PAID, later) == date(2026, 11, 8)
 
 
-def test_csv_totals_mark_paid_and_corrections(org, payroll, login_as):
+def test_csv_totals_mark_paid_and_corrections(org, payroll, approve_everyone, login_as):
     """T-179: CSV columns, totals with adjustments, Mark as paid and Corrections statuses."""
     payroll.approved(org.dev1, PAID)
     first = export_period(PAID, system_actor="test", at=NOW)
     mark_paid(first, system_actor="test", at=NOW)
     payroll.correct(org.dev1, WEEK, time(19), reason="=CMD('x') release ran late")
     payroll.approved(org.dev1, LAST)
+    approve_everyone(LAST, NOW)  # READY only once everyone is approved (D-142)
     client = login_as(org.payroll)
 
     page = client.get(reverse("payroll_period", args=[LAST])).content.decode()
@@ -241,6 +247,7 @@ def test_csv_totals_mark_paid_and_corrections(org, payroll, login_as):
     download = client.get(reverse("payroll_detail_csv", args=[LAST]))
     rows = list(csv.DictReader(io.StringIO(download.content.decode("utf-8-sig"))))
     assert list(rows[0])[:3] == ["batch", "employee_code", "row_type"]
+    rows = [r for r in rows if r["employee_code"] == "DEV1"]
     assert [(r["row_type"], r["week_start"], r["original_week"], r["version"]) for r in rows] == [
         ("WEEK", "2026-09-27", "", "1"),
         ("WEEK", "2026-10-04", "", "1"),
@@ -327,7 +334,9 @@ def test_adjustments_are_append_only_and_audited(org, payroll):
     assert export.after["adjustments"] == pay.after["adjustments"] == 1
 
 
-def test_settled_week_links_to_the_period_that_paid_its_difference(org, payroll, login_as):
+def test_settled_week_links_to_the_period_that_paid_its_difference(
+    org, payroll, approve_everyone, login_as
+):
     """T-182: an old period labels a Settled week with the period its adjustment went to."""
     payroll.approved(org.dev1, PAID)
     batch = export_period(PAID, system_actor="test", at=NOW)
@@ -346,6 +355,7 @@ def test_settled_week_links_to_the_period_that_paid_its_difference(org, payroll,
     assert "No difference to pay" in week_row("Sep 20")  # the untouched week: settled, no money
     old = client.get(reverse("payroll"), {"period": "2026-09-27"})  # older links still work
     assert old.url == reverse("payroll_period", args=[date(2026, 9, 27)])
+    approve_everyone(LAST, NOW)  # Sep 27's hours show once everyone is approved (D-142)
     carried_to = client.get(old.url).content.decode()
     assert 'data-adjustment="DEV1"' in carried_to and "+2.00" in carried_to
     assert "Settled by adjustment" not in carried_to  # only Settled weeks carry the label

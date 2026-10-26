@@ -59,8 +59,11 @@ AFTER_NEXT = datetime(2026, 11, 2, 10, 0, tzinfo=TZ)  # NEXT has ended and its d
 
 
 @pytest.fixture
-def company(org, make_week, project, fixed_now, django_capture_on_commit_callbacks):
-    """Approve people's periods (both weeks submitted first); payroll written after commit."""
+def company(
+    org, make_week, project, fixed_now, approve_everyone, django_capture_on_commit_callbacks
+):
+    """Approve people's periods (both weeks submitted first); payroll written after commit.
+    `rest` approves everyone else, the Change 9 way (their empty locked weeks, 0.00)."""
 
     def approver(person):
         return person.manager or org.hr  # the CEO has no manager: an admin approves (D-11)
@@ -82,6 +85,7 @@ def company(org, make_week, project, fixed_now, django_capture_on_commit_callbac
 
     helpers = Helpers()
     helpers.approve, helpers.everyone, helpers.approver = approve, everyone, approver
+    helpers.rest = lambda period=PERIOD, now=NOW: approve_everyone(period, now)
     return helpers
 
 
@@ -143,18 +147,20 @@ def test_who_must_be_approved_company_wide(org, company, project, login_as):
     mine = {r.employee.employee_code for r in period_rows(org.manager, PERIOD, NOW)}
     assert mine == {"DEV1", "DEV2", "GONE2", "NEW2"}  # the same rule, one manager's part
 
-    pending = {line.employee_code: line for line in preview(PERIOD, NOW).pending}
-    assert pending["DEV1"].approver_label == "Priya Shah"
-    assert pending["CEO"].approver_label == "HR / an admin"  # no manager: approved by HR
+    groups = {g.label: g for g in preview(PERIOD, NOW).pending.groups}
+    assert "DEV1" in [row.employee.employee_code for row, _ in groups["Priya Shah"].pending]
+    admins = groups["HR / admins"]  # no manager: approved by HR (D-11)
+    assert [row.employee.employee_code for row, _ in admins.pending] == ["CEO"]
     page = login_as(org.payroll).get(reverse("payroll_period", args=[PERIOD])).content.decode()
-    table_html = page.split('id="pending"')[1]
-    assert "Priya Shah" in table_html and "HR / an admin" in table_html
-    assert "Week 1 is locked — unlock it first." in table_html  # past its deadline, unsubmitted
+    table_html = page.split('id="pending-by-manager"')[1]
+    assert "Priya Shah" in table_html and "HR / admins" in table_html
+    assert "Locked – not submitted" in table_html  # past its deadline, never submitted
 
 
 def test_open_becomes_ready(org, company, project, django_capture_on_commit_callbacks):
-    """T-205: OPEN → READY after the last approval; an open change request keeps it OPEN until
-    the deadline; payroll out of sync blocks it even then; a running period is never READY."""
+    """T-205: OPEN → READY after the last approval; an open change request keeps it OPEN, also
+    after the deadline (Change 9: the deadline is only a reminder, D-142); payroll out of sync
+    blocks it; a running period is never READY."""
     company.everyone(but=[org.dev2], now=BEFORE)
     state = period_state(PERIOD, BEFORE)
     assert (state.status, state.approved, state.required) == (OPEN, 9, 10)
@@ -169,10 +175,8 @@ def test_open_becomes_ready(org, company, project, django_capture_on_commit_call
         "1 open change request(s) on this period."
     ]
     noon = BEFORE.replace(hour=12)  # the approval deadline
-    assert (period_state(PERIOD, noon).status, period_state(PERIOD, noon).ready_reason) == (
-        READY,
-        "DEADLINE",
-    )
+    state = period_state(PERIOD, noon)
+    assert state.status == OPEN and state.deadline_passed  # Overdue, but not READY
     assert period_state(NEXT, NOW).status == OPEN  # still running
 
     TimesheetFactory(employee=org.ops1, week_start=EARLIER, status="SUBMITTED")
@@ -200,6 +204,7 @@ def test_line_values_come_from_the_week_records(org, company, make_week, project
         start_time=time(12), end_time=time(13), minutes=60,
     )  # fmt: skip
     company.approve(org.dev1, org.dev2)
+    company.rest()  # the hours appear once everyone is approved (D-142)
     lines = preview(PERIOD, NOW).lines
     dev1 = line_of(lines, "DEV1")
     week1, week2 = PayrollWeek.objects.filter(employee_code="DEV1").order_by("week_start")
@@ -220,7 +225,8 @@ def test_line_values_come_from_the_week_records(org, company, make_week, project
 
 def test_finalize_and_export(org, company, login_as):
     """T-207: Finalize & export saves the lines and exports what they pay as ONE batch, once;
-    not before READY; audited (D-135)."""
+    not before READY — since Change 9 not even after the deadline while anyone is pending
+    (D-135, D-142); audited."""
     company.everyone(but=[org.dev2], now=BEFORE)
     with pytest.raises(ValidationError, match="not approved"):
         finalize(PERIOD, system_actor="test", now=BEFORE)  # OPEN: no early finalize
@@ -228,15 +234,20 @@ def test_finalize_and_export(org, company, login_as):
         finalize(NEXT, system_actor="test", now=NOW)
     assert not PayrollRegister.objects.exists()
 
-    response = login_as(org.payroll).post(reverse("payroll_finalize", args=[PERIOD]))
-    assert response.status_code == 302  # READY at NOW: the approval deadline has passed
+    client = login_as(org.payroll)
+    refused = client.post(reverse("payroll_finalize", args=[PERIOD]))  # after the deadline
+    assert "1 of 10 people are not approved yet." in client.get(refused.url).content.decode()
+    assert not PayrollRegister.objects.exists()
+    company.approve(org.dev2)  # the last approval
+    response = client.post(reverse("payroll_finalize", args=[PERIOD]))
+    assert response.status_code == 302
     register = PayrollRegister.objects.get()
     assert (register.status, register.export_batch, register.ready_reason) == (
         "FINALIZED",
         "EXP-0001",
-        "DEADLINE",
+        "ALL_APPROVED",
     )
-    assert (register.required_count, register.approved_count) == (10, 9)
+    assert (register.required_count, register.approved_count) == (10, 10)
     assert register.finalized_by_code == "PAYROLL" and register.finalized_at == NOW
     weeks = PayrollWeek.objects.filter(period_start=PERIOD)
     assert set(weeks.values_list("status", "export_batch")) == {("EXPORTED", "EXP-0001")}
@@ -248,8 +259,8 @@ def test_finalize_and_export(org, company, login_as):
     assert audit.actor == org.payroll and audit.after["batch"] == "EXP-0001"
     assert (audit.after["lines"], audit.after["records"], audit.after["total_minutes"]) == (
         10,
-        18,
-        18 * 2400,
+        20,
+        20 * 2400,
     )
 
     with pytest.raises(ValidationError, match="already finalized"):
@@ -258,34 +269,32 @@ def test_finalize_and_export(org, company, login_as):
     assert AuditLog.objects.filter(action="EXPORT").count() == 1
 
 
-def test_people_not_approved_by_the_deadline(org, company, make_week):
-    """T-208: after the deadline, people not approved get a 0.00 line with their status and
-    their timesheets stay as they are; approved later → carried forward once (D-134, D-136)."""
-    company.everyone(but=[org.dev2, org.ops1])
-    make_week(org.dev2, PERIOD)  # submitted, never approved
-    make_week(org.dev2, PERIOD + timedelta(weeks=1))
-    before = list(Timesheet.objects.order_by("pk").values_list("pk", "status"))
+def test_approvable_after_finalizing_is_carried_forward(org, company, make_week):
+    """T-208: no 0.00 lines any more — a register is finalized only with everyone approved
+    (Change 9, D-142); someone who becomes approvable afterwards (a new hire added with a start
+    date inside the finalized period) is carried forward to the next register, once (D-136)."""
+    company.everyone()
     register = finalize(PERIOD, system_actor="test", now=NOW)
-    lines = {line.employee_code: line for line in register.lines.all()}
-    assert lines["DEV2"].get_status_display() == "Waiting for manager approval"
-    assert lines["OPS1"].get_status_display() == "Missed – not submitted"
-    for code in ("DEV2", "OPS1"):
-        assert lines[code].pay_total_minutes == 0 and lines[code].approved_at is None
-    assert list(Timesheet.objects.order_by("pk").values_list("pk", "status")) == before
-
-    company.approve(org.dev2)  # approved after the register was finalized
-    late = PayrollWeek.objects.filter(employee_code="DEV2")
+    assert set(register.lines.values_list("status", flat=True)) == {"APPROVED"}
+    assert register.lines.count() == 10
+    newcomer = EmployeeFactory(
+        employee_code="LATE1", manager=org.manager, hire_date=PERIOD + timedelta(days=1)
+    )
+    assert period_state(PERIOD, NOW).status == "FINALIZED"  # saved registers never change
+    company.approve(newcomer)  # approved after the register was finalized
+    late = PayrollWeek.objects.filter(employee_code="LATE1")
     assert set(late.values_list("status", flat=True)) == {"CURRENT"}
     with time_machine.travel(AFTER_NEXT, tick=False):
-        assert [r.employee_code for r in period_items(NEXT).late] == ["DEV2", "DEV2"]
+        assert [r.employee_code for r in period_items(NEXT).late] == ["LATE1", "LATE1"]
+        company.rest(NEXT, AFTER_NEXT)
         following = finalize(NEXT, system_actor="test", now=AFTER_NEXT)
-    dev2 = following.lines.get(employee_code="DEV2")
-    assert (dev2.carry_regular_minutes, dev2.carry_total_minutes) == (4800, 4800)
-    assert [item["week"] for item in dev2.carry_from] == ["2026-09-27", "2026-10-04"]
-    assert {item["kind"] for item in dev2.carry_from} == {"LATE_WEEK"}
-    assert dev2.period_total_minutes == 0 and dev2.pay_total_minutes == 4800
+    line = following.lines.get(employee_code="LATE1")
+    assert (line.carry_regular_minutes, line.carry_total_minutes) == (4800, 4800)
+    assert [item["week"] for item in line.carry_from] == ["2026-09-27", "2026-10-04"]
+    assert {item["kind"] for item in line.carry_from} == {"LATE_WEEK"}
+    assert line.pay_total_minutes == 4800  # its own 0.00 weeks of Oct 11 plus the carry
     assert set(late.values_list("export_batch", flat=True)) == {following.export_batch}
-    assert register.lines.get(employee_code="DEV2").pay_total_minutes == 0  # unchanged
+    assert not register.lines.filter(employee_code="LATE1").exists()  # unchanged
 
 
 def test_corrections_carry_into_the_next_open_register(
@@ -295,6 +304,7 @@ def test_corrections_carry_into_the_next_open_register(
     that isn't finalized — positive or negative; carry-only people get a line; finalized
     registers never change (D-136)."""
     company.approve(org.dev1, org.dev2, period=EARLIER)
+    company.rest(EARLIER)
     first = finalize(EARLIER, system_actor="test", now=NOW)
     mark_paid(EARLIER, system_actor="test", at=NOW)
     frozen = [
@@ -311,6 +321,7 @@ def test_corrections_carry_into_the_next_open_register(
         holiday_minutes=0, total_minutes=60, approved_by_code="MANAGER",
         approved_by_name="Priya Shah", approved_at=NOW, reason="x", source_timesheet_id=1,
     )  # fmt: skip
+    company.rest()  # Sep 27 READY: everyone approved (D-142)
     lines = preview(PERIOD, NOW).lines
     dev1, dev2, gone = (line_of(lines, c) for c in ("DEV1", "DEV2", "GONE1"))
     assert (dev1.carry_overtime_minutes, dev1.carry_total_minutes) == (120, 120)
@@ -334,6 +345,7 @@ def test_corrections_carry_into_the_next_open_register(
 def test_registers_are_append_only(org, company):
     """T-210: registers only move FINALIZED → PAID; lines never change; nothing is deleted."""
     company.approve(org.dev1)
+    company.rest()
     register = finalize(PERIOD, system_actor="test", now=NOW)
     register.export_batch = "EXP-9999"
     with pytest.raises(AppendOnlyError, match="frozen"):
@@ -372,21 +384,23 @@ def test_registers_are_append_only(org, company):
 def test_mark_as_paid(org, company, project, django_capture_on_commit_callbacks):
     """T-211: Mark as paid pays the register and every record of its batch, once (D-135)."""
     company.approve(org.dev1, period=EARLIER)
+    company.rest(EARLIER)
     finalize(EARLIER, system_actor="test", now=NOW)
     mark_paid(EARLIER, system_actor="test", at=NOW)
     correct(org.dev1, EARLIER, time(18), project, django_capture_on_commit_callbacks)
     company.approve(org.dev1)
+    company.rest()
     register = finalize(PERIOD, actor=org.payroll, now=NOW)
-    assert mark_paid(PERIOD, actor=org.payroll, at=NOW) == (2, 1)
+    assert mark_paid(PERIOD, actor=org.payroll, at=NOW) == (20, 1)  # 10 people × 2 weeks
     register.refresh_from_db()
     assert register.status == "PAID" and register.paid_at == NOW
     in_batch = [
         *PayrollWeek.objects.filter(export_batch=register.export_batch),
         *PayrollAdjustment.objects.filter(export_batch=register.export_batch),
     ]
-    assert len(in_batch) == 3 and {r.status for r in in_batch} == {"PAID"}
+    assert len(in_batch) == 21 and {r.status for r in in_batch} == {"PAID"}
     pay = AuditLog.objects.get(action="PAY", entity_id=PERIOD.isoformat())
-    assert pay.actor == org.payroll and (pay.after["records"], pay.after["adjustments"]) == (2, 1)
+    assert pay.actor == org.payroll and (pay.after["records"], pay.after["adjustments"]) == (20, 1)
     assert mark_paid(PERIOD, actor=org.payroll, at=NOW) is None  # nothing paid twice
     assert AuditLog.objects.filter(action="PAY", entity_id=PERIOD.isoformat()).count() == 1
 
@@ -401,7 +415,9 @@ def test_register_csv_downloads(org, company, login_as):
     org.dev1.first_name, org.dev1.last_name = '=HYPERLINK("x")', "@evil"
     org.dev1.save()
     company.approve(org.dev1, period=EARLIER)
+    company.rest(EARLIER)
     company.approve(org.dev1, org.dev2)
+    company.rest()
     client = login_as(org.payroll)
     assert client.get(reverse("payroll_register_csv", args=[PERIOD])).status_code == 404
     assert client.get(reverse("payroll_detail_csv", args=[PERIOD])).status_code == 404
@@ -419,7 +435,8 @@ def test_register_csv_downloads(org, company, login_as):
     assert (dev1["carry_total_hours"], dev1["pay_total_hours"]) == ("0.00", "80.00")
     assert dev1["line_status"] == "Approved" and dev1["approved_by"] == "Priya Shah"
     ceo = dict(zip(header, next(r for r in rows if r[0] == "CEO"), strict=True))
-    assert ceo["line_status"] == "Missed – not submitted" and ceo["pay_total_hours"] == "0.00"
+    assert ceo["line_status"] == "Approved" and ceo["pay_total_hours"] == "0.00"  # nothing entered
+    assert ceo["approved_by"] == "Hana Reed"  # approved without a submission (D-141)
 
     detail = client.get(reverse("payroll_detail_csv", args=[PERIOD]))
     assert (
@@ -427,7 +444,7 @@ def test_register_csv_downloads(org, company, login_as):
         in (detail["Content-Disposition"])
     )
     detail_header, *detail_rows = read_csv(detail)
-    assert detail_header == [name for name, _, _ in CSV_COLUMNS] and len(detail_rows) == 4
+    assert detail_header == [name for name, _, _ in CSV_COLUMNS] and len(detail_rows) == 20
 
     everything = client.get(reverse("payroll_registers_csv"))
     assert (
@@ -451,6 +468,7 @@ def test_payroll_pages(org, company, login_as):
     """T-213: /payroll/ lists ended periods newest first with status, approved x of y and pay
     total; each opens its register; older links redirect; 403 for everyone else (D-138)."""
     company.approve(org.dev1, period=EARLIER)
+    company.rest(EARLIER)
     finalize(EARLIER, system_actor="test", now=NOW)
     mark_paid(EARLIER, system_actor="test", at=NOW)
     company.approve(org.dev1, org.dev2)
@@ -459,13 +477,14 @@ def test_payroll_pages(org, company, login_as):
     table_html = html.split('id="pay-periods"')[1].split("</table>")[0]
     periods = [p for p in table_html.split('data-period="')[1:]]
     assert [p[:10] for p in periods] == ["2026-09-27", "2026-09-13"]  # newest first
-    assert "Ready" in periods[0] and "2 of 10" in periods[0] and "160.00" in periods[0]
-    assert "after finalizing" in periods[0]
-    assert "Paid" in periods[1] and "1 of 10" in periods[1] and "EXP-0001" in periods[1]
+    assert "Open" in periods[0] and "2 of 10" in periods[0] and "160.00" not in periods[0]
+    assert "Who&#x27;s pending" in periods[0] or "Who's pending" in periods[0]
+    assert "Paid" in periods[1] and "10 of 10" in periods[1] and "EXP-0001" in periods[1]
     assert "Register CSV" in periods[1]
     page = client.get(reverse("payroll_period", args=[PERIOD])).content.decode()
-    assert 'id="register-status"' in page and "Ready" in page.split('id="register-status"')[1]
-    assert 'id="finalize-dialog"' in page and 'id="pending"' in page
+    assert "Open" in page.split('id="register-status"')[1]
+    assert 'id="register"' not in page and 'id="finalize-dialog"' not in page  # OPEN (D-142)
+    assert 'id="pending-by-manager"' in page
     assert client.get(reverse("payroll_period", args=[date(2026, 9, 30)])).url == reverse(
         "payroll_period", args=[PERIOD]
     )

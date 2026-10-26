@@ -166,3 +166,25 @@ def make_week(project, fixed_now):
         return sheet
 
     return make
+
+
+@pytest.fixture
+def approve_everyone(django_capture_on_commit_callbacks):
+    """Approve everyone still pending in a period, as their manager (an admin for no-manager
+    staff), the Change 9 way: weeks they never submitted are approved with what is entered —
+    usually nothing, 0.00. A register is READY only once everyone is approved (D-142)."""
+    from directory.models import Employee
+    from timesheets.models import PeriodApproval
+    from timesheets.services.approvals import approve_period, company_period_rows
+
+    def _approve(period_start, now):
+        for row in company_period_rows(period_start, now):
+            if row.status == PeriodApproval.Status.APPROVED:
+                continue
+            person = row.employee
+            admins = Employee.objects.filter(is_admin=True).exclude(pk=person.pk)
+            approver = person.manager or admins.order_by("employee_code").first()
+            with django_capture_on_commit_callbacks(execute=True):
+                approve_period(approver, person, period_start, now=now, confirm_unsubmitted=True)
+
+    return _approve

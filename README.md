@@ -115,11 +115,14 @@ changing an approved week puts its pay period back to pending.
 Managers (and admins, for employees with no manager) open **Approvals** to pick a pay period
 (14 days, two Sunday-to-Saturday weeks counted from `PAY_PERIOD_ANCHOR`, a Sunday; default: the most recent completed one) and review each direct report's two weeks:
 hours worked (Break never counts), leave, and Late / Overtime / Missing days flags. A period
-can be approved or rejected (with a comment) once its weeks are submitted; a locked week has an
-Unlock button. Clean rows can be bulk approved. Nobody approves their own timesheet.
-Approve each period by **Monday 12:00** after it ends (settings `APPROVAL_DEADLINE_DAYS` and
-`APPROVAL_DEADLINE_TIME`); after that, rows not yet approved are marked **Overdue** and payroll
-can close the period without them.
+can be approved or rejected (with a comment) once its weeks are submitted **or locked**. For a
+locked week (the employee never submitted) the manager can **Edit** it in the weekly grid, then
+approve it with the hours entered (after a confirmation) or reject it; it is marked "Not
+submitted by employee" and still counts as missed. A reopened week waits for the employee until
+their window ends. A locked week still has an Unlock button. Clean rows can be bulk approved.
+Nobody approves their own timesheet. Approve each period by **Monday 12:00** after it ends
+(settings `APPROVAL_DEADLINE_DAYS` and `APPROVAL_DEADLINE_TIME`); after that, rows not yet
+approved are marked **Overdue** — payroll can pay the period only once everyone is approved.
 
 ## Payroll
 Approved weeks are copied into a separate database, `payroll.sqlite3`, right after the
@@ -129,10 +132,11 @@ Holiday separately (Break is unpaid and never counted).
 **Payroll** (`/payroll/`, payroll staff and admins only) lists every ended pay period, newest
 first, with its **register**: one line per employee with Week 1, Week 2 and Period hours, the
 **carry-forward** columns (highlighted) and the **Pay total**, plus a totals row.
-- **Open**: approvals are still coming in. You see a live preview and who is still pending
-  (with their manager).
-- **Ready**: everyone is approved, or the approval deadline has passed (people not approved
-  then get a 0.00 line marked "Missed – not submitted" or "Waiting for manager approval").
+- **Open**: approvals are still coming in. You see how many are approved and who is still
+  pending (no hours yet). **Pending approvals** lists, per manager, who still has to be
+  approved and why (also as CSV); HR finds it in the Admin header too.
+- **Ready**: every person who must be approved is approved (locked weeks included) and no change
+  request is open. The deadline alone never makes a period ready.
 - **Finalize & export** saves the register for good as one batch (`EXP-0007`). Download the
   **Register CSV** and the **Detailed CSV** (week and adjustment rows) as often as you like;
   **Download all periods** gives every finalized register in one file. Then **Mark as paid**.

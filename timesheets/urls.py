@@ -36,6 +36,21 @@ urlpatterns = [
         approval_views.approval_detail,
         name="approval_detail",
     ),
+    path(
+        "approvals/<isodate:period>/<str:employee_code>/weeks/<isodate:week>/edit/",
+        approval_views.approval_week_edit,
+        name="approval_week_edit",
+    ),
+    path(
+        "approvals/<isodate:period>/<str:employee_code>/weeks/<isodate:week>/rows/",
+        approval_views.approval_week_rows,
+        name="approval_week_rows",
+    ),
+    path(
+        "approvals/<isodate:period>/<str:employee_code>/weeks/<isodate:week>/totals/",
+        approval_views.approval_week_totals,
+        name="approval_week_totals",
+    ),
     path("approvals/requests/", request_views.request_inbox, name="request_inbox"),
     path("approvals/requests/<int:pk>/", request_views.request_detail, name="request_detail"),
     path("approvals/requests/<int:pk>/edit/", request_views.request_edit, name="request_edit"),

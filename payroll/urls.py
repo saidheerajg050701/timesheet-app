@@ -26,6 +26,8 @@ urlpatterns = [
         name="payroll_detail_csv",
     ),
     path("payroll/registers.csv", views.payroll_registers_csv, name="payroll_registers_csv"),
+    path("payroll/pending/", views.payroll_pending, name="payroll_pending"),
+    path("payroll/pending.csv", views.payroll_pending_csv, name="payroll_pending_csv"),
     path("payroll/batches/<str:batch>.csv", views.payroll_batch_csv, name="payroll_batch_csv"),
     path("payroll/corrections/", views.payroll_corrections, name="payroll_corrections"),
 ]

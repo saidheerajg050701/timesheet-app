@@ -36,7 +36,7 @@
   </div>
 {% elif state.status == "APPROVED" and approval.status == "APPROVED" %}
   <div class="alert alert-success" role="status" id="approval-status">
-    Approved by {{ approval.approver.first_name }} {{ approval.approver.last_name }} on {{ approval.decided_at|date:"M j, Y" }}.
+    Approved by {{ approval.approver.first_name }} {{ approval.approver.last_name }} on {{ approval.decided_at|date:"M j, Y" }}.{% if not sheet.submitted_at %} <span id="approved-unsubmitted">Approved by your manager without your submission — this week still counts as missed.</span>{% endif %}
   </div>
 {% elif state.status == "SUBMITTED" %}
   <p class="small text-body-secondary" id="approval-status">Waiting for approval{% if me.manager %} by {{ me.manager.first_name }} {{ me.manager.last_name }}{% endif %}.</p>

@@ -43,17 +43,19 @@ def status(employee, week):
 
 
 def test_approve_blocked_while_a_week_is_draft_or_locked(org, make_week, login_as):
-    """T-29: approve is blocked while a week is still DRAFT or LOCKED, with the reason shown."""
+    """T-29: approve is blocked while a week is still DRAFT, with the reason shown. Since
+    Change 9 a LOCKED week no longer blocks: it needs the explicit confirmation (D-139, D-141)."""
     make_week(org.dev1, WEEK1)
-    make_week(org.dev1, WEEK2, "LOCKED")
+    make_week(org.dev1, WEEK2, "LOCKED", submitted_at=None)  # never submitted
     make_week(org.dev2, CURRENT)
     make_week(org.dev2, CURRENT + timedelta(weeks=1), "DRAFT")
     client = login_as(org.manager)
 
     page = client.get(detail_url(org.dev1)).content.decode()
-    assert "Week 2 is locked — unlock it first." in page and 'value="approve"' not in page
-    response = post(client, org.dev1, "approve")
-    assert "Week 2 is locked" in client.get(response.url).content.decode()
+    assert 'id="approve-dialog"' in page
+    assert "Week 2 was not submitted by John Kim; it will be approved with 40.00 hours." in page
+    response = post(client, org.dev1, "approve")  # without the confirmation: refused
+    assert "Confirm to approve" in client.get(response.url).content.decode()
     page = client.get(detail_url(org.dev2, CURRENT)).content.decode()
     assert "Week 2 hasn&#x27;t been submitted yet." in page
     post(client, org.dev2, "approve", CURRENT)

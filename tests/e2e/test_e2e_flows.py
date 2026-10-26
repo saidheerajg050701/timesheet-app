@@ -10,7 +10,7 @@ from audit.models import AuditLog
 from directory.models import Employee
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ, log_in
 from tests.factories import TEST_PASSWORD, ProjectFactory
-from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
+from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
 from timesheets.services.approvals import approve_period
 
 pytestmark = E2E
@@ -218,16 +218,23 @@ def test_change_request_then_manager_edits_directly(e2e_org, make_week, open_as)
 
 
 def test_approve_then_payroll_sees_the_records(e2e_org, make_week, open_as):
-    """T-150: E2E manager approves a period; the payroll user sees both week records."""
+    """T-150: E2E manager approves a period; the payroll user sees both week records — once
+    everyone in the period is approved (Change 9: no hours while the register is OPEN)."""
     make_week(e2e_org.dev1, PERIOD, monday_end=time(19))  # 42 h: 2 h overtime
     make_week(e2e_org.dev1, WEEK2)
+    for person in Employee.objects.exclude(pk=e2e_org.dev1.pk):  # the others, 0.00 weeks
+        approver = person.manager or e2e_org.hr
+        approve_period(approver, person, PERIOD, now=datetime.now(TZ), confirm_unsubmitted=True)
+    payroll = open_as(e2e_org.payroll)
+    payroll.goto(f"{reverse('payroll')}?period={PERIOD.isoformat()}")
+    expect(payroll.locator("#payroll-records")).to_have_count(0)  # OPEN: John still pending
+
     manager = open_as(e2e_org.manager)
     manager.goto(reverse("approval_detail", args=[PERIOD, "DEV1"]))
     manager.get_by_role("button", name="Approve both weeks").click()
     expect(manager.get_by_role("alert")).to_have_text("Approved John's period.")
 
-    payroll = open_as(e2e_org.payroll)
-    payroll.goto(f"{reverse('payroll')}?period={PERIOD.isoformat()}")
+    payroll.reload()
     records = payroll.locator("#payroll-records tbody tr", has_text="John Kim")
     expect(records).to_have_count(2)
     expect(records.filter(has_text="Sep 27")).to_contain_text("40.00")
@@ -266,12 +273,15 @@ def test_reject_with_comment_then_resubmit(e2e_org, make_week, open_as):
 
 def test_payroll_export_and_mark_paid(e2e_org, make_week, open_as, clock):
     """T-152: E2E payroll finalizes & exports the period's register, downloads the detailed
-    CSV, then marks it paid (D-135)."""
+    CSV, then marks it paid (D-135). Everyone else is approved too: since Change 9 a register
+    is ready only then (D-142) — their never-submitted weeks with 0.00 hours."""
     make_week(e2e_org.dev1, PERIOD)
     make_week(e2e_org.dev1, WEEK2)
-    approve_period(e2e_org.manager, e2e_org.dev1, PERIOD, now=datetime.now(TZ))  # publishes
+    for person in Employee.objects.all():  # publishes after each commit
+        approver = person.manager or e2e_org.hr
+        approve_period(approver, person, PERIOD, now=datetime.now(TZ), confirm_unsubmitted=True)
     page = open_as(e2e_org.payroll)
-    page.goto(reverse("payroll_period", args=[PERIOD]))  # the approval deadline has passed
+    page.goto(reverse("payroll_period", args=[PERIOD]))
     expect(page.locator("#register-status")).to_have_text("Ready")
     page.get_by_role("button", name="Finalize & export").click()
     page.locator("#finalize-dialog").get_by_role("button", name="Finalize & export").click()
@@ -287,7 +297,8 @@ def test_payroll_export_and_mark_paid(e2e_org, make_week, open_as, clock):
     expect(page.locator("#payroll-records")).to_contain_text("Exported")
     page.get_by_role("button", name="Mark as paid").click()
     expect(page.locator("#register-status")).to_have_text("Paid")
-    expect(page.locator("#payroll-records tbody tr", has_text="Paid")).to_have_count(2)
+    john = page.locator("#payroll-records tbody tr", has_text="John Kim")
+    expect(john.filter(has_text="Paid")).to_have_count(2)
 
 
 def test_hr_deactivates_an_employee(e2e_org, open_as, anonymous):
@@ -616,9 +627,10 @@ def test_register_from_last_approval_to_paid(e2e_org, make_week, open_as, clock)
     payroll = open_as(e2e_org.payroll)
     payroll.goto(reverse("payroll_period", args=[PERIOD]))
     expect(payroll.locator("#register-status")).to_have_text("Open")
-    expect(payroll.locator("#pending")).to_contain_text("Sara Ng")
-    expect(payroll.locator("#pending")).to_contain_text("Priya Shah")  # her approver
-    expect(payroll.get_by_role("button", name="Finalize & export")).to_be_disabled()
+    pending = payroll.locator("#pending-by-manager")
+    expect(pending).to_contain_text("Sara Ng")
+    expect(pending).to_contain_text("Priya Shah")  # her approver
+    expect(payroll.get_by_role("button", name="Finalize & export")).to_have_count(0)  # OPEN
 
     manager = open_as(e2e_org.manager)
     manager.goto(reverse("approval_detail", args=[PERIOD, "DEV2"]))
@@ -649,3 +661,48 @@ def test_register_from_last_approval_to_paid(e2e_org, make_week, open_as, clock)
     expect(row).to_contain_text("Paid")
     expect(row).to_contain_text(f"{len(people)} of {len(people)}")
     expect(row).to_contain_text("EXP-0001")
+
+
+def test_manager_edits_and_approves_a_locked_employee(e2e_org, open_as):
+    """T-224: E2E Sara never submitted (both weeks locked): her manager enters her hours in the
+    grid, approves through the confirmation — the last approval — and payroll's register turns
+    READY and is finalized & exported (D-139–D-142)."""
+    for person in Employee.objects.exclude(pk=e2e_org.dev2.pk):  # everyone else: approved
+        approver = person.manager or e2e_org.hr
+        approve_period(approver, person, PERIOD, now=datetime.now(TZ), confirm_unsubmitted=True)
+    payroll = open_as(e2e_org.payroll)
+    payroll.goto(reverse("payroll_period", args=[PERIOD]))
+    expect(payroll.locator("#register-status")).to_have_text("Open")  # deadline passed: Overdue
+    expect(payroll.locator("#pending-by-manager")).to_contain_text("Locked – not submitted")
+
+    manager = open_as(e2e_org.manager)
+    manager.goto(reverse("approval_detail", args=[PERIOD, "DEV2"]))
+    expect(manager.locator("#week-1")).to_contain_text("Not submitted by employee")
+    manager.get_by_role("link", name="Edit week 1").click()
+    add_row(manager, "Project work", "PRJ-001 Customer Portal")
+    monday = PERIOD + timedelta(days=1)
+    panel = open_cell(manager, PORTAL, monday)
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("17:00")
+    panel.get_by_role("button", name="Done").click()
+    manager.get_by_role("button", name="Save the week").click()
+    expect(manager.get_by_role("alert")).to_contain_text("Week of Sep 27 saved for Sara.")
+
+    manager.get_by_role("button", name="Approve both weeks").click()
+    dialog = manager.locator("#approve-dialog")
+    expect(dialog).to_contain_text(
+        "Week 1 was not submitted by Sara Ng; it will be approved with 8.00 hours."
+    )
+    expect(dialog).to_contain_text("Week 2 has 0.00 hours.")
+    dialog.get_by_role("button", name="Approve both weeks").click()
+    expect(manager.get_by_role("alert")).to_have_text("Approved Sara's period.")
+    sheet = Timesheet.objects.get(employee=e2e_org.dev2, week_start=PERIOD)
+    assert (sheet.status, sheet.submitted_at) == ("APPROVED", None)
+
+    payroll.reload()
+    expect(payroll.locator("#register-status")).to_have_text("Ready")
+    payroll.get_by_role("button", name="Finalize & export").click()
+    payroll.locator("#finalize-dialog").get_by_role("button", name="Finalize & export").click()
+    expect(payroll.get_by_role("alert")).to_contain_text("exported as batch EXP-0001")
+    sara = payroll.locator('#register tr[data-employee="DEV2"]')
+    expect(sara.locator('[data-role="pay-total"]')).to_have_text("8.00")

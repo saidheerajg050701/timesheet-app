@@ -9,9 +9,9 @@
 <header class="page-header">
   <div>
     <h1 class="h3 mb-0">Payroll</h1>
-    <p class="page-subtitle">One register per pay period: preview it while approvals come in, then finalize &amp; export it and mark it paid.</p>
+    <p class="page-subtitle">One register per pay period: once every manager has approved everyone, finalize &amp; export it, then mark it paid.</p>
   </div>
-  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_corrections' %}">Corrections</a></div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_pending' %}">Pending approvals</a> <a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_corrections' %}">Corrections</a></div>
 </header>
 
 {% include "payroll/_out_of_sync.html" %}
@@ -25,11 +25,12 @@
           <td><a href="{% url 'payroll_period' p.period_start %}">{{ p.period_start|date:"M j" }} – {{ p.period_end|date:"M j, Y" }}</a></td>
           <td>{% include "payroll/_register_status.html" with state=p only %}</td>
           <td class="text-end">{{ p.approved }} of {{ p.required }}</td>
-          <td class="text-end fw-semibold">{{ p.pay_total|hours2 }}</td>
+          <td class="text-end fw-semibold">{% if p.status == "OPEN" %}<span class="text-body-secondary fw-normal">—</span>{% else %}{{ p.pay_total|hours2 }}{% endif %}</td>
           <td>{% if p.register %}{{ p.register.export_batch }}{% else %}—{% endif %}</td>
           <td class="text-nowrap">{% if p.register %}
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'payroll_register_csv' p.period_start %}">Register CSV</a>
             <a class="btn btn-sm btn-outline-secondary" href="{% url 'payroll_detail_csv' p.period_start %}">Detailed CSV</a>
+          {% elif p.status == "OPEN" %}<a class="small" href="{% url 'payroll_pending' %}?period={{ p.period_start|date:'Y-m-d' }}">Who's pending</a>
           {% else %}<span class="text-body-secondary small">after finalizing</span>{% endif %}</td>
         </tr>
       {% empty %}

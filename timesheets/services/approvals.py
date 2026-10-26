@@ -2,7 +2,8 @@
 
 Biweekly approval (FR-7, D-54–D-63): the approvals page rows, approve, reject, bulk approve,
 plus the Phase 6 reset/unlock used by change requests. Every change here happens in one
-transaction with its PeriodApproval.
+transaction with its PeriodApproval. Since Change 9 the approver decides every required week
+that is SUBMITTED or LOCKED (D-139); `decision_blockers` is the one rule for when they can.
 """
 
 from dataclasses import dataclass, field
@@ -20,6 +21,7 @@ from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 from timesheets.services.calendar import (
     OUTSIDE_EMPLOYMENT,
     WeekState,
+    approval_deadline_for,
     company_tz,
     employed_on,
     pay_period_for,
@@ -130,6 +132,7 @@ class WeekView:
     state: WeekState
     summary: WeekSummary
     open_request: ChangeRequest | None = None
+    missing_days: int = 0  # employed weekdays up to today with nothing entered (D-55)
 
     @property
     def week_start(self):
@@ -141,8 +144,23 @@ class WeekView:
 
     @property
     def required(self):
-        """Weeks with at least one employed day must be SUBMITTED; others don't count (D-56)."""
+        """Weeks with at least one employed day need a decision; others don't count (D-56)."""
         return self.state.status != OUTSIDE_EMPLOYMENT
+
+    @property
+    def hours(self):
+        """What approving pays for this week: worked + leave minutes (Break never counts)."""
+        return self.summary.worked + self.summary.leave
+
+    @property
+    def not_submitted_by_employee(self):
+        """Locked or approved without the employee ever submitting it: no submission time
+        (D-141). The same fact makes the week count as missed (D-75)."""
+        return (
+            self.required
+            and self.state.status in (Timesheet.Status.LOCKED, Timesheet.Status.APPROVED)
+            and (self.sheet is None or self.sheet.submitted_at is None)
+        )
 
 
 @dataclass
@@ -171,9 +189,14 @@ class PeriodRow:
         return not self.blockers
 
     @property
+    def unsubmitted_weeks(self):
+        """Required weeks that would be approved although the employee never submitted them."""
+        return [w for w in self.weeks if w.required and w.state.status == Timesheet.Status.LOCKED]
+
+    @property
     def can_bulk(self):
-        """Clean rows only: approvable now and no flags (D-63)."""
-        return self.can_decide and not any(self.flags.values())
+        """Clean rows only: approvable now, no flags, no locked week (D-63, D-139)."""
+        return self.can_decide and not any(self.flags.values()) and not self.unsubmitted_weeks
 
 
 def approvable_employees(viewer):
@@ -210,15 +233,10 @@ def period_rows(viewer, period_start, now):
 def company_period_rows(period_start, now):
     """Everyone in the company who must be approved for the period: together, every approver's
     list (direct manager, or an admin for no-manager staff, D-11). For the pay register (D-134)."""
-    people = Employee.objects.select_related("team", "manager").order_by("last_name", "first_name")
+    people = Employee.objects.select_related("team", "manager__team").order_by(
+        "last_name", "first_name"
+    )
     return _build_rows(must_be_approved(people, period_start), period_start, now)
-
-
-def approver_label(employee):
-    """Who approves this employee: their manager, or an admin when they have none (D-11)."""
-    if employee.manager_id:
-        return f"{employee.manager.first_name} {employee.manager.last_name}"
-    return "HR / an admin"
 
 
 def period_row(viewer, employee, period_start, now):
@@ -255,54 +273,68 @@ def _build_rows(people, period_start, now):
         for number, start in enumerate(starts, start=1):
             sheet = sheets.get((employee.pk, start))
             entries = list(sheet.entries.all()) if sheet else []
-            weeks.append(
-                WeekView(
-                    number=number,
-                    state=week_state(employee, start, sheet, now),
-                    summary=summarize(entries, employee, start),
-                    open_request=open_requests.get(sheet.pk) if sheet else None,
-                )
+            week = WeekView(
+                number=number,
+                state=week_state(employee, start, sheet, now),
+                summary=summarize(entries, employee, start),
+                open_request=open_requests.get(sheet.pk) if sheet else None,
             )
+            if week.required:
+                week.missing_days = sum(
+                    1
+                    for d in week.summary.days
+                    if d.expected > 0 and d.total == 0 and d.day <= today
+                )
+            weeks.append(week)
         row = PeriodRow(employee, period_start, weeks, approvals.get(employee.pk))
-        row.flags = _flags(row, today)
-        row.blockers = _blockers(row)
+        row.flags = _flags(row)
+        row.blockers = decision_blockers(row)
         rows.append(row)
     return rows
 
 
-def _flags(row, today):
+def _flags(row):
     """Late, overtime and missing days (D-55); Hours worked never includes Break."""
     required = [w for w in row.weeks if w.required]
-    missing = sum(
-        1
-        for w in required
-        for d in w.summary.days
-        if d.expected > 0 and d.total == 0 and d.day <= today
-    )
     return {
         "late": any(w.sheet is not None and w.sheet.is_late for w in required),
         "overtime": any(w.summary.worked > w.summary.expected for w in required),
-        "missing_days": missing,
+        "missing_days": sum(w.missing_days for w in required),
     }
 
 
-BLOCKED_BY_STATUS = {
-    Timesheet.Status.LOCKED: "Week {n} is locked — unlock it first.",
-    Timesheet.Status.REOPENED: "Week {n} is reopened — waiting for the employee to resubmit.",
-    Timesheet.Status.DRAFT: "Week {n} hasn't been submitted yet.",
-    "NOT_STARTED": "Week {n} hasn't been submitted yet.",
-    Timesheet.Status.APPROVED: "Week {n} is already approved.",
-}
+DECIDABLE = (Timesheet.Status.SUBMITTED, Timesheet.Status.LOCKED)  # D-139
 
 
-def _blockers(row):
-    """Why Approve / Reject can't be used right now; empty list = they can (D-06, D-56–D-58)."""
+def week_blocker(row, week):
+    """Why the approver can't act on this required week yet, or "" (D-139)."""
+    status = week.state.status
+    if status == Timesheet.Status.REOPENED:
+        until = week.sheet.reopen_until.astimezone(company_tz())
+        return (
+            f"Week {week.number} is reopened until {until:%a %b %-d, %-I:%M %p} — waiting for "
+            f"{row.employee.first_name} to resubmit."
+        )
+    if status in (Timesheet.Status.DRAFT, "NOT_STARTED"):
+        return f"Week {week.number} hasn't been submitted yet."
+    if status not in DECIDABLE:
+        return f"Week {week.number} is already approved."
+    return ""
+
+
+def decision_blockers(row):
+    """Why Approve / Reject can't be used right now; empty list = they can (D-56–D-58, D-139).
+
+    Every required week must be SUBMITTED or LOCKED (a locked week is decided with the hours
+    entered so far); a REOPENED week waits for the employee until its window ends; an open
+    change request still blocks.
+    """
     if row.status == PeriodApproval.Status.APPROVED:
         return ["This period is already approved."]
     blockers = []
     for week in row.weeks:
-        if week.required and week.state.status != Timesheet.Status.SUBMITTED:
-            blockers.append(BLOCKED_BY_STATUS[week.state.status].format(n=week.number))
+        if week.required and (problem := week_blocker(row, week)):
+            blockers.append(problem)
         if week.open_request:
             blockers.append(f"Handle the open change request on week {week.number} first.")
     if not any(w.required for w in row.weeks):
@@ -310,12 +342,60 @@ def _blockers(row):
     return blockers
 
 
-def approve_period(viewer, employee, period_start, *, now):
-    """APPROVED: PeriodApproval + both weeks + audit + payroll hook, in one transaction."""
+def edit_blockers(row, week):
+    """Why the approver can't edit this week from Approvals, or [] (D-140)."""
+    if row.status == PeriodApproval.Status.APPROVED:
+        return ["This period is already approved — corrections go through a change request."]
+    if not week.required:
+        return ["The employee wasn't employed this week."]
+    problems = [p for p in (week_blocker(row, week),) if p]
+    if week.open_request:
+        problems.append(f"Handle the open change request on week {week.number} first.")
+    return problems
+
+
+def unsubmitted_notes(row):
+    """What the Approve confirmation says for weeks the employee never submitted (D-141)."""
+    name = f"{row.employee.first_name} {row.employee.last_name}"
+    notes = []
+    for week in row.unsubmitted_weeks:
+        notes.append(
+            f"Week {week.number} was not submitted by {name}; it will be approved with "
+            f"{week.hours / 60:.2f} hours."
+        )
+        if not week.hours:
+            notes.append(f"Week {week.number} has 0.00 hours.")
+        if week.missing_days:
+            days = week.missing_days
+            notes.append(f"Week {week.number} has {days} missing day{'' if days == 1 else 's'}.")
+    return notes
+
+
+def _sheet_for(employee, week):
+    """The week's timesheet; a locked week nobody ever opened gets one now (as Unlock does)."""
+    if week.sheet is not None:
+        return week.sheet
+    return Timesheet.objects.create(
+        employee=employee, week_start=week.week_start, status=Timesheet.Status.LOCKED
+    )
+
+
+def approve_period(viewer, employee, period_start, *, now, confirm_unsubmitted=False):
+    """APPROVED: PeriodApproval + both weeks + audit + payroll hook, in one transaction.
+
+    A LOCKED week is approved with the hours entered so far, only with `confirm_unsubmitted`
+    (the approver saw the confirmation, D-141); it keeps no submission time, so it stays
+    "not submitted by employee" and still counts as missed (D-75).
+    """
     with transaction.atomic():
         row = period_row(viewer, employee, period_start, now)
         if row.blockers:
             raise ValidationError(row.blockers)
+        unsubmitted = [w.week_start.isoformat() for w in row.unsubmitted_weeks]
+        if unsubmitted and not confirm_unsubmitted:
+            raise ValidationError(
+                [*unsubmitted_notes(row), "Confirm to approve the weeks that weren't submitted."]
+            )
         approval, _ = PeriodApproval.objects.select_for_update().get_or_create(
             employee=employee, period_start=period_start
         )
@@ -327,20 +407,25 @@ def approve_period(viewer, employee, period_start, *, now):
         approval.save(update_fields=["status", "approver", "decided_at", "comment"])
         for week in row.weeks:
             if week.required:
-                week.sheet.status = Timesheet.Status.APPROVED
-                week.sheet.save(update_fields=["status"])
+                sheet = _sheet_for(employee, week)
+                sheet.status = Timesheet.Status.APPROVED
+                sheet.save(update_fields=["status"])
+        after = {
+            "status": approval.status,
+            "weeks": _week_statuses(row),
+            "worked_minutes": row.worked,
+            "leave_minutes": row.leave,
+        }
+        if unsubmitted:
+            after["not_submitted_by_employee"] = unsubmitted
         record(
             AuditLog.Action.APPROVE,
             "PeriodApproval",
             approval.pk,
             actor=viewer,
             before=before,
-            after={
-                "status": approval.status,
-                "weeks": _week_statuses(row),
-                "worked_minutes": row.worked,
-                "leave_minutes": row.leave,
-            },
+            after=after,
+            at=now,  # the decision time, as PeriodApproval.decided_at
         )
         publish_payroll_period(approval, actor=viewer, at=now)
     return approval
@@ -368,7 +453,7 @@ def reject_period(viewer, employee, period_start, comment, *, now):
         reopened = {}
         for week in row.weeks:
             if week.required:
-                sheet = week.sheet
+                sheet = _sheet_for(employee, week)
                 sheet.status = Timesheet.Status.REOPENED
                 sheet.reopen_until = reopen_until_for(sheet.week_start, now)
                 sheet.manager_note = comment
@@ -437,6 +522,88 @@ def period_resubmitted(employee, week_start, *, at):
         after={"status": approval.status, "resubmitted_week": week_start},
     )
     return approval
+
+
+# --- who still has to approve (Change 9, D-143) ---------------------------------------------
+
+
+def person_state(row):
+    """Where a not-yet-approved person stands, in words, for payroll and HR."""
+    required = [w for w in row.weeks if w.required]
+    if any(w.open_request for w in row.weeks):
+        return "Change request open"
+    reopened = [w for w in required if w.state.status == Timesheet.Status.REOPENED]
+    if reopened:
+        until = min(w.sheet.reopen_until for w in reopened).astimezone(company_tz())
+        return f"Reopened until {until:%a %b %-d, %-I:%M %p}"
+    if any(w.state.status == Timesheet.Status.LOCKED for w in required):
+        return "Locked – not submitted"
+    if any(w.state.status in (Timesheet.Status.DRAFT, "NOT_STARTED") for w in required):
+        return "Not submitted yet"
+    return "Submitted"
+
+
+@dataclass
+class ManagerGroup:
+    """One approver's part of the period: everyone they must approve, and who is still open."""
+
+    approver: Employee | None  # None: staff with no manager, approved by an admin (D-11)
+    pending: list = field(default_factory=list)  # [(PeriodRow, state)], by name
+    total: int = 0
+
+    @property
+    def label(self):
+        if self.approver is None:
+            return "HR / admins"
+        return f"{self.approver.first_name} {self.approver.last_name}"
+
+    @property
+    def team(self):
+        team = self.approver.team if self.approver else None
+        return team.name if team else ""
+
+    @property
+    def done(self):
+        return not self.pending
+
+
+@dataclass
+class PendingReport:
+    period_start: date
+    deadline: object
+    overdue: bool  # the approval deadline has passed: pending people are Overdue (D-133)
+    groups: list  # ManagerGroup, by approver name
+
+    @property
+    def open_groups(self):
+        return [g for g in self.groups if not g.done]
+
+    @property
+    def required(self):
+        return sum(g.total for g in self.groups)
+
+    @property
+    def approved(self):
+        return self.required - sum(len(g.pending) for g in self.groups)
+
+    @property
+    def managers_done(self):
+        return sum(g.done for g in self.groups)
+
+
+def pending_by_manager(period_start, now):
+    """Who still has people to approve in the period — the same rows and rule as Approvals
+    (company_period_rows, decision_blockers). Read only (D-143)."""
+    groups = {}
+    for row in company_period_rows(period_start, now):
+        manager = row.employee.manager
+        group = groups.setdefault(row.employee.manager_id, ManagerGroup(manager))
+        group.total += 1
+        if row.status != PeriodApproval.Status.APPROVED:
+            group.pending.append((row, person_state(row)))
+    deadline = approval_deadline_for(period_start)
+    ordered = sorted(groups.values(), key=lambda g: (g.approver is None, g.label))
+    return PendingReport(period_start, deadline, now >= deadline, ordered)
 
 
 def approval_for_week(timesheet):

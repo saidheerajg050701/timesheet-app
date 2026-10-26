@@ -70,6 +70,7 @@ def pages():
         ("payroll", "register-open", reverse("payroll_period", args=[PERIOD])),
         ("payroll", "register-paid", reverse("payroll_period", args=[date(2026, 8, 16)])),
         ("payroll", "corrections", reverse("payroll_corrections")),
+        ("payroll", "pending", reverse("payroll_pending")),  # Change 9
         ("hr", "dashboard", reverse("home")),
         ("hr", "team", reverse("team")),
         ("hr", "admin", reverse("admin:index")),

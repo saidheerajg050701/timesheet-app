@@ -32,12 +32,12 @@
     </div>
   {% else %}
     {% if ready %}
-      <p class="mb-2" id="ready-reason">{% if state.ready_reason == "ALL_APPROVED" %}Everyone who must be approved is approved. The register is ready.{% else %}The managers' approval deadline has passed. {% if pending %}{{ pending|length }} {% if pending|length == 1 %}person isn't{% else %}people aren't{% endif %} approved and will get a 0.00 line; if they are approved later, their weeks are carried forward to the next register.{% endif %}{% endif %}</p>
+      <p class="mb-2" id="ready-reason">Everyone who must be approved is approved. The register is ready.</p>
+      <div><button type="button" class="btn btn-primary" id="finalize-open" onclick="document.getElementById('finalize-dialog').showModal()">Finalize &amp; export</button></div>
     {% else %}
-      <ul class="mb-2" id="waiting-for">{% for reason in state.waiting_for %}<li>{{ reason }}</li>{% empty %}<li>Waiting for the period to end.</li>{% endfor %}</ul>
-      <p class="small text-body-secondary mb-2">"Finalize &amp; export" opens when everyone is approved, or after the approval deadline ({{ state.deadline|date:"l, M j, g:i A" }}).</p>
+      <ul class="mb-2" id="waiting-for">{% for reason in state.waiting_for %}<li>{{ reason }}</li>{% endfor %}</ul>
+      <p class="small text-body-secondary mb-0">The hours, "Finalize &amp; export" and the downloads appear once every person who must be approved is approved. Managers are asked to approve by {{ state.deadline|date:"l, M j, g:i A" }} — <a href="{% url 'payroll_pending' %}?period={{ period|date:'Y-m-d' }}">see who is pending</a>.</p>
     {% endif %}
-    <div><button type="button" class="btn btn-primary" id="finalize-open"{% if not ready %} disabled{% endif %} onclick="document.getElementById('finalize-dialog').showModal()">Finalize &amp; export</button></div>
     {% if ready %}
       <dialog class="cell-dialog" id="finalize-dialog" aria-labelledby="finalize-title">
         <div class="cell-dialog-head">
@@ -45,7 +45,6 @@
           <button type="button" class="btn-close" aria-label="Close" onclick="this.closest('dialog').close()"></button>
         </div>
         <p>The {{ rows|length }} line{{ rows|length|pluralize }} below ({{ totals.pay_total|hours2 }} hours) are saved for good and exported as one batch. After that, changes to these weeks are paid as adjustments in the next register.</p>
-        {% if pending %}<p class="mb-0">{{ pending|length }} {% if pending|length == 1 %}person isn't{% else %}people aren't{% endif %} approved and will get a 0.00 line.</p>{% endif %}
         <form method="post" action="{% url 'payroll_finalize' period %}" class="cell-dialog-actions">
           {% csrf_token %}
           <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('dialog').close()">Cancel</button>
@@ -56,6 +55,7 @@
   {% endif %}
 </section>
 
+{% if state.register or ready %}
 <h2 class="section-title">Register <small class="text-body-secondary fw-normal">({% if state.register %}saved{% else %}live preview{% endif %}, hours)</small></h2>
 <div class="table-responsive table-scroll mb-2">
   <table class="table table-sm align-middle bg-body register-table" id="register">
@@ -110,25 +110,14 @@
 </div>
 <p class="small text-body-secondary mb-4">Period = week 1 + week 2 (Break is never paid). Carry-forward in = differences for earlier weeks that were already paid (corrections) and weeks approved after their own register was finalized (late approvals). Pay total = Period total + Carry total.</p>
 
-{% if pending %}
-  <h2 class="section-title">Not approved yet</h2>
-  <div class="table-responsive mb-4">
-    <table class="table table-sm align-middle bg-body" id="pending">
-      <thead><tr><th>Employee</th><th>Approver</th><th>Status</th><th>Why</th></tr></thead>
-      <tbody>
-        {% for line in pending %}
-          <tr data-employee="{{ line.employee_code }}">
-            <td>{{ line.employee_name }}<br><small class="text-body-secondary">{{ line.employee_code }}</small></td>
-            <td>{{ line.approver_label }}</td>
-            <td>{{ line.get_status_display }}{% if state.deadline_passed %} {% include "includes/status_badge.html" with status="OVERDUE" label="Overdue" only %}{% endif %}</td>
-            <td class="small">{{ line.pending.blockers|join:" " }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
 {% endif %}
 
+{% if pending %}
+  <h2 class="section-title">Not approved yet</h2>
+  {% include "payroll/_pending_groups.html" with report=pending %}
+{% endif %}
+
+{% if show_records %}
 <h2 class="section-title">Week records and adjustments</h2>
 <form method="get" class="card card-body row g-2 align-items-end mx-0 mb-3 flex-row" id="payroll-filters">
   <div class="col-sm-6 col-lg-3">
@@ -201,4 +190,5 @@
     </tbody>
   </table>
 </div>
+{% endif %}
 {% endblock %}

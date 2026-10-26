@@ -43,3 +43,5 @@
 {% endblock %}
 
 {% block nav-global %}{% endblock %}
+
+{% block userlinks %}<a href="{% url 'payroll_pending' %}">Pending approvals</a> / {{ block.super }}{% endblock %}

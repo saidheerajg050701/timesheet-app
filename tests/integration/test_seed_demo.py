@@ -93,7 +93,8 @@ def test_seed_builds_the_demo_company(seeded, demo_password):
     assert sorted(weeks) == HISTORY
     dev1_weeks = Timesheet.objects.filter(employee__email=email("dev1"))
     assert sorted(dev1_weeks.values_list("week_start", flat=True)) == HISTORY
-    assert dev1_weeks.filter(status=Timesheet.Status.LOCKED).exists()  # a missed week
+    missed = dev1_weeks.filter(submitted_at__isnull=True)  # a missed week: never submitted,
+    assert missed.filter(status=Timesheet.Status.APPROVED).exists()  # approved by the manager
 
     # Mix: mostly on time, some late (each unlocked through a change request), a few missed.
     statuses = Counter(Timesheet.objects.values_list("status", flat=True))
@@ -149,9 +150,8 @@ def test_seed_approvals_follow_the_rules(seeded):
             assert approval.status == "REJECTED" or approval.approver is None
             assert not any(w.status == Timesheet.Status.APPROVED for w in weeks)
         if approval.period_start not in (LAST_COMPLETED, CURRENT_PERIOD):
-            # A completed, older period is approved exactly when nothing is LOCKED (D-06).
-            has_locked = any(w.status == Timesheet.Status.LOCKED for w in weeks)
-            assert (approval.status == PeriodApproval.Status.APPROVED) == (not has_locked)
+            # Older periods are fully approved, locked weeks too (Change 9, D-144).
+            assert approval.status == PeriodApproval.Status.APPROVED
         if approval.approver:  # D-11: direct manager, HR for the CEO, never self
             assert approval.approver != approval.employee
             expected = approval.employee.manager or Employee.objects.get(email=email("hr"))
@@ -311,14 +311,11 @@ def test_seed_fills_the_payroll_database(seeded, fixed_now):
         (periods[3], "FINALIZED"),
     ]
     assert [r.export_batch for r in registers] == batches and not unregistered_periods()
-    for register in registers:  # one line per person who had to be approved
-        assert register.lines.count() == register.required_count >= register.approved_count
-        unpaid = register.lines.exclude(status="APPROVED").count()
-        assert unpaid == register.required_count - register.approved_count
-        assert (
-            register.ready_reason == "DEADLINE"
-            and register.finalized_by_code == clerk.employee_code
-        )
+    for register in registers:  # everyone approved: one line each, none at 0.00 (D-142)
+        assert register.lines.count() == register.required_count == register.approved_count
+        assert set(register.lines.values_list("status", flat=True)) == {"APPROVED"}
+        assert register.ready_reason == "ALL_APPROVED"
+        assert register.finalized_by_code == clerk.employee_code
     newest = period_state(periods[4], fixed_now)
     assert newest.status == READY and not newest.finalized
     carried = next(

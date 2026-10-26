@@ -2,6 +2,8 @@
 never timesheet rows, notes or reasons. Each ended pay period has a register (Change 8,
 D-132–D-138): previewed live while OPEN or READY, saved by "Finalize & export", then paid."""
 
+import csv
+import io
 from datetime import date
 
 from django.contrib import messages
@@ -15,7 +17,7 @@ from django.views.decorators.http import require_POST
 from directory.services.permissions import payroll_required
 from payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
 from payroll.services.adjustments import closed_periods
-from payroll.services.export import batches_csv, corrections
+from payroll.services.export import batches_csv, corrections, safe_cell
 from payroll.services.publish import out_of_sync
 from payroll.services.register import (
     READY,
@@ -29,7 +31,13 @@ from payroll.services.register import (
     table,
     unregistered_periods,
 )
-from timesheets.services.calendar import period_ended, period_start_for
+from timesheets.services.approvals import pending_by_manager
+from timesheets.services.calendar import (
+    current_period,
+    period_end_for,
+    period_ended,
+    period_start_for,
+)
 
 STATUS_CHOICES = [("", "All but superseded")] + list(PayrollWeek.Status.choices)
 
@@ -123,14 +131,18 @@ def payroll_period(request, period):
         raise Http404("This pay period hasn't ended yet.")
     view = preview(period, now)
     rows, totals = table(view.lines)
+    # No hours while OPEN (D-142) — except periods exported before registers existed, whose
+    # week records are what was paid.
+    show_records = view.state.status != "OPEN" or period in closed_periods()
     context = {
         "period": period,
         "state": view.state,
         "rows": rows,
         "totals": totals,
-        "pending": view.pending,
+        "pending": view.pending,  # while OPEN: who still has to approve (D-142, D-143)
         "ready": view.state.status == READY,
-        **_detail_tables(request, period),
+        "show_records": show_records,
+        **(_detail_tables(request, period) if show_records else {}),
         **_out_of_sync(),
     }
     return render(request, "payroll/period.html", context)
@@ -204,6 +216,64 @@ def payroll_batch_csv(request, batch):
     ):
         raise Http404("No such batch.")
     return _csv(batches_csv([batch]), f"payroll-{batch}.csv")
+
+
+def _pending_period(request, now):
+    """?period= any date → its period (not a future one); default: the most recent ended."""
+    value = request.GET.get("period")
+    if not value:
+        periods = ended_periods(now)
+        return periods[0] if periods else current_period(now)
+    period = period_start_for(_date(value))
+    if period > current_period(now):
+        raise Http404("Future pay periods have nothing to approve yet.")
+    return period
+
+
+@payroll_required
+def payroll_pending(request):
+    """Pending approvals by manager for payroll and HR: read only, nobody approves here
+    (D-143)."""
+    now = timezone.now()
+    period = _pending_period(request, now)
+    return render(
+        request,
+        "payroll/pending.html",
+        {
+            "report": pending_by_manager(period, now),
+            "periods": ended_periods(now),
+            "period": period,
+            "period_end": period_end_for(period),
+        },
+    )
+
+
+PENDING_COLUMNS = (
+    "approver",
+    "approver_team",
+    "employee_code",
+    "employee_name",
+    "state",
+    "overdue",
+)
+
+
+@payroll_required
+def payroll_pending_csv(request):
+    """The same list as CSV; every cell spreadsheet-safe (D-68, D-143)."""
+    now = timezone.now()
+    period = _pending_period(request, now)
+    report = pending_by_manager(period, now)
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(PENDING_COLUMNS)
+    for group in report.open_groups:
+        for row, state in group.pending:
+            name = f"{row.employee.first_name} {row.employee.last_name}"
+            values = [group.label, group.team, row.employee.employee_code, name, state]
+            writer.writerow([safe_cell(v) for v in values] + ["yes" if report.overdue else "no"])
+    name = f"payroll-pending_{period}_to_{period_end_for(period)}.csv"
+    return _csv(out.getvalue(), name)
 
 
 @payroll_required

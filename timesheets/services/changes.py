@@ -1,4 +1,5 @@
-"""Change requests: raise, reject, unlock, edit directly (FR-9, D-46–D-52).
+"""Change requests: raise, reject, unlock, edit directly (FR-9, D-46–D-52), and the approver's
+edit from Approvals, which needs no change request (Change 9, D-140).
 
 Handlers are whoever can_approve the week's employee: the direct manager, or admins for
 employees with no manager — never the employee themselves (D-11, D-47).
@@ -181,6 +182,55 @@ def edit_directly(request, handler, entries, note="", *, now):
         )
         _resolve(request, handler, ChangeRequest.Status.EDITED, note, now)
     return request
+
+
+def approval_week(viewer, employee, week_start, now):
+    """(period row, week view) for the approver; 403 unless the viewer approves this employee."""
+    period_start = pay_period_for(week_start, settings.PAY_PERIOD_ANCHOR)[0]
+    row = approvals.period_row(viewer, employee, period_start, now)
+    week = next(w for w in row.weeks if w.week_start == week_start)
+    return row, week
+
+
+def edit_for_approval(viewer, employee, week_start, entries, *, now):
+    """The approver replaces a SUBMITTED or LOCKED week's rows from Approvals (D-140).
+
+    Same validation as everywhere (submission rules only for a submitted week). The week keeps
+    its status and its submission time: a locked week stays locked and "not submitted by
+    employee" (D-141). Not while the employee's reopen window is open, with an open change
+    request, or once the period is approved (approvals.edit_blockers).
+    """
+    row, week = approval_week(viewer, employee, week_start, now)
+    problems = approvals.edit_blockers(row, week)
+    if problems:
+        raise ValidationError(problems)
+    status = week.state.status
+    errors = validate_entries(employee, week_start, entries)
+    if status == Timesheet.Status.SUBMITTED:
+        errors += submission_errors(entries)
+    if errors:
+        raise ValidationError(errors)
+    with transaction.atomic():
+        sheet = (
+            Timesheet.objects.select_for_update()
+            .filter(employee=employee, week_start=week_start)
+            .first()
+        )
+        if sheet is None:  # a locked week nobody ever opened
+            sheet = Timesheet.objects.create(
+                employee=employee, week_start=week_start, status=Timesheet.Status.LOCKED
+            )
+        before = entries_snapshot(sheet.entries.select_related("project"))
+        replace_entries(sheet, entries)
+        record(
+            AuditLog.Action.UPDATE,
+            "Timesheet",
+            sheet.pk,
+            actor=viewer,
+            before={"status": status, "entries": before},
+            after={"status": status, "entries": entries_snapshot(entries), "via": "approvals"},
+        )
+    return sheet
 
 
 def unlock_from_approvals(manager, employee, week_start, *, now):

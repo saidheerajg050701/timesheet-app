@@ -9,7 +9,7 @@
 <header class="page-header">
   <div>
     <h1 class="h3 mb-0">Approvals</h1>
-    <p class="page-subtitle">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Approve by <strong id="approval-deadline">{{ deadline|date:"l, M j, g:i A" }}</strong>; payroll can finalize the period after that. Hours worked never include Break time.</p>
+    <p class="page-subtitle">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Approve by <strong id="approval-deadline">{{ deadline|date:"l, M j, g:i A" }}</strong>; payroll can pay the period only once everyone is approved, locked weeks included (open a locked employee to edit and approve them). Hours worked never include Break time.</p>
   </div>
   <form method="get" class="page-actions" id="period-picker">
     <a class="btn btn-outline-secondary btn-sm" href="?period={{ previous|date:'Y-m-d' }}" id="previous-period">&larr; Previous</a>
@@ -48,7 +48,7 @@
             <td>{% if row.can_bulk %}<input type="checkbox" class="form-check-input" name="employee" value="{{ row.employee.employee_code }}" aria-label="Select {{ row.employee.first_name }} {{ row.employee.last_name }}">{% endif %}</td>
             <td>{{ row.employee.first_name }} {{ row.employee.last_name }}<br><small class="text-body-secondary">{{ row.employee.employee_code }}</small></td>
             {% for week in row.weeks %}
-              <td><span class="badges">{% include "includes/status_badge.html" with status=week.state.status only %}{% if week.open_request %} {% include "includes/status_badge.html" with status="CHANGE_REQUESTED" only %}{% endif %}</span></td>
+              <td><span class="badges">{% include "includes/status_badge.html" with status=week.state.status only %}{% if week.not_submitted_by_employee %} {% include "includes/status_badge.html" with status="UNSUBMITTED" label="Not submitted by employee" only %}{% endif %}{% if week.open_request %} {% include "includes/status_badge.html" with status="CHANGE_REQUESTED" only %}{% endif %}</span></td>
             {% endfor %}
             <td class="text-end">{{ row.worked|hm }}</td>
             <td class="text-end">{{ row.leave|hm }}</td>
@@ -66,7 +66,7 @@
   </div>
   {% if bulk_count %}
     <button type="submit" class="btn btn-primary" id="bulk-approve">Bulk approve selected</button>
-    <span class="small text-body-secondary ms-2">Only rows with both weeks submitted, no flags and no open change request can be selected.</span>
+    <span class="small text-body-secondary ms-2">Only rows with both weeks submitted, no flags and no open change request can be selected; open a locked employee to edit and approve them.</span>
   {% endif %}
 </form>
 {% endblock %}

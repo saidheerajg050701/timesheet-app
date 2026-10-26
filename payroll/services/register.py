@@ -1,9 +1,9 @@
 """Pay period registers (Change 8, D-132–D-137): one table per 2-week pay period, one line per
 employee, with carry-forward columns.
 
-While a period's register is not finalized it is worked out live from the payroll records
-(OPEN, then READY once everyone is approved or the approval deadline has passed). "Finalize &
-export" saves it once — one batch, frozen lines — and "Mark as paid" closes it. Every number
+While a period's register is not finalized its status is worked out live: OPEN until every
+person who must be approved is approved (Change 9, D-142), then READY. "Finalize & export"
+saves it once — one batch, frozen lines — and "Mark as paid" closes it. Every number
 comes from the PayrollWeek and PayrollAdjustment records (their split from hours.py); nothing
 is worked out a second way, and timesheet rows or reasons never appear here (D-12, D-122).
 """
@@ -29,7 +29,7 @@ from payroll.models import (
 from payroll.services.adjustments import PERIOD, closed_periods, next_open_period
 from payroll.services.export import hours, next_batch, safe_cell
 from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
-from timesheets.services.approvals import approver_label, company_period_rows, must_be_approved
+from timesheets.services.approvals import must_be_approved, pending_by_manager
 from timesheets.services.calendar import (
     approval_deadline_for,
     current_period,
@@ -40,7 +40,6 @@ from timesheets.services.calendar import (
 OPEN, READY = "OPEN", "READY"  # worked out live; FINALIZED and PAID are saved
 BACKFILL_ACTOR = "build_registers"
 LATE_WEEK, ADJUSTMENT = "LATE_WEEK", "ADJUSTMENT"
-SUBMITTED_OR_BETTER = {Timesheet.Status.SUBMITTED, Timesheet.Status.APPROVED}
 Line = PayrollRegisterLine.Status
 
 
@@ -152,9 +151,10 @@ def _missing_records(period_start, people):
 
 
 def period_state(period_start, now, closed=None):
-    """The register's status right now (D-132, D-133). READY needs the period to have ended
-    and payroll in sync, and then either everyone approved with no open change request, or
-    the managers' approval deadline passed."""
+    """The register's status right now (D-132, D-142). READY needs the period to have ended,
+    every person who must be approved APPROVED, no open change request on its weeks, and
+    payroll in sync. The approval deadline is only a reminder (Overdue); it never makes a
+    register READY."""
     deadline = approval_deadline_for(period_start)
     register = PayrollRegister.objects.filter(period_start=period_start).first()
     if register is not None:
@@ -192,12 +192,9 @@ def period_state(period_start, now, closed=None):
         ended=period_ended(period_start, now),
     )
     everyone = approved == len(people) and not open_requests
-    if state.ended and not state.missing_records:
-        if everyone or state.deadline_passed:
-            state.status = READY
-            state.ready_reason = (
-                PayrollRegister.Ready.ALL_APPROVED if everyone else PayrollRegister.Ready.DEADLINE
-            )
+    if state.ended and not state.missing_records and everyone:
+        state.status = READY
+        state.ready_reason = PayrollRegister.Ready.ALL_APPROVED
     return state
 
 
@@ -221,30 +218,18 @@ def ended_periods(now):
 # --- the register's lines -------------------------------------------------------------------
 
 
-def _blank_line(code, name, department, team, status):
-    """An unsaved line, plus what it pays (week_records, adjustments) and, for the page, who
-    approves the person and their approvals row while they are pending."""
+def _line_for_record(r, status):
+    """An unsaved line for the record's employee, plus what it pays (week_records,
+    adjustments)."""
     line = PayrollRegisterLine(
-        employee_code=code, employee_name=name, department=department, team=team, status=status
+        employee_code=r.employee_code,
+        employee_name=r.employee_name,
+        department=r.department,
+        team=r.team,
+        status=status,
     )
     line.week_records, line.adjustments = [], []
-    line.approver_label, line.pending = "", None
     return line
-
-
-def _line_for_employee(employee, status):
-    team = employee.team
-    return _blank_line(
-        employee.employee_code,
-        f"{employee.first_name} {employee.last_name}",
-        team.department if team else "",
-        team.name if team else "",
-        status,
-    )
-
-
-def _line_for_record(r, status):
-    return _blank_line(r.employee_code, r.employee_name, r.department, r.team, status)
 
 
 def _approval(line, r):
@@ -270,29 +255,16 @@ def _week(line, r, period_start):
         setattr(line, name, getattr(line, name) + getattr(r, f"{c}_minutes"))
 
 
-def unapproved_status(row):
-    """ "Missed – not submitted" when a required week isn't submitted, else "Waiting for
-    manager approval" (D-134). Read only — the timesheets are never changed."""
-    if any(w.required and w.state.status not in SUBMITTED_OR_BETTER for w in row.weeks):
-        return Line.NOT_SUBMITTED
-    return Line.AWAITING
-
-
-def build_lines(period_start, items, rows):
-    """The register's lines (unsaved) from the period's records and the people who must be
-    approved (`rows`, approvals.company_period_rows). One for each of them — 0.00 for anyone
-    not approved — and one for anyone else with something to pay (D-134)."""
+def build_lines(period_start, items):
+    """The register's lines (unsaved), only from the records it pays (D-134, D-142): one per
+    person with approved weeks in the period, and one for anyone with only something carried
+    forward. A register is finalized only when everyone is approved, so nobody gets a 0.00
+    line any more ("Missed – not submitted" / "Waiting for manager approval" stay only on
+    registers saved before Change 9)."""
     lines = {}
-    for row in rows:
-        employee = row.employee
-        approved = row.status == PeriodApproval.Status.APPROVED
-        line = _line_for_employee(employee, Line.APPROVED if approved else unapproved_status(row))
-        line.approver_label = approver_label(employee)
-        line.pending = None if approved else row
-        lines[employee.employee_code] = line
     for r in items.weeks:
         line = lines.get(r.employee_code)
-        if line is None:  # approved earlier, no longer required (e.g. left the company)
+        if line is None:
             line = lines[r.employee_code] = _line_for_record(r, Line.APPROVED)
         _week(line, r, period_start)
         _approval(line, r)
@@ -312,21 +284,21 @@ def build_lines(period_start, items, rows):
 @dataclass
 class Preview:
     state: PeriodState
-    lines: list
-    pending: list  # PeriodRows of people not approved (with their approver)
+    lines: list  # empty while OPEN: no hours before everyone is approved (D-142)
+    pending: object = None  # approvals.PendingReport while OPEN
 
 
 def preview(period_start, now):
-    """The register as it stands: saved lines once finalized, otherwise worked out live."""
+    """The register as it stands: the saved lines once finalized, the lines it would save once
+    READY, and while OPEN only who is still pending (D-142)."""
     closed = closed_periods()
     state = period_state(period_start, now, closed)
     if state.register is not None:
         lines = list(state.register.lines.order_by("employee_name", "employee_code"))
-        return Preview(state, lines, [])
-    rows = company_period_rows(period_start, now)
-    lines = build_lines(period_start, period_items(period_start, closed), rows)
-    pending = [line for line in lines if line.pending is not None]
-    return Preview(state, lines, pending)
+        return Preview(state, lines)
+    if state.status == READY:
+        return Preview(state, build_lines(period_start, period_items(period_start, closed)))
+    return Preview(state, [], pending_by_manager(period_start, now))
 
 
 # --- the table on screen and in the CSV -------------------------------------------------------
@@ -469,13 +441,12 @@ def finalize(period_start, *, actor=None, system_actor="", now):
         raise ValidationError("This pay period's register is already finalized.")
     if state.status != READY:
         raise ValidationError(state.waiting_for)
-    rows = company_period_rows(period_start, now)
     code, name = _actor_fields(actor, system_actor)
     with transaction.atomic(using="payroll"):
         if PayrollRegister.objects.filter(period_start=period_start).exists():
             raise ValidationError("This pay period's register is already finalized.")
         items = period_items(period_start)
-        lines = build_lines(period_start, items, rows)
+        lines = build_lines(period_start, items)
         batch = next_batch()
         for r in items.weeks + items.late + items.adjustments:
             r.status = r.Status.EXPORTED
@@ -591,7 +562,7 @@ def build_registers(*, system_actor=BACKFILL_ACTOR, at):
             .exclude(export_batch="")
             .order_by("employee_code", "week_start", "new_version")
         )
-        lines = build_lines(period_start, Items(weeks=weeks, adjustments=adjustments), rows=[])
+        lines = build_lines(period_start, Items(weeks=weeks, adjustments=adjustments))
         exported = weeks + adjustments
         people = must_be_approved(Employee.objects.select_related("team"), period_start)
         with transaction.atomic(using="payroll"):

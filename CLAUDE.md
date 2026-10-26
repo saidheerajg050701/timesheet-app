@@ -24,7 +24,10 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Pay period registers (D-132–D-138): OPEN/READY are worked out live; only "Finalize & export"
   (payroll/services/register.py → finalize) creates a batch and saves the frozen register and
   lines; all register numbers come from PayrollWeek/PayrollAdjustment records. "Who must be
-  approved" is approvals.must_be_approved, nowhere else.
+  approved" is approvals.must_be_approved, nowhere else. A register is READY only when everyone
+  is approved (D-142). When an approver may approve / reject / edit is
+  approvals.decision_blockers / edit_blockers only (Change 9, D-139–D-141); an edit from
+  Approvals never sets submitted_at (that keeps "not submitted by employee" and MISSED).
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
 - Weeks run Sunday–Saturday and are identified by their Sunday; pay periods start on the Sunday

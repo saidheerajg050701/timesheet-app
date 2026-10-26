@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load timesheet_tags %}
+
+{% block title %}Pending approvals — Payroll{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Pending approvals by manager</h1>
+    <p class="page-subtitle">Pay period {{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}. Read only: each manager approves their own people on the Approvals page (HR / admins for staff with no manager). The register can be finalized once everyone is approved.</p>
+  </div>
+  <div class="page-actions">
+    <form method="get" class="d-flex gap-2" id="pending-period">
+      <label for="id_period" class="visually-hidden">Pay period</label>
+      <select name="period" id="id_period" class="form-select form-select-sm" onchange="this.form.submit()">
+        {% for start in periods %}<option value="{{ start|date:'Y-m-d' }}"{% if start == period %} selected{% endif %}>{{ start|date:"M j" }} – {{ start|add_days:13|date:"M j, Y" }}</option>{% endfor %}
+        {% if period not in periods %}<option value="{{ period|date:'Y-m-d' }}" selected>{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</option>{% endif %}
+      </select>
+    </form>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_pending_csv' %}?period={{ period|date:'Y-m-d' }}">Download CSV</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_period' period %}">Register</a>
+  </div>
+</header>
+{% include "payroll/_pending_groups.html" with report=report %}
+{% endblock %}
