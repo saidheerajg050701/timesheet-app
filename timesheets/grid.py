@@ -12,6 +12,7 @@ from datetime import date
 from timesheets.forms import parse_hours, parse_time
 from timesheets.models import Project, TimeEntry
 from timesheets.services.calendar import week_days
+from timesheets.services.grid_rows import target_groups
 from timesheets.services.validation import CATEGORY_LABELS, day_label, duration, mentions
 from timesheets.services.weeks import EntryRow
 
@@ -58,6 +59,11 @@ class Cell:
     @property
     def hours(self):
         return hours_text(self.minutes) if self.slots else ""
+
+    @property
+    def has_reasons(self):
+        """Does any slot have a reason? Read-only dialogs show the column only then (D-128)."""
+        return any(s.reason.strip() for s in self.slots)
 
     @property
     def slot_times(self):
@@ -107,6 +113,20 @@ class GridRow:
     def minutes(self):
         return sum(c.minutes for c in self.cells)
 
+    @property
+    def dom_id(self):
+        """ "row-project-3", "row-meeting-0": ids of the row's action dialogs (D-129)."""
+        return f"row-{self.category.lower()}-{self.project or 0}"
+
+    @property
+    def slot_count(self):
+        return sum(len(c.slots) for c in self.cells)
+
+    @property
+    def change_groups(self):
+        """What "Change project / category" offers this row (D-130)."""
+        return target_groups(self.category)
+
 
 @dataclass
 class Grid:
@@ -154,6 +174,28 @@ def row_label(category, project, projects):
     found = projects.get(project)
     name = f"{found.code} {found.name}" if found else "Unknown project"
     return f"{name} / {ROW_LABELS['PROJECT']}"
+
+
+def slots_text(category, count):
+    """ "1 time slot", "3 time slots"; leave: "1 leave entry", "2 leave entries"."""
+    if kind_of(category) == "leave":
+        return f"{count} leave {'entry' if count == 1 else 'entries'}"
+    return f"{count} time slot{'' if count == 1 else 's'}"
+
+
+def row_notice(action, source, result):
+    """The grid's status line after a row action (D-129, D-130)."""
+    target = result.target
+    keys = [k for k in (source, target) if k]
+    projects = Project.objects.in_bulk([int(p) for _, p in keys if p.isdigit()])
+    projects = {str(pk): project for pk, project in projects.items()}
+    slots = slots_text(source[0], result.slots)
+    if action == "delete" and not result.slots:
+        return f"Deleted {row_label(*source, projects)}."  # an empty row: nothing to save
+    if action == "delete":
+        return f"Deleted {row_label(*source, projects)} ({slots}). Save to keep this change."
+    merged = ", merged with its existing row" if result.merged else ""
+    return f"Moved {slots} to {row_label(*target, projects)}{merged}. Save to keep this change."
 
 
 def build_grid(rows, week_start, *, editable, entries=(), problems=(), messages=(), keys=()):

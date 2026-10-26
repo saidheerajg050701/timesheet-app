@@ -93,7 +93,7 @@ STAFF = (
 )
 LOCATIONS = ("Dallas", "Frisco", "Remote", "Austin")
 REJECT_COMMENT = "Please split Wednesday's hours between Customer Portal and Mobile App."
-REASONS = {  # every row needs a reason (D-36)
+REASONS = {  # the demo gives every row a reason (optional since D-128)
     TimeEntry.Category.PROJECT: (
         "Feature development",
         "Code review",

@@ -20,7 +20,7 @@ from timesheets.services.changes import (
     unlock_request,
 )
 from timesheets.services.summary import summarize
-from timesheets.views import SaveAttempt, grid_choices, week_grid
+from timesheets.views import SaveAttempt, grid_choices, row_action, week_grid
 
 RECENT = 20
 
@@ -108,9 +108,17 @@ def request_edit(request, pk):
             "errors": grid.errors,
             "summary": summarize(entries, sheet.employee, sheet.week_start),
             "summary_url": reverse("request_totals", args=[change.pk]),
-            **grid_choices(sheet.week_start),
+            **grid_choices(sheet.week_start, reverse("request_rows", args=[change.pk])),
         },
     )
+
+
+@require_POST
+def request_rows(request, pk):
+    """HTMX: Edit directly's row actions (D-129); saved and audited with the week (D-49)."""
+    change = _handleable(request, pk, open_only=True)
+    url = reverse("request_rows", args=[change.pk])
+    return row_action(request, change.timesheet.week_start, url)
 
 
 @require_POST

@@ -1,7 +1,10 @@
-{# One grid row (D-106): label, seven day cells with their dialogs, row total. Context: row, grid. #}{% load timesheet_tags %}
+{# One grid row (D-106): label (with its row actions when editable, D-129), seven day cells with their dialogs, row total. Context: row, grid; editable grids also project_choices. #}{% load timesheet_tags %}
 <tr class="grid-row kind-{{ row.kind }}" data-row-key="{{ row.key }}" data-kind="{{ row.kind }}" data-row-label="{{ row.label }}">
   <th scope="row" class="grid-label">
-    <span class="grid-label-text">{{ row.name }}{% if row.sub %} <span class="grid-label-sub">{{ row.sub }}</span>{% endif %}</span>{% if row.kind == "break" %} <span class="grid-tag">not counted</span>{% elif row.kind == "leave" %} <span class="grid-tag">leave</span>{% endif %}
+    <div class="grid-label-row">
+      <div><span class="grid-label-text">{{ row.name }}{% if row.sub %} <span class="grid-label-sub">{{ row.sub }}</span>{% endif %}</span>{% if row.kind == "break" %} <span class="grid-tag">not counted</span>{% elif row.kind == "leave" %} <span class="grid-tag">leave</span>{% endif %}</div>
+      {% if grid.editable %}{% include "timesheets/_row_actions.html" %}{% endif %}
+    </div>
     {% if grid.editable %}<input type="hidden" name="grid-row" value="{{ row.key }}">{% endif %}
   </th>
   {% for cell in row.cells %}
@@ -25,8 +28,8 @@
         {% else %}
           {% if cell.slots %}
             <table class="table table-sm mb-0 cell-slots-readonly">
-              <thead><tr>{% if row.kind != "leave" %}<th scope="col">Start</th><th scope="col">End</th>{% endif %}<th scope="col" class="text-end">Hours</th><th scope="col">Reason</th></tr></thead>
-              <tbody>{% for slot in cell.slots %}<tr>{% if row.kind != "leave" %}<td>{{ slot.start }}</td><td>{{ slot.end }}</td>{% endif %}<td class="text-end">{{ slot|slot_hours }}</td><td>{{ slot.reason }}</td></tr>{% endfor %}</tbody>
+              <thead><tr>{% if row.kind != "leave" %}<th scope="col">Start</th><th scope="col">End</th>{% endif %}<th scope="col" class="text-end">Hours</th>{% if cell.has_reasons %}<th scope="col">Reason</th>{% endif %}</tr></thead>
+              <tbody>{% for slot in cell.slots %}<tr>{% if row.kind != "leave" %}<td>{{ slot.start }}</td><td>{{ slot.end }}</td>{% endif %}<td class="text-end">{{ slot|slot_hours }}</td>{% if cell.has_reasons %}<td>{{ slot.reason }}</td>{% endif %}</tr>{% endfor %}</tbody>
             </table>
           {% else %}<p class="text-body-secondary mb-0">Nothing entered.</p>{% endif %}
           <div class="cell-dialog-actions"><button type="button" class="btn btn-sm btn-outline-secondary" data-grid-action="close">Close</button></div>

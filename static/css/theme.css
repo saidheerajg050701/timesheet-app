@@ -568,6 +568,27 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
 .cell-dialog-head h2 { font-size: 1rem; font-weight: 650; }
 .cell-dialog-day { display: block; color: var(--ts-text-muted); font-size: 0.8125rem; font-weight: 500; margin-top: 2px; }
 .cell-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+/* Row actions (Change 7, D-129): "⋮" next to the row name, opening Change / Delete dialogs. */
+.grid-label-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
+.row-actions-toggle {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin: -3px -8px 0 0;
+  border: 1px solid transparent;
+  border-radius: var(--ts-radius-sm);
+  background: transparent;
+  color: var(--ts-text-muted);
+  font-size: 1.125rem;
+  line-height: 1;
+  transition: background-color var(--ts-transition), border-color var(--ts-transition);
+}
+.row-actions-toggle:hover, .row-actions-toggle[aria-expanded="true"] { background: var(--ts-accent-soft); border-color: #bfdbfe; color: var(--ts-text); }
+.row-actions-toggle:focus-visible { outline: none; box-shadow: var(--ts-focus); }
+.week-grid th.grid-label:has(.dropdown-menu.show) { z-index: 5; } /* the menu above the rows below */
+.row-actions .dropdown-menu { font-size: 0.875rem; }
+.row-note { margin: 0 0 12px; padding: 8px 12px; border-radius: var(--ts-radius); background: var(--ts-accent-soft); color: var(--ts-accent-soft-text); font-size: 0.8125rem; }
+.row-note.is-warning { background: var(--ts-tone-warning-bg); color: var(--ts-tone-warning-fg); }
 .cell-dialog .cell-dialog-actions [data-grid-action=add-slot] { margin-right: auto; }
 .grid-slots { display: grid; gap: 10px; }
 .grid-slot {

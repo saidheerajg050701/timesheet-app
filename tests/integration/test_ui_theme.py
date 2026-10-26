@@ -47,6 +47,20 @@ def test_theme_stylesheet_is_loaded_and_served(settings, user):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("debug", [False, True])
+def test_static_files_are_revalidated_on_every_page_load(settings, debug):
+    """T-201: CSS/JS answer with Cache-Control: no-cache, and 304 while unchanged (D-131)."""
+    settings.DEBUG = debug
+    browser = Client()  # anonymous: the login page needs them too
+    for path in ("/static/js/grid.js", "/static/css/theme.css", "/static/vendor/htmx/htmx.min.js"):
+        first = browser.get(path)
+        assert first.status_code == 200 and first["Cache-Control"] == "no-cache", path
+        again = browser.get(path, headers={"If-Modified-Since": first["Last-Modified"]})
+        assert again.status_code == 304 and again["Cache-Control"] == "no-cache", path
+    assert browser.get("/static/js/nope.js").status_code == 404
+
+
+@pytest.mark.django_db
 def test_one_status_badge_component(org, login_as, make_week, fixed_now):
     """T-158: every status and flag has a tone with CSS; pages use only the shared component."""
     codes = {

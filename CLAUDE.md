@@ -25,6 +25,9 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
 - Weeks run Sunday–Saturday and are identified by their Sunday; pay periods start on the Sunday
   PAY_PERIOD_ANCHOR (D-111, D-113). Use timesheets/services/calendar.py, never weekday() arithmetic.
+- Weekly grid row actions (change project/category, delete row) only rewrite the week as typed
+  through timesheets/services/grid_rows.py and re-draw the grid; nothing is saved until the week is
+  saved through save_week / edit_directly, where every entry rule and the audit live (D-129, D-130).
 - Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row
   (system actions use system_actor instead of actor, D-14).
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).

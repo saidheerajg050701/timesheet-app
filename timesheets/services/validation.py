@@ -76,9 +76,7 @@ def validate_entries(employee, week_start, entries):
 def _row_problems(entry):
     problems = []
     reason = (entry.reason or "").strip()
-    if not reason:
-        problems.append("a reason is required.")  # D-36
-    elif len(reason) > MAX_REASON:
+    if len(reason) > MAX_REASON:  # optional, but at most 255 characters (D-36, D-128)
         problems.append(f"the reason is longer than {MAX_REASON} characters.")
     if entry.category not in CATEGORY_LABELS:
         return [*problems, "unknown category."]

@@ -14,6 +14,8 @@ from payroll.models import AppendOnlyError, PayrollAdjustment, PayrollWeek
 from payroll.services.adjustments import carry_period
 from payroll.services.export import batch_csv, export_period, mark_paid
 from payroll.services.sync import sync_payroll_counts
+from tests.factories import TimeEntryFactory
+from tests.forms import grid_post
 from timesheets.models import PeriodApproval
 from timesheets.services.approvals import approve_period
 from timesheets.services.changes import edit_directly, raise_request
@@ -343,3 +345,43 @@ def test_settled_week_links_to_the_period_that_paid_its_difference(org, payroll,
     carried_to = client.get(reverse("payroll"), {"period": "2026-09-27"}).content.decode()
     assert 'data-adjustment="DEV1"' in carried_to and "+2.00" in carried_to
     assert "Settled by adjustment" not in carried_to  # only Settled weeks carry the label
+
+
+def test_paid_week_corrected_by_deleting_a_row(
+    org, payroll, make_week, login_as, django_capture_on_commit_callbacks
+):
+    """T-198: a paid week corrected with Delete row in Edit directly → −2.00 h overtime."""
+    sheet = make_week(org.dev1, PAID)
+    make_week(org.dev1, PAID + timedelta(weeks=1))
+    TimeEntryFactory(
+        timesheet=sheet,
+        work_date=PAID + timedelta(days=1),
+        category="MEETING",
+        project=None,
+        start_time=time(17),
+        end_time=time(19),
+        minutes=120,
+        reason="Release call",
+    )  # 42 h: 2 h overtime, paid
+    payroll.approve(org.dev1, PAID)
+    mark_paid(export_period(PAID, system_actor="test", at=NOW), system_actor="test", at=NOW)
+    assert week_versions()[0].overtime_minutes == 120
+
+    change = raise_request(org.dev1, WEEK, REASON, now=NOW)
+    manager = login_as(org.manager)
+    edit = reverse("request_edit", args=[change.pk])
+    rows = reverse("request_rows", args=[change.pk])
+    grid = manager.get(edit).context["grid"]
+    deleted = manager.post(rows, {**grid_post(grid), "row-action": "delete", "row-key": "MEETING:"})
+    data = {**grid_post(deleted.context["grid"]), "note": "The call was booked twice."}
+    with django_capture_on_commit_callbacks(execute=True):
+        assert manager.post(edit, data).status_code == 302
+    payroll.approve(org.dev1, PAID)
+
+    v1, v2 = week_versions()
+    assert v1.status == "SUPERSEDED" and v1.paid_at is not None
+    assert v2.status == "SETTLED" and (v2.regular_minutes, v2.overtime_minutes) == (2400, 0)
+    (adjustment,) = PayrollAdjustment.objects.all()
+    assert (adjustment.regular_minutes, adjustment.overtime_minutes) == (0, -120)
+    assert adjustment.total_minutes == -120 and adjustment.period_start == LAST
+    assert adjustment.reason == REASON

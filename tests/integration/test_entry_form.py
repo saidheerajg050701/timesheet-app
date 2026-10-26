@@ -100,15 +100,15 @@ def test_rerender_after_an_error_adds_no_rows(page, project):
     """T-90: re-rendering after a failed save shows exactly the posted slots and rows."""
     client, url, week = page
     friday = FRIDAY[week]
-    data = browser_post(client.get(url), **{"entry-0-reason": ""})  # missing reason → error
+    data = browser_post(client.get(url), **{"entry-0-reason": "x" * 256})  # too long → error
     data["grid-row"] = data["grid-row"] + ["MEETING:"]  # a row added without slots yet
     data.update({f"entry-5-{k}": v for k, v in brk(friday, "12:00", "12:30").items()})
     first = client.post(url, data)
     html = first.content.decode()
-    assert "a reason is required" in html and slot_count(html) == 2
+    assert "longer than 255 characters" in html and slot_count(html) == 2
     assert 'data-row-key="MEETING:"' in html  # the empty new row is kept
     second = client.post(url, browser_post(first)).content.decode()
-    assert "a reason is required" in second and slot_count(second) == 2
+    assert "longer than 255 characters" in second and slot_count(second) == 2
     assert "choose a category" not in second
 
 
@@ -121,11 +121,11 @@ def test_hours_are_shown_for_every_row(page, project):
     rows = form(
         work(friday, "08:30", "12:00", project),
         brk(friday, "12:00", "12:45"),
-        work(friday, "12:45", "17:15", category="MEETING", reason=""),  # error: no reason
+        work(friday, "12:45", "17:15", category="MEETING", reason="x" * 256),  # error: too long
         {"date": friday.isoformat(), "category": "PTO", "hours": "1.5", "reason": "Leave early"},
     )
     after_error = client.post(url, rows).content.decode()
-    assert "a reason is required" in after_error
+    assert "longer than 255 characters" in after_error
     day = friday.isoformat()
     assert cell_hours(after_error) == {
         project_cell: "3.50",

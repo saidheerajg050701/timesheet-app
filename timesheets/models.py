@@ -62,7 +62,7 @@ class TimeEntry(models.Model):
     start_time = models.TimeField(null=True, blank=True)  # work and Break rows (D-37)
     end_time = models.TimeField(null=True, blank=True)
     minutes = models.PositiveIntegerField()  # end − start, or leave hours; 15-min steps
-    reason = models.CharField(max_length=255)  # required (D-36)
+    reason = models.CharField(max_length=255, blank=True)  # optional since D-128 (was D-36)
 
     class Meta:
         constraints = [

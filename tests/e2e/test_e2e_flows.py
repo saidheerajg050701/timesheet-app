@@ -2,12 +2,13 @@ import re
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
+import pytest
 from django.urls import reverse
 from playwright.sync_api import expect
 
 from audit.models import AuditLog
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ, log_in
-from tests.factories import TEST_PASSWORD
+from tests.factories import TEST_PASSWORD, ProjectFactory
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
 from timesheets.services.approvals import approve_period
 
@@ -49,6 +50,46 @@ def add_row(page, category, project=None):
     if project:
         panel.get_by_label("Project").select_option(label=project)
     panel.get_by_role("button", name="Add row", exact=True).click()
+
+
+# Is the element fully inside the window and the top element at its left, middle and right
+# (not covered by another row, not clipped by the scrolling table or the card)?
+ON_TOP = """(el) => {
+  const r = el.getBoundingClientRect();
+  const inside = r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+  const y = r.top + r.height / 2;
+  return inside && [r.left + 4, r.left + r.width / 2, r.right - 4].every((x) => {
+    const hit = document.elementFromPoint(x, y);
+    return hit === el || el.contains(hit);
+  });
+}"""
+MENU_ITEMS = ("Change project / category", "Delete row")
+
+
+def row_menu(page, name):
+    """Open a row's ⋮ menu with a real click (D-129): both items visible, on top of everything,
+    and the menu starts at the ⋮ button. Returns (toggle, menu)."""
+    toggle = page.get_by_role("button", name=f"Row actions for {name}")
+    label = page.locator("#entries tr.grid-row", has=toggle).locator(".grid-label-text")
+    button, text = toggle.bounding_box(), label.bounding_box()
+    assert button["x"] >= text["x"] + text["width"] - 1, name  # right of the name …
+    assert button["y"] < text["y"] + text["height"], name  # … on its first line, not below
+    toggle.click()
+    menu = page.locator(".row-actions .dropdown-menu.show")
+    expect(menu).to_have_count(1)
+    for item in MENU_ITEMS:
+        button = menu.get_by_role("button", name=item)
+        expect(button).to_be_visible()
+        assert button.evaluate(ON_TOP), f"{name}: {item!r} is covered, clipped or off screen"
+    assert abs(menu.bounding_box()["x"] - toggle.bounding_box()["x"]) <= 2, name  # aligned
+    return toggle, menu
+
+
+def menu_item(page, name, item):
+    """Open the row's menu and click one of its items, both for real; returns the dialog."""
+    _, menu = row_menu(page, name)
+    menu.get_by_role("button", name=item).click()
+    return page.locator("dialog[open]")
 
 
 def test_signup_refused_then_accepted(e2e_org, anonymous):
@@ -381,7 +422,7 @@ def test_add_row_for_an_existing_row_points_at_it(e2e_org, open_as):
     rows = page.locator("#entries tr.grid-row")
     expect(rows).to_have_count(2)
     expect(page.locator('#entries tr[data-row-key^="PROJECT:"]')).to_have_count(1)
-    portal = rows.filter(has_text="PRJ-001 Customer Portal")
+    portal = page.locator('#entries tr[data-row-key^="PROJECT:"]')  # the PRJ-001 row
     expect(portal).to_have_class(re.compile(r"\bis-highlighted\b"))
     expect(cell(page, PORTAL, THIS_WEEK)).to_be_focused()  # its first day, Sunday
     expect(portal).not_to_have_class(re.compile(r"\bis-highlighted\b"), timeout=5000)  # brief
@@ -394,3 +435,160 @@ def test_add_row_for_an_existing_row_points_at_it(e2e_org, open_as):
     expect(cell(page, "PTO", THIS_WEEK)).to_be_focused()
     expect(rows).to_have_count(3)
     assert TimeEntry.objects.count() == 0  # nothing saved by any of this
+
+
+def test_time_without_a_reason(e2e_org, open_as):
+    """T-190: E2E time entered without a reason saves and submits; no empty Reason shown."""
+    page = open_as(e2e_org.dev1)
+    page.goto(week_url(THIS_WEEK))
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    panel = open_cell(page, PORTAL, MONDAY)
+    expect(panel.get_by_label("Reason")).to_be_visible()  # still offered, just optional
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("17:00")
+    panel.get_by_role("button", name="Done").click()
+    expect(cell(page, PORTAL, MONDAY)).to_have_text("8.00")
+    page.get_by_role("button", name="Save draft").click()
+    expect(status_of(page)).to_have_text("Draft")
+    expect(page.locator("#errors")).to_have_count(0)
+    assert TimeEntry.objects.get().reason == ""
+
+    page.get_by_role("button", name="Submit").click()
+    expect(status_of(page)).to_have_text("Submitted")
+    panel = open_cell(page, PORTAL, MONDAY)
+    expect(panel).to_contain_text("09:00")
+    expect(panel).to_contain_text("17:00")
+    expect(panel.get_by_role("columnheader", name="Reason")).to_have_count(0)
+
+
+def test_change_and_delete_rows(e2e_org, open_as):
+    """T-200: E2E move a wrong row to another project, then delete a row; totals follow."""
+    ProjectFactory(code="PRJ-002", name="Mobile App")
+    page = open_as(e2e_org.dev1)
+    page.goto(week_url(THIS_WEEK))
+    total = page.locator("#entries [data-role=week-total]")
+    add_row(page, "Project work", "PRJ-001 Customer Portal")  # the wrong project
+    panel = open_cell(page, PORTAL, MONDAY)
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("12:00")
+    panel.get_by_label("Reason").fill("Mobile login")
+    panel.get_by_role("button", name="Done").click()
+    expect(total).to_have_text("3.00")
+
+    panel = menu_item(page, "PRJ-001 Customer Portal", "Change project / category")
+    expect(panel.get_by_label("Category")).to_have_value("PROJECT")
+    expect(panel.get_by_label("Category")).to_be_focused()
+    panel.get_by_label("Project").select_option(label="PRJ-002 Mobile App")
+    panel.get_by_role("button", name="Change row").click()
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    mobile = "PRJ-002 Mobile App / Project work"
+    expect(cell(page, mobile, MONDAY)).to_have_text("3.00")
+    expect(page.locator('#entries tr[data-row-key^="PROJECT:"]')).to_have_count(1)
+    expect(page.locator("[data-week-grid]").get_by_role("status")).to_have_text(
+        f"Moved 1 time slot to {mobile}. Save to keep this change."
+    )
+    expect(page.get_by_role("button", name="Row actions for PRJ-002 Mobile App")).to_be_focused()
+    expect(total).to_have_text("3.00")
+
+    add_row(page, "Meetings")
+    panel = open_cell(page, "Meetings", MONDAY)
+    panel.get_by_label("Start").fill("13:00")
+    panel.get_by_label("End").fill("14:00")
+    panel.get_by_role("button", name="Done").click()
+    expect(total).to_have_text("4.00")
+    toggle = page.get_by_role("button", name="Row actions for Meetings")
+    panel = menu_item(page, "Meetings", "Delete row")
+    expect(panel).to_contain_text(
+        "Delete Meetings? This removes 1 time slot (1.00 h) from this week."
+    )
+    page.keyboard.press("Escape")  # nothing deleted; focus back on the menu button
+    expect(page.locator("dialog[open]")).to_have_count(0)
+    expect(toggle).to_be_focused()
+    expect(total).to_have_text("4.00")
+    menu_item(page, "Meetings", "Delete row").get_by_role("button", name="Delete row").click()
+    expect(page.locator('#entries tr[data-row-key="MEETING:"]')).to_have_count(0)
+    expect(total).to_have_text("3.00")
+    expect(page.locator("#day-summary")).to_contain_text("3:00")  # the server's summary too
+
+    page.get_by_role("button", name="Save draft").click()
+    expect(status_of(page)).to_have_text("Draft")
+    saved = TimeEntry.objects.get()
+    assert (saved.project.code, saved.start_time, saved.end_time, saved.reason) == (
+        "PRJ-002",
+        time(9),
+        time(12),
+        "Mobile login",
+    )
+
+
+@pytest.mark.parametrize(
+    "size",
+    [{"width": 1280, "height": 800}, {"width": 390, "height": 844}],
+    ids=["laptop", "narrow"],
+)
+def test_row_menus_in_a_real_browser(e2e_org, open_as, size):
+    """T-202: E2E ⋮ menus open on top and unclipped at the ⋮ button (last row, scrolled page);
+    their items open dialogs by mouse and keyboard, also after re-draws; Esc returns to ⋮."""
+    ProjectFactory(code="PRJ-002", name="Mobile App")
+    page = open_as(e2e_org.dev1)
+    page.set_viewport_size(size)
+    page.goto(week_url(THIS_WEEK))
+    add_row(page, "Project work", "PRJ-001 Customer Portal")
+    add_row(page, "Meetings")
+    add_row(page, "Break time")
+    add_row(page, "PTO")  # the last row
+    for name in ("PRJ-001 Customer Portal", "Meetings", "Break (unpaid)", "PTO"):
+        toggle, menu = row_menu(page, name)
+        page.keyboard.press("Escape")  # the menu closes; focus stays on ⋮
+        expect(menu).to_have_count(0)
+        expect(toggle).to_be_focused()
+
+    def dialog_opens(name, item, heading):
+        dialog = menu_item(page, name, item)
+        expect(dialog).to_have_count(1)
+        expect(dialog.get_by_role("heading")).to_contain_text(heading)
+        page.keyboard.press("Escape")
+        expect(page.locator("dialog[open]")).to_have_count(0)
+        expect(page.get_by_role("button", name=f"Row actions for {name}")).to_be_focused()
+
+    dialog_opens("PRJ-001 Customer Portal", "Change project / category", "Change project")
+    panel = open_cell(page, PORTAL, MONDAY)  # a cell edit
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("12:00")
+    panel.get_by_role("button", name="Done").click()
+    panel = menu_item(page, "PRJ-001 Customer Portal", "Change project / category")
+    panel.get_by_label("Project").select_option(label="PRJ-002 Mobile App")
+    panel.get_by_role("button", name="Change row").click()  # re-draw 1
+    expect(page.get_by_role("button", name="Row actions for PRJ-002 Mobile App")).to_be_focused()
+
+    panel = open_cell(page, "Meetings", MONDAY)  # another row, after the re-draw
+    panel.get_by_label("Start").fill("13:00")
+    panel.get_by_label("End").fill("14:00")
+    panel.get_by_role("button", name="Done").click()
+    dialog_opens("Meetings", "Delete row", "Delete row")
+    row_menu(page, "Break (unpaid)")[1].get_by_role("button", name="Delete row").click()  # empty
+    expect(page.locator('#entries tr[data-row-key="BREAK:"]')).to_have_count(0)  # re-draw 2
+    dialog_opens("PTO", "Change project / category", "Change project")
+    add_row(page, "Training")  # a row added after the re-draws
+    dialog_opens("Training", "Change project / category", "Change project")
+
+    toggle = page.get_by_role("button", name="Row actions for PRJ-002 Mobile App")
+    for key, steps, heading in (("Enter", 1, "Change project"), (" ", 2, "Delete row")):
+        toggle.focus()
+        page.keyboard.press(key)  # opens the menu
+        expect(page.locator(".row-actions .dropdown-menu.show")).to_have_count(1)
+        for _ in range(steps):
+            page.keyboard.press("ArrowDown")
+        page.keyboard.press(key)  # the focused item
+        expect(page.locator("dialog[open] h2")).to_contain_text(heading)
+        page.keyboard.press("Escape")
+        expect(toggle).to_be_focused()
+
+    last = page.locator("#entries tr.grid-row").last
+    last.evaluate("r => scrollBy(0, r.getBoundingClientRect().bottom - innerHeight + 4)")
+    toggle, _ = row_menu(page, "Training")  # the last row at the bottom of the window
+    page.keyboard.press("Escape")
+    page.locator(".grid-scroll").evaluate("e => e.scrollLeft = e.scrollWidth")  # days scrolled
+    row_menu(page, "Meetings")
+    page.keyboard.press("Escape")
+    expect(page.locator(".dropdown-menu.show")).to_have_count(0)

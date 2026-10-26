@@ -22,6 +22,7 @@ urlpatterns = [
     path("timesheets/<isodate:week>/", views.timesheet_week, name="timesheet_week"),
     path("timesheets/<isodate:week>/totals/", views.timesheet_totals, name="timesheet_totals"),
     path("timesheets/<isodate:week>/row/", views.timesheet_row, name="timesheet_row"),
+    path("timesheets/<isodate:week>/rows/", views.timesheet_rows, name="timesheet_rows"),
     path(
         "timesheets/<isodate:week>/request-change/",
         views.request_change,
@@ -38,6 +39,7 @@ urlpatterns = [
     path("approvals/requests/", request_views.request_inbox, name="request_inbox"),
     path("approvals/requests/<int:pk>/", request_views.request_detail, name="request_detail"),
     path("approvals/requests/<int:pk>/edit/", request_views.request_edit, name="request_edit"),
+    path("approvals/requests/<int:pk>/rows/", request_views.request_rows, name="request_rows"),
     path(
         "approvals/requests/<int:pk>/totals/",
         request_views.request_totals,

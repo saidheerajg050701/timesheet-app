@@ -29,7 +29,7 @@
       <button type="submit" class="btn btn-primary"
               onclick="return confirm('Save these entries and submit the week for the employee?')">Save and submit for the employee</button>
     </div>
-    <p class="small text-body-secondary mt-2 mb-0">Same rules as the employee's own page: start/end times in 15-minute steps, a reason on every entry, no overlaps, Break never on a project, at most 24 hours a day.</p>
+    <p class="small text-body-secondary mt-2 mb-0">Same rules as the employee's own page: start/end times in 15-minute steps, no overlaps, Break never on a project, at most 24 hours a day; a reason is optional.</p>
   </div>
   <h2 class="section-title">Day summary</h2>
   {% include "timesheets/_summary.html" with live=True %}

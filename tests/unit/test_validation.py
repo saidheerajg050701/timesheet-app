@@ -113,13 +113,28 @@ def test_timed_rows_on_one_day_must_not_overlap():
     assert errors_for(work("09:00", "12:00"), other_day) == []
 
 
-def test_every_row_needs_a_reason():
-    """T-74: an empty reason, or one over 255 characters, is rejected (D-36)."""
-    for reason in ("", "   "):
-        assert has(errors_for(work(reason=reason)), "a reason is required")
-        assert has(errors_for(leave(reason=reason)), "a reason is required")
+def test_reason_is_limited_to_255_characters():
+    """T-74: a reason over 255 characters is rejected; 255 is fine (D-36; optional since D-128)."""
     assert has(errors_for(work(reason="x" * 256)), "longer than 255 characters")
+    assert has(errors_for(leave(reason="x" * 256)), "longer than 255 characters")
     assert errors_for(work(reason="x" * 255)) == []
+
+
+def test_empty_reasons_are_accepted():
+    """T-187: no reason, or only spaces, is fine on every kind of row; other rules still apply."""
+    for reason in ("", "   "):
+        rows = [
+            work("09:00", "12:00", reason=reason),
+            work("12:30", "13:00", category="MEETING", project=None, reason=reason),
+            work("12:00", "12:30", category="BREAK", project=None, reason=reason),
+            leave(240, day=date(2026, 10, 21), reason=reason),
+        ]
+        assert errors_for(*rows) == [], repr(reason)
+    off_step = errors_for(work("09:10", "12:00", reason=""))
+    assert len(off_step) == 1 and "15-minute steps" in off_step[0]
+    overlap = errors_for(work("09:00", "12:00", reason=""), brk("11:30", "12:15"))
+    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001 and 11:30–12:15 Break time overlap."]
+    assert not has(off_step + overlap, "reason")
 
 
 def test_break_has_times_and_never_a_project():

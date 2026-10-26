@@ -1,7 +1,8 @@
-// The weekly grid (Change 2, D-106–D-110; Change 5, D-127). Convenience only: open a cell's
-// dialog, add and remove time slots, add rows (or point at the row that is already there),
-// keep the cell / row / day totals and the multi-slot hint live, and warn before leaving
-// with unsaved changes. Every slot is posted as the usual entry-N-* fields and the server
+// The weekly grid (Change 2, D-106–D-110; Change 5, D-127; Change 7, D-129). Convenience only:
+// open a cell's dialog, add and remove time slots, add rows (or point at the row that is
+// already there), change or delete a whole row (the server re-draws the grid as typed), keep
+// the cell / row / day totals and the multi-slot hint live, and warn before leaving with
+// unsaved changes. Every slot is posted as the usual entry-N-* fields and the server
 // checks every rule again when saving; it also recomputes the day summary below the grid.
 (function () {
   var dirty = false;
@@ -134,7 +135,8 @@
       addSlot(dialog); // focuses the new slot's first field
       return;
     }
-    var first = dialog.querySelector("input:not([type=hidden]), select, [data-grid-action=close]");
+    var first = dialog.querySelector("input:not([type=hidden]), select")
+      || dialog.querySelector("[data-grid-action=close]");
     if (first) first.focus();
   }
 
@@ -209,6 +211,66 @@
     });
   }
 
+  // --- row actions: change project / category, delete (D-129, D-130) --------------------
+  function filledSlots(row) {
+    return Array.from(row.querySelectorAll("[data-role=slots] .grid-slot")).filter(function (slot) {
+      return !isEmpty(slot);
+    });
+  }
+
+  function slotsText(row, count) {
+    if (row.dataset.kind === "leave") return count + (count === 1 ? " leave entry" : " leave entries");
+    return count + (count === 1 ? " time slot" : " time slots");
+  }
+
+  function changeNotes(dialog) {
+    // Say before saving what the change does: merge into an existing row, or Break pay.
+    var row = dialog.closest("tr.grid-row");
+    var category = dialog.querySelector("[data-role=new-category]").value;
+    var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
+    var key = category + ":" + project;
+    var target = key !== row.dataset.rowKey
+      && row.closest("[data-week-grid]").querySelector('tr[data-row-key="' + key + '"]');
+    var merge = dialog.querySelector("[data-role=merge-note]");
+    merge.textContent = target ? target.dataset.rowLabel + " already has a row this week: the "
+      + slotsText(row, filledSlots(row).length) + " of this row will be added to it." : "";
+    merge.hidden = !target;
+    var fromBreak = row.dataset.kind === "break";
+    var note = dialog.querySelector("[data-role=break-note]");
+    note.textContent = category === "BREAK" && !fromBreak
+      ? "Break is unpaid: these hours will no longer count as worked time."
+      : fromBreak && category !== "BREAK" ? "These hours will count as worked time." : "";
+    note.hidden = !note.textContent;
+  }
+
+  function rowAction(row, values, focusKey) {
+    // Post the week as typed; the server returns the whole grid with the row changed.
+    var grid = row.closest("[data-week-grid]");
+    var tableId = grid.querySelector("table.week-grid").id;
+    values["row-key"] = row.dataset.rowKey;
+    return htmx.ajax("POST", grid.dataset.rowsUrl, {
+      source: grid, target: grid, swap: "outerHTML", values: values,
+    }).then(function () {
+      if (document.contains(grid)) return; // refused: the message is in the open dialog
+      opener = null;
+      var fresh = document.getElementById(tableId).closest("[data-week-grid]");
+      changed(fresh);
+      var area = fresh.querySelector("[data-role=grid-notice]");
+      notice(fresh, area.dataset.notice);
+      var focus = focusKey && fresh.querySelector('tr[data-row-key="' + focusKey + '"] .row-actions-toggle');
+      (focus || fresh.querySelector("[data-grid-action=add-row]")).focus();
+    }).catch(function () {}); // a network error leaves the grid as it was
+  }
+
+  document.body.addEventListener("htmx:responseError", function (event) {
+    var error = document.querySelector("dialog[open] [data-role=row-error]");
+    if (!error) return;
+    var status = event.detail.xhr.status;
+    error.textContent = status === 400 ? event.detail.xhr.responseText
+      : "This week can't be changed any more. Reload the page to see it.";
+    error.hidden = false;
+  });
+
   // --- events -------------------------------------------------------------------------
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-grid-action]");
@@ -235,6 +297,41 @@
       open(adder, button);
     } else if (action === "insert-row") {
       addRow(dialog);
+    } else if (action === "change-row" || action === "delete-row") {
+      var row = button.closest("tr.grid-row");
+      var toggle = row.querySelector(".row-actions-toggle");
+      var count = filledSlots(row).length;
+      if (action === "delete-row" && !count) {
+        rowAction(row, { "row-action": "delete" }); // nothing typed in it: no question to ask
+        return;
+      }
+      var panel = row.querySelector("[data-role=" + action + "-dialog]");
+      panel.querySelector("[data-role=row-error]").hidden = true;
+      if (action === "change-row") {
+        changeNotes(panel);
+      } else {
+        var minutes = filledSlots(row).reduce(function (sum, slot) { return sum + slotMinutes(slot); }, 0);
+        panel.querySelector("[data-role=delete-text]").textContent = "Delete "
+          + panel.dataset.rowName + "? This removes "
+          + slotsText(row, count) + " (" + text(minutes) + " h) from this week.";
+      }
+      open(panel, toggle);
+    } else if (action === "confirm-change") {
+      var changing = dialog.closest("tr.grid-row");
+      var category = dialog.querySelector("[data-role=new-category]").value;
+      var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
+      var problem = dialog.querySelector("[data-role=row-error]");
+      problem.textContent = category === "PROJECT" && !project ? "Choose a project." : "";
+      problem.hidden = !problem.textContent;
+      if (!problem.hidden) return;
+      if (category + ":" + project === changing.dataset.rowKey) {
+        dialog.close(); // nothing to change
+        return;
+      }
+      rowAction(changing, { "row-action": "change", "new-category": category, "new-project": project },
+        category + ":" + project);
+    } else if (action === "confirm-delete") {
+      rowAction(dialog.closest("tr.grid-row"), { "row-action": "delete" });
     }
   });
 
@@ -243,6 +340,8 @@
       var field = event.target.closest("dialog").querySelector("[data-role=new-project-field]");
       field.hidden = event.target.value !== "PROJECT";
     }
+    var changing = event.target.closest("[data-role=change-row-dialog]");
+    if (changing) changeNotes(changing);
   });
 
   document.addEventListener("input", function (event) {

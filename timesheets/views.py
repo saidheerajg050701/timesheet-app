@@ -9,11 +9,12 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
 from timesheets.forms import CATEGORY_GROUPS, parse_entries, parse_grid_keys, project_choices
-from timesheets.grid import build_grid
-from timesheets.models import ChangeRequest, Project, TimeEntry, Timesheet
+from timesheets.grid import build_grid, row_notice
+from timesheets.models import ChangeRequest, Timesheet
 from timesheets.services.approvals import approval_for_week
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.changes import can_request_change, open_request_for, raise_request
+from timesheets.services.grid_rows import change_row, delete_row, split_key, target_problem
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import (
     STATUS_LABELS,
@@ -140,17 +141,53 @@ def _week_context(me, state, attempt, now):
         "next_week": state.week_start + timedelta(weeks=1)
         if state.week_start < current_week
         else None,
-        **grid_choices(state.week_start),
+        **grid_choices(state.week_start, reverse("timesheet_rows", args=[state.week_start])),
     }
 
 
-def grid_choices(week_start):
-    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18)."""
+def grid_choices(week_start, rows_url):
+    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18),
+    and where its row actions post the week as typed (D-129)."""
     return {
         "row_url": reverse("timesheet_row", args=[week_start]),
+        "rows_url": rows_url,
         "category_groups": CATEGORY_GROUPS,
         "project_choices": project_choices(),
     }
+
+
+def row_action(request, week_start, rows_url):
+    """HTMX: the grid as typed with one row changed or deleted (D-129, D-130). Never saves:
+    the caller has already checked that this user may edit this week."""
+    parsed = parse_entries(request.POST, week_start)
+    keys = parse_grid_keys(request.POST)
+    action = request.POST.get("row-action")
+    source = split_key(request.POST.get("row-key"))
+    target = (request.POST.get("new-category", ""), request.POST.get("new-project", ""))
+    try:
+        if action == "delete":
+            result = delete_row(parsed.rows, keys, source)
+        elif action == "change":
+            result = change_row(parsed.rows, keys, source, target)
+        else:
+            raise ValidationError("Choose Change or Delete.")
+    except ValidationError as exc:
+        return HttpResponseBadRequest(" ".join(exc.messages))
+    context = {
+        "grid": build_grid(result.rows, week_start, editable=True, keys=result.keys),
+        "notice": row_notice(action, source, result),
+        **grid_choices(week_start, rows_url),
+    }
+    return render(request, "timesheets/_grid.html", context)
+
+
+@require_POST
+def timesheet_rows(request, week):
+    """HTMX: change or delete a row of the employee's own week, only while it is editable."""
+    me, week_start = _own_week(request, week)
+    if not week_state(me, week_start, load_sheet(me, week_start), timezone.now()).editable:
+        raise WeekLocked("This week can't be changed.")
+    return row_action(request, week_start, reverse("timesheet_rows", args=[week_start]))
 
 
 @require_POST
@@ -171,16 +208,13 @@ def timesheet_row(request, week):
     """HTMX: one empty grid row for "+ Add row" (D-107). Active projects only (D-18)."""
     _, week_start = _own_week(request, week)
     category = request.GET.get("category", "")
-    project = request.GET.get("project", "")
-    if category not in dict(TimeEntry.Category.choices):
-        return HttpResponseBadRequest("Choose a category.")
-    if category == TimeEntry.Category.PROJECT:
-        if not (project.isdigit() and Project.objects.filter(pk=project, active=True).exists()):
-            return HttpResponseBadRequest("Choose an active project.")
-    else:
-        project = ""
+    project = request.GET.get("project", "") if category == "PROJECT" else ""
+    problem = target_problem(category, project)
+    if problem:
+        return HttpResponseBadRequest(problem)
     grid = build_grid([], week_start, editable=True, keys=[(category, project)])
-    return render(request, "timesheets/_grid_row.html", {"row": grid.rows[0], "grid": grid})
+    context = {"row": grid.rows[0], "grid": grid, "project_choices": project_choices()}
+    return render(request, "timesheets/_grid_row.html", context)
 
 
 @require_POST

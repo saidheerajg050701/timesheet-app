@@ -1,5 +1,5 @@
-{# The weekly grid (D-106–D-110). Context: grid (timesheets.grid.Grid), optional grid_id when a page shows several; editable grids also need row_url, category_groups, project_choices. #}{% load timesheet_tags %}
-<div class="week-grid-wrap{% if grid.editable %} is-editable{% endif %}" data-week-grid>
+{# The weekly grid (D-106–D-110). Context: grid (timesheets.grid.Grid), optional grid_id when a page shows several; editable grids also need row_url, rows_url, category_groups, project_choices, and after a row action its notice (D-129). #}{% load timesheet_tags %}
+<div class="week-grid-wrap{% if grid.editable %} is-editable{% endif %}" data-week-grid{% if grid.editable %} data-rows-url="{{ rows_url }}"{% endif %}>
   <div class="table-responsive grid-scroll">
     <table class="table week-grid mb-0" id="{{ grid_id|default:'entries' }}" data-next-index="{{ grid.next_index }}" aria-label="Week of {{ grid.week_start|date:'M j, Y' }}: hours per project or category and day">
       <thead>
@@ -24,7 +24,7 @@
     </table>
   </div>
   {% if grid.editable %}
-    <div class="grid-notice-area" data-role="grid-notice" role="status"></div>
+    <div class="grid-notice-area" data-role="grid-notice" role="status" data-notice="{{ notice|default:'' }}"></div>
     <button type="button" class="btn btn-outline-secondary mt-3" data-grid-action="add-row">+ Add row</button>
     <dialog class="cell-dialog" id="add-row-dialog" aria-labelledby="add-row-title" data-row-url="{{ row_url }}">
       <div class="cell-dialog-head">

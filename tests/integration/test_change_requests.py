@@ -4,12 +4,15 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import time_machine
+from django.core.exceptions import ValidationError
 from django.urls import reverse
 
 from audit.models import AuditLog
 from tests.factories import TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, leave, work
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
+from timesheets.services.approvals import reject_period
+from timesheets.services.changes import raise_request
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wednesday of the week of Sun 18 Oct
@@ -225,14 +228,14 @@ def test_each_step_is_audited(org, weeks, login_as, project):
 
 
 def test_edit_directly_uses_the_same_rules(org, weeks, login_as, project):
-    """T-84: Edit directly refuses overlaps, missing reasons, Break rules and >24 h (D-49)."""
+    """T-84: Edit directly refuses overlaps, over-long reasons, Break rules and >24 h (D-49)."""
     _, change = raise_as(login_as, org.dev1, LAST_WEEK)
     client = login_as(org.manager)
     url = reverse("request_edit", args=[change.pk])
     day = monday(LAST_WEEK)
     cases = {
         "overlap": form(work(day, "09:00", "12:00", project), brk(day, "11:30", "12:15")),
-        "a reason is required": form(work(day, "09:00", "12:00", project, reason="")),
+        "longer than 255 characters": form(work(day, "09:00", "12:00", project, reason="x" * 256)),
         "only project work can have a project": form(
             {**brk(day, "12:00", "12:30"), "project": str(project.pk)}
         ),
@@ -392,3 +395,28 @@ def test_request_totals_use_the_employees_hours(org, weeks, login_as, project):
     ).content.decode()
     assert 'id="week-worked">2:30<' in totals and f'hx-post="{url}"' in totals
     assert TimeEntry.objects.get(timesheet__employee=org.dev1).end_time.hour == 17  # unsaved
+
+
+def test_edit_directly_without_a_reason(org, weeks, login_as, project):
+    """T-189: Edit directly saves a slot with no reason; requests and rejections still need one."""
+    _, change = raise_as(login_as, org.dev1, LAST_WEEK)
+    day = monday(LAST_WEEK)
+    rows = form(work(day, "09:00", "17:30", project, reason=""))
+    response = login_as(org.manager).post(reverse("request_edit", args=[change.pk]), rows)
+    assert response.status_code == 302
+    saved = TimeEntry.objects.get(timesheet=weeks["last"])
+    assert (saved.minutes, saved.reason) == (510, "")
+    row = AuditLog.objects.get(action=AuditLog.Action.UPDATE, entity_type="Timesheet")
+    assert [(e["end"], e["reason"]) for e in row.after["entries"]] == [("17:30", "")]
+    html = login_as(org.dev1).get(reverse("timesheet_week", args=[LAST_WEEK])).content.decode()
+    panel = html.split(f'id="cell-project-{project.pk}-{day.isoformat()}"')[1].split("</dialog>")[0]
+    assert "17:30" in panel and ">Reason<" not in panel  # nothing to show
+
+    with pytest.raises(ValidationError, match="Explain what needs to change"):
+        raise_request(org.dev1, TWO_WEEKS_AGO, "   ", now=NOW)
+    weeks["make"](org.dev1, PERIOD, "SUBMITTED")
+    weeks["make"](org.dev1, TWO_WEEKS_AGO, "SUBMITTED")
+    with pytest.raises(ValidationError) as refused:
+        reject_period(org.manager, org.dev1, PERIOD, "  ", now=NOW)
+    assert any("Write a comment" in message for message in refused.value.messages)
+    assert not PeriodApproval.objects.exists()

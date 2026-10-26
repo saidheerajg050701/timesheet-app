@@ -184,7 +184,9 @@ def test_rows_are_read_and_checked_on_the_server(client_me, project):
         "choose a category": form({**work(TUESDAY, "09:00", "10:00", project), "category": ""}),
         "unknown project": form({**work(TUESDAY, "09:00", "10:00"), "project": "99999"}),
         "is not a number of hours": form(leave(TUESDAY, "lots")),
-        "a reason is required": form(work(TUESDAY, "09:00", "10:00", project, reason="")),
+        "longer than 255 characters": form(
+            work(TUESDAY, "09:00", "10:00", project, reason="x" * 256)
+        ),
         "overlap": form(work(TUESDAY, "09:00", "12:00", project), brk(TUESDAY, "11:30", "12:15")),
         "hours only": form({**leave(TUESDAY, "4"), "start": "09:00", "end": "13:00"}),
     }

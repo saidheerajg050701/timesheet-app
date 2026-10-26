@@ -8,7 +8,7 @@ from django.urls import reverse
 
 from tests.factories import ProjectFactory, TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, leave, work
-from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
+from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import entries_snapshot
 
@@ -139,10 +139,10 @@ def test_add_row(dev1, project):
     project.save()
     assert dev1.get(row_url, {"category": "PROJECT", "project": project.pk}).status_code == 400
 
-    posted = form(work(MONDAY, "09:00", "12:00", category="MEETING", reason=""))
+    posted = form(work(MONDAY, "09:00", "12:00", category="MEETING", reason="x" * 256))
     posted["grid-row"] = ["MEETING:", "TRAINING:", "BOGUS:", "PTO:x"]
     html = dev1.post(url(), posted).content.decode()
-    assert "a reason is required" in html
+    assert "longer than 255 characters" in html
     assert 'data-row-key="TRAINING:"' in html  # added, no slots yet: kept through the error
     assert "BOGUS" not in html and 'data-row-key="PTO:' not in html
     assert html.count('data-row-key="MEETING:"') == 1  # never twice
@@ -343,3 +343,30 @@ def test_multi_slot_hint(org, project, login_as, fixed_now):
     assert 'aria-hidden="true"></span>' in one and '8.00 hours, 1 slot"' in one
     html = login_as(org.dev1).get(url()).content.decode()
     assert "+ Add another time slot" in html
+
+
+def test_week_without_reasons(dev1, org, project):
+    """T-188: slots without a reason save and submit; read-only cells show reasons only if any."""
+    rows = (
+        work(MONDAY, "09:00", "12:00", project, reason=""),
+        {**brk(MONDAY, "12:00", "12:30"), "reason": ""},
+        work(MONDAY, "12:30", "17:00", project, reason="   "),  # only spaces: saved blank
+        leave(TUESDAY, "8", "PTO", ""),
+        work(WEDNESDAY, "09:00", "12:00", project, reason="Release"),
+        work(WEDNESDAY, "13:00", "17:00", project, reason=""),
+    )
+    assert dev1.post(url(), form(*rows)).status_code == 302
+    reasons = sorted(TimeEntry.objects.values_list("reason", flat=True))
+    assert reasons == ["", "", "", "", "", "Release"]
+    assert dev1.post(url(), form(*rows, action="submit")).status_code == 302
+    assert Timesheet.objects.get(employee=org.dev1).status == "SUBMITTED"
+
+    html = dev1.get(url()).content.decode()
+    assert "<input" not in html.split('class="table week-grid')[1].split("</table>\n  </div>")[0]
+    for target in (cell("PROJECT", project, MONDAY), cell("PTO", None, TUESDAY)):
+        panel = dialog(html, target)
+        assert "cell-slots-readonly" in panel and ">Reason<" not in panel, target
+    assert "12:30" in dialog(html, cell("PROJECT", project, MONDAY))
+    mixed = dialog(html, cell("PROJECT", project, WEDNESDAY))
+    assert '<th scope="col">Reason</th>' in mixed and "<td>Release</td>" in mixed
+    assert mixed.count("<td></td>") == 1  # the slot without a reason: an empty cell
