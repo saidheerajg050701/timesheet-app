@@ -607,6 +607,18 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
 .slot-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.8125rem; font-weight: 500; color: #334155; }
 .slot-total { align-self: center; font-size: 0.8125rem; color: var(--ts-text-muted); font-variant-numeric: tabular-nums; min-width: 52px; }
 .cell-slots-readonly td, .cell-slots-readonly th { padding: 6px 8px !important; }
+
+/* ---- Pay period register (Change 8, D-134) ------------------------------------------ */
+.register-table { font-variant-numeric: tabular-nums; }
+.register-table th, .register-table td { white-space: nowrap; }
+.register-table .register-groups th { border-bottom: 0; font-size: 0.75rem; letter-spacing: 0.03em; color: var(--ts-text-muted); }
+.register-table .carry-col { --bs-table-bg: var(--ts-accent-soft); background: var(--ts-accent-soft); }
+.register-table thead .carry-col { color: var(--ts-accent-soft-text); }
+.register-table tfoot th, .register-table tfoot td { font-weight: 650; border-top: 2px solid var(--ts-border-strong); }
+/* In the scrolling box: the column names stay under the group names, the totals stay in view. */
+.register-table .register-groups th { height: 30px; }
+.table-scroll > .register-table > thead > tr:nth-child(2) > th { top: 30px; }
+.table-scroll > .register-table > tfoot > tr > * { position: sticky; bottom: 0; z-index: 2; background: var(--ts-surface-muted); }
 @media (max-width: 575.98px) {
   .grid-slot { grid-template-columns: 1fr 1fr; }
   .grid-slot .slot-reason, .grid-slot .slot-hours-field { grid-column: 1 / -1; }

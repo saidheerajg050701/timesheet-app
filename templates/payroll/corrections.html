@@ -29,7 +29,7 @@
           <td class="text-end fw-semibold">{{ c.difference_text }}</td>
           <td data-role="adjustment">
             {% if c.adjustment %}
-              {{ c.adjustment.total_minutes|signed_hours }} h → pay period {{ c.adjustment.period_start|date:"M j" }} – {{ c.adjustment.period_start|add_days:13|date:"M j, Y" }}<br>
+              {{ c.adjustment.total_minutes|signed_hours }} h → <a href="{% url 'payroll_period' c.register_period %}" data-role="register-link">register {{ c.register_period|date:"M j" }} – {{ c.register_period|add_days:13|date:"M j, Y" }}</a>{% if c.register %} ({{ c.register.get_status_display|lower }}){% endif %}<br>
               {% include "includes/status_badge.html" with status=c.adjustment.status label=c.adjustment_status only %}
             {% elif c.new and c.new.status == "SETTLED" %}<span class="text-body-secondary">no adjustment (0.00)</span>
             {% elif c.new %}<span class="text-body-secondary">not adjusted yet — run sync_payroll</span>

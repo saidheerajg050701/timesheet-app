@@ -20,6 +20,7 @@ from timesheets.services.approvals import (
     reject_period,
 )
 from timesheets.services.calendar import (
+    approval_deadline_for,
     current_period,
     default_period,
     period_start_for,
@@ -52,6 +53,7 @@ def approval_list(request):
     period = _period_from(request.GET.get("period"), now)
     rows = period_rows(request.user.employee, period, now)
     current = current_period(now)
+    deadline = approval_deadline_for(period)
     return render(
         request,
         "timesheets/approvals.html",
@@ -63,6 +65,8 @@ def approval_list(request):
             "next": period + timedelta(weeks=2) if period < current else None,
             "rows": rows,
             "bulk_count": sum(row.can_bulk for row in rows),
+            "deadline": deadline,
+            "overdue": now >= deadline,  # unapproved rows are Overdue after it (D-133)
         },
     )
 

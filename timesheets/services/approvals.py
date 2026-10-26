@@ -184,22 +184,41 @@ def approvable_employees(viewer):
     return people.exclude(pk=viewer.pk).select_related("team").order_by("last_name", "first_name")
 
 
-def period_rows(viewer, period_start, now):
-    """One row per approvable employee in the period (D-54).
+def must_be_approved(employees, period_start):
+    """Who among `employees` must be approved for the period — the one rule (D-54, D-134).
 
     Active employees employed on at least one day of the period; inactive employees only if
     they have a timesheet in it (their existing timesheets can still be approved, D-19).
     """
     days = [period_start + timedelta(days=i) for i in range(14)]
     starts = pay_period_for(period_start, settings.PAY_PERIOD_ANCHOR)[1:]
-    candidates = [e for e in approvable_employees(viewer) if any(employed_on(e, d) for d in days)]
+    candidates = [e for e in employees if any(employed_on(e, d) for d in days)]
     with_sheets = set(
         Timesheet.objects.filter(employee__in=candidates, week_start__in=starts).values_list(
             "employee_id", flat=True
         )
     )
-    people = [e for e in candidates if e.status == Employee.Status.ACTIVE or e.pk in with_sheets]
+    return [e for e in candidates if e.status == Employee.Status.ACTIVE or e.pk in with_sheets]
+
+
+def period_rows(viewer, period_start, now):
+    """One row per approvable employee in the period (D-54)."""
+    people = must_be_approved(approvable_employees(viewer), period_start)
     return _build_rows(people, period_start, now)
+
+
+def company_period_rows(period_start, now):
+    """Everyone in the company who must be approved for the period: together, every approver's
+    list (direct manager, or an admin for no-manager staff, D-11). For the pay register (D-134)."""
+    people = Employee.objects.select_related("team", "manager").order_by("last_name", "first_name")
+    return _build_rows(must_be_approved(people, period_start), period_start, now)
+
+
+def approver_label(employee):
+    """Who approves this employee: their manager, or an admin when they have none (D-11)."""
+    if employee.manager_id:
+        return f"{employee.manager.first_name} {employee.manager.last_name}"
+    return "HR / an admin"
 
 
 def period_row(viewer, employee, period_start, now):

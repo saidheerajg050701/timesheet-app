@@ -10,7 +10,8 @@ from django.db.models import Q
 
 from audit.models import AuditLog
 from audit.services.log import record
-from payroll.models import PayrollAdjustment, PayrollWeek
+from payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
+from payroll.services.adjustments import closed_periods, next_open_period
 
 BATCH_PREFIX = "EXP-"
 FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
@@ -67,9 +68,12 @@ def safe_cell(value):
 
 
 def next_batch():
+    """The next free EXP- number, also past batches a register holds with nothing in it."""
+    registers = PayrollRegister.objects.values_list("export_batch", flat=True)
     used = {
         *PayrollWeek.objects.exclude(export_batch="").values_list("export_batch", flat=True),
         *PayrollAdjustment.objects.exclude(export_batch="").values_list("export_batch", flat=True),
+        *(batch for joined in registers for batch in joined.split("+")),
     }
     numbers = [int(b.removeprefix(BATCH_PREFIX)) for b in set(used) if b.startswith(BATCH_PREFIX)]
     return f"{BATCH_PREFIX}{max(numbers, default=0) + 1:04d}"
@@ -94,6 +98,10 @@ def exportable(period_start):
 def export_period(period_start, *, actor=None, system_actor="", at):
     """Every CURRENT week record and adjustment of the period becomes EXPORTED in one new
     batch (D-68, D-123). SETTLED weeks are never exported (D-118).
+
+    Before Change 8 this was the Export CSV button. Now "Finalize & export" (register.finalize)
+    is the only action that creates a batch (D-135); no page or command calls this any more —
+    it stays to build data "as it was before registers" for tests of build_registers.
 
     Returns the batch number, or None if there was nothing to export.
     """
@@ -124,10 +132,10 @@ def export_period(period_start, *, actor=None, system_actor="", at):
     return batch
 
 
-def batch_rows(batch):
-    """The batch's week records and adjustments: per employee, weeks first (D-123)."""
-    weeks = PayrollWeek.objects.filter(export_batch=batch)
-    adjustments = PayrollAdjustment.objects.filter(export_batch=batch)
+def batch_rows(*batches):
+    """The batches' week records and adjustments: per employee, weeks first (D-123)."""
+    weeks = PayrollWeek.objects.filter(export_batch__in=batches)
+    adjustments = PayrollAdjustment.objects.filter(export_batch__in=batches)
     return sorted(
         [*weeks, *adjustments],
         key=lambda r: (r.employee_code, is_adjustment(r), r.week_start, str(r.pk)),
@@ -136,10 +144,15 @@ def batch_rows(batch):
 
 def batch_csv(batch):
     """The batch as CSV text; every text cell spreadsheet-safe (D-68, D-123)."""
+    return batches_csv([batch])
+
+
+def batches_csv(batches):
+    """The detailed CSV for one or more batches (a register's, D-135): WEEK / ADJUSTMENT rows."""
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow([name for name, _, _ in CSV_COLUMNS])
-    for r in batch_rows(batch):
+    for r in batch_rows(*batches):
         writer.writerow(
             [value(r) if numeric else safe_cell(value(r)) for _, value, numeric in CSV_COLUMNS]
         )
@@ -181,65 +194,6 @@ def mark_paid_counts(batch, *, actor=None, system_actor="", at):
 
 
 @dataclass
-class EmployeeTotals:
-    employee_code: str
-    employee_name: str
-    department: str
-    team: str
-    regular: int = 0
-    overtime: int = 0
-    pto: int = 0
-    sick: int = 0
-    holiday: int = 0
-    weeks: int = 0  # the week records' total
-    adjustments: int = 0  # differences carried into this period (signed, D-124)
-
-    @property
-    def total(self):
-        return self.weeks + self.adjustments
-
-
-def employee_totals(records, adjustments=()):
-    """Per-employee sums, by name: week records by category, adjustments separately (D-124)."""
-    totals = {}
-
-    def row(r):
-        return totals.setdefault(
-            r.employee_code, EmployeeTotals(r.employee_code, r.employee_name, r.department, r.team)
-        )
-
-    for r in records:
-        t = row(r)
-        t.regular += r.regular_minutes
-        t.overtime += r.overtime_minutes
-        t.pto += r.pto_minutes
-        t.sick += r.sick_minutes
-        t.holiday += r.holiday_minutes
-        t.weeks += r.total_minutes
-    for a in adjustments:
-        row(a).adjustments += a.total_minutes
-    return sorted(totals.values(), key=lambda t: t.employee_name)
-
-
-def batches_for(period_start):
-    """[(batch, exported_at, week records, adjustments, still EXPORTED, PAID)] for the period."""
-    found = defaultdict(
-        lambda: {"exported_at": None, "records": 0, "adjustments": 0, "exported": 0, "paid": 0}
-    )
-    rows = [
-        *PayrollWeek.objects.filter(period_start=period_start).exclude(export_batch=""),
-        *PayrollAdjustment.objects.filter(period_start=period_start).exclude(export_batch=""),
-    ]
-    for r in rows:
-        info = found[r.export_batch]
-        info["exported_at"] = info["exported_at"] or r.exported_at
-        info["adjustments" if is_adjustment(r) else "records"] += 1
-        info["exported"] += r.status == "EXPORTED"
-        info["paid"] += r.status == "PAID"
-    return [{"batch": b, **found[b]} for b in sorted(found)]
-
-
-@dataclass
 class Correction:
     """One change to a week that had been exported: old version → new version (or still
     waiting for re-approval), with the adjustment that pays the difference (D-124)."""
@@ -247,6 +201,8 @@ class Correction:
     old: PayrollWeek
     new: PayrollWeek | None
     adjustment: PayrollAdjustment | None = None
+    register_period: object = None  # the pay period whose register pays the adjustment (D-138)
+    register: PayrollRegister | None = None  # that register, once finalized
 
     @property
     def difference(self):
@@ -271,6 +227,24 @@ class Correction:
         return "Scheduled"
 
 
+def _registers_for(rows):
+    """Where each adjustment is paid: the register holding its batch, or — still scheduled —
+    the first pay period from its own one whose register isn't finalized (D-136, D-138)."""
+    registers = list(PayrollRegister.objects.all())
+    by_batch = {batch: r for r in registers for batch in r.batches}
+    by_period = {r.period_start: r for r in registers}
+    closed = closed_periods()
+    for row in rows:
+        a = row.adjustment
+        if a is None:
+            continue
+        register = by_batch.get(a.export_batch) if a.export_batch else None
+        row.register_period = (
+            register.period_start if register else (next_open_period(a.period_start, closed))
+        )
+        row.register = register or by_period.get(row.register_period)
+
+
 def corrections():
     """Every version change of a week that had been exported or settled (D-124, replaces D-70)."""
     superseded = PayrollWeek.objects.filter(status=PayrollWeek.Status.SUPERSEDED).filter(
@@ -290,5 +264,6 @@ def corrections():
         new = later[0] if later else None
         key = (old.employee_code, old.week_start, new.version if new else None)
         rows.append(Correction(old, new, adjustments.get(key)))
+    _registers_for(rows)
     rows.sort(key=lambda c: (c.old.employee_code, c.old.week_start, c.old.version))
     return sorted(rows, key=lambda c: c.old.superseded_at, reverse=True)  # newest first, stable

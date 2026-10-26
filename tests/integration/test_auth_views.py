@@ -230,9 +230,11 @@ def test_axes_and_main_tables_stay_out_of_payroll_database():
     main_tables = set(connections["default"].introspection.table_names())
     payroll_tables = set(connections["payroll"].introspection.table_names())
     assert {"axes_accessattempt", "axes_accesslog", "axes_accessfailurelog"} <= main_tables
-    assert payroll_tables == {  # Phase 8, plus the adjustments of Change 4
-        "django_migrations",
+    payroll_models = {  # Phase 8, the adjustments of Change 4, the registers of Change 8
         "payroll_payrollweek",
         "payroll_payrolladjustment",
+        "payroll_payrollregister",
+        "payroll_payrollregisterline",
     }
-    assert not {"payroll_payrollweek", "payroll_payrolladjustment"} & main_tables
+    assert payroll_tables == {"django_migrations", *payroll_models}
+    assert not payroll_models & main_tables

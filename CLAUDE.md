@@ -21,6 +21,10 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Every view enforces permissions server-side via directory/services/permissions.py.
 - Payroll models live only in the payroll database; no foreign keys across databases; payroll
   records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
+- Pay period registers (D-132–D-138): OPEN/READY are worked out live; only "Finalize & export"
+  (payroll/services/register.py → finalize) creates a batch and saves the frozen register and
+  lines; all register numbers come from PayrollWeek/PayrollAdjustment records. "Who must be
+  approved" is approvals.must_be_approved, nowhere else.
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
 - Durations are integer minutes; work dates are DateField; deadlines computed in COMPANY_TZ.
 - Weeks run Sunday–Saturday and are identified by their Sunday; pay periods start on the Sunday
@@ -43,6 +47,8 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - uv run pytest -m "not e2e"                              # fast tests
 - bash scripts/test_all.sh                                # everything (lint, checks, coverage, e2e)
 - uv run python manage.py backup_db
+- uv run python manage.py build_registers                 # registers for periods exported before Change 8
+- uv run python manage.py sync_payroll                    # repair payroll (records, adjustments, registers)
 
 ## Definition of done for each phase
 1. `bash scripts/test_all.sh` passes (once it exists; before that: ruff + pytest).

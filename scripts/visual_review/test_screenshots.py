@@ -28,7 +28,7 @@ os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")  # Playwright's sync 
 PASSWORD = "Visual-Review-Pass-2026"
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=ZoneInfo("America/Chicago"))
 PERIOD = date(2026, 9, 27)  # most recent completed period: still pending in the demo data
-PAID_PERIOD = date(2026, 9, 13)  # approved and published: payroll has records
+PAID_PERIOD = date(2026, 9, 13)  # approved and published, its register not finalized yet
 SIZES = {"desktop": {"width": 1440, "height": 900}, "narrow": {"width": 390, "height": 844}}
 OUT = os.environ.get("SCREENSHOTS_DIR")
 # Can the page itself be scrolled sideways? Wide tables must scroll inside their own box.
@@ -65,7 +65,10 @@ def pages():
         ("eng.manager", "approval-detail", approval),
         ("eng.manager", "edit-directly", reverse("request_edit", args=[open_request.pk])),
         ("eng.manager", "change-requests", reverse("request_inbox")),
-        ("payroll", "payroll", f"{reverse('payroll')}?period={PAID_PERIOD.isoformat()}"),
+        ("payroll", "payroll", reverse("payroll")),  # the pay periods (Change 8)
+        ("payroll", "register-ready", reverse("payroll_period", args=[PAID_PERIOD])),
+        ("payroll", "register-open", reverse("payroll_period", args=[PERIOD])),
+        ("payroll", "register-paid", reverse("payroll_period", args=[date(2026, 8, 16)])),
         ("payroll", "corrections", reverse("payroll_corrections")),
         ("hr", "dashboard", reverse("home")),
         ("hr", "team", reverse("team")),

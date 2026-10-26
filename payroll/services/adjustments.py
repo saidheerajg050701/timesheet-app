@@ -2,13 +2,14 @@
 
 Once any version of an employee-week has been exported, its money flows through the original
 payment plus adjustments: every later version is SETTLED (never exported as a week row again)
-and an adjustment for "new version − previous version" is carried forward to the next pay run.
+and an adjustment for "new version − previous version" is carried forward to the next pay run:
+the next pay period whose register isn't finalized yet (D-136).
 """
 
 from dataclasses import dataclass
 from datetime import timedelta
 
-from payroll.models import PayrollAdjustment, PayrollWeek
+from payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
 from timesheets.models import ChangeRequest
 from timesheets.services.calendar import default_period
 
@@ -32,24 +33,32 @@ def previous_version(record):
     return earlier.order_by("-version").first()
 
 
-def period_exported(period_start):
-    """Has a batch already been exported for this pay period (weeks or adjustments)?"""
-    return (
-        PayrollWeek.objects.filter(period_start=period_start).exclude(export_batch="").exists()
-        or PayrollAdjustment.objects.filter(period_start=period_start)
-        .exclude(export_batch="")
-        .exists()
-    )
+def closed_periods():
+    """Pay periods whose pay run is done: a finalized (or paid) register, or — for data from
+    before registers — an export batch (D-136). Nothing more can be paid in them."""
+    return {
+        *PayrollRegister.objects.values_list("period_start", flat=True),
+        *PayrollWeek.objects.exclude(export_batch="").values_list("period_start", flat=True),
+        *PayrollAdjustment.objects.exclude(export_batch="").values_list("period_start", flat=True),
+    }
+
+
+def period_closed(period_start):
+    return period_start in closed_periods()
+
+
+def next_open_period(period, closed):
+    """`period` itself, or the first pay period after it that isn't closed."""
+    while period in closed:
+        period += PERIOD
+    return period
 
 
 def carry_period(week_period_start, at):
-    """The pay period an adjustment is carried to (D-121): from the later of the period after
-    the corrected week's own period and the most recent completed period at `at`, the first
-    one that has no export batch yet."""
-    period = max(week_period_start + PERIOD, default_period(at))
-    while period_exported(period):
-        period += PERIOD
-    return period
+    """The pay period an adjustment is carried to (D-121, D-136): from the later of the period
+    after the corrected week's own period and the most recent completed period at `at`, the
+    first one whose register isn't finalized (and that has no older-style export batch)."""
+    return next_open_period(max(week_period_start + PERIOD, default_period(at)), closed_periods())
 
 
 def reason_for(record):

@@ -174,6 +174,23 @@ def default_period(now: datetime) -> date:
     return current_period(now) - timedelta(weeks=2)
 
 
+def period_end_for(period_start: date) -> date:
+    """The period's last day, the Saturday of its week 2."""
+    return period_start + timedelta(days=13)
+
+
+def approval_deadline_for(period_start: date) -> datetime:
+    """When managers should have approved the period: APPROVAL_DEADLINE_DAYS after its last day
+    at APPROVAL_DEADLINE_TIME company time, by default Monday 12:00 (D-133)."""
+    day = period_end_for(period_start) + timedelta(days=settings.APPROVAL_DEADLINE_DAYS)
+    return datetime.combine(day, settings.APPROVAL_DEADLINE_TIME, tzinfo=company_tz())
+
+
+def period_ended(period_start: date, now: datetime) -> bool:
+    """Has the period's last day (Saturday) passed, company time?"""
+    return now.astimezone(company_tz()).date() > period_end_for(period_start)
+
+
 def recent_periods(now: datetime, count: int = 13) -> list[date]:
     """The current period and the `count - 1` before it, newest first."""
     current = current_period(now)

@@ -117,22 +117,39 @@ Managers (and admins, for employees with no manager) open **Approvals** to pick 
 hours worked (Break never counts), leave, and Late / Overtime / Missing days flags. A period
 can be approved or rejected (with a comment) once its weeks are submitted; a locked week has an
 Unlock button. Clean rows can be bulk approved. Nobody approves their own timesheet.
+Approve each period by **Monday 12:00** after it ends (settings `APPROVAL_DEADLINE_DAYS` and
+`APPROVAL_DEADLINE_TIME`); after that, rows not yet approved are marked **Overdue** and payroll
+can close the period without them.
 
 ## Payroll
 Approved weeks are copied into a separate database, `payroll.sqlite3`, right after the
 approval is saved: regular hours up to the expected hours, overtime above, PTO / Sick /
-Holiday separately (Break is unpaid and never counted). Payroll staff and admins use
-**Payroll** (`/payroll/`) to filter, see totals per employee, **Export CSV** (one numbered
-batch per period, safe to open in Excel/Numbers) and **Mark as paid**; **Corrections** lists
-weeks that changed after export. Records are append-only: a changed week is superseded and a
-new version is written after re-approval. If the week had already been exported or paid, the new
-version is **settled** instead of exported again, and the difference (for example +2.00 overtime
-hours or −1.50 regular hours) becomes a **pay adjustment** carried to the next pay period that
-hasn't been exported yet. Adjustments appear in that period's totals and in its Export CSV as
-rows of type `ADJUSTMENT`, and Corrections shows each one as Scheduled, Exported or Paid.
-If the page says payroll is out of sync, run:
+Holiday separately (Break is unpaid and never counted).
+
+**Payroll** (`/payroll/`, payroll staff and admins only) lists every ended pay period, newest
+first, with its **register**: one line per employee with Week 1, Week 2 and Period hours, the
+**carry-forward** columns (highlighted) and the **Pay total**, plus a totals row.
+- **Open**: approvals are still coming in. You see a live preview and who is still pending
+  (with their manager).
+- **Ready**: everyone is approved, or the approval deadline has passed (people not approved
+  then get a 0.00 line marked "Missed – not submitted" or "Waiting for manager approval").
+- **Finalize & export** saves the register for good as one batch (`EXP-0007`). Download the
+  **Register CSV** and the **Detailed CSV** (week and adjustment rows) as often as you like;
+  **Download all periods** gives every finalized register in one file. Then **Mark as paid**.
+
+Records are append-only: a changed week is superseded and a new version is written after
+re-approval. If the week was already in a finalized register, the difference (for example
++2.00 overtime hours or −1.50 regular hours) becomes a **pay adjustment** in the carry-forward
+columns of the next register that isn't finalized yet; someone approved after their register
+was finalized is carried forward the same way. **Corrections** lists every changed week and the
+register that pays its difference. If the page says payroll is out of sync, run:
 ```bash
-uv run python manage.py sync_payroll       # safe to repeat; also creates missing adjustments
+uv run python manage.py sync_payroll       # safe to repeat; also creates missing adjustments and registers
+```
+After updating to this version, run once (it is safe to repeat):
+```bash
+uv run python manage.py migrate --database=payroll   # the new register tables
+uv run python manage.py build_registers              # registers for periods you already exported
 ```
 
 ## Admin (HR)

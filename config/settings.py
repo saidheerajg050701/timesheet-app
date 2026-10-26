@@ -1,6 +1,6 @@
 """Django settings for the timesheet app. Values come from .env (see .env.example)."""
 
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from pathlib import Path
 
 import environ
@@ -22,6 +22,10 @@ COMPANY_EMAIL_DOMAIN = env("COMPANY_EMAIL_DOMAIN", default="@yourcompany.com")
 COMPANY_TZ = env("COMPANY_TZ", default="America/Chicago")
 # A Sunday: pay periods start on the first day of a week (D-113, checked by timesheets.E001).
 PAY_PERIOD_ANCHOR = date.fromisoformat(env("PAY_PERIOD_ANCHOR", default="2026-01-04"))
+# Managers approve a pay period by this many days after its last day (Saturday), at this time
+# company time: Monday 12:00 by default (D-133).
+APPROVAL_DEADLINE_DAYS = env.int("APPROVAL_DEADLINE_DAYS", default=2)
+APPROVAL_DEADLINE_TIME = time.fromisoformat(env("APPROVAL_DEADLINE_TIME", default="12:00"))
 DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 
 INSTALLED_APPS = [

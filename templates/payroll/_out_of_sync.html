@@ -1,0 +1,9 @@
+{# Payroll vs approvals (D-65) and registers missing for earlier exports (D-137). Context: missing, stale, unregistered. #}
+{% if missing or stale or unregistered %}
+  <div class="alert alert-warning" role="alert" id="out-of-sync">
+    Payroll is out of sync:
+    {% if missing %}{{ missing }} approved week{{ missing|pluralize }} without a payroll record{% endif %}{% if missing and stale %}; {% endif %}
+    {% if stale %}{{ stale }} record{{ stale|pluralize }} for weeks no longer approved{% endif %}{% if unregistered %}{% if missing or stale %}; {% endif %}{{ unregistered }} exported pay period{{ unregistered|pluralize }} without a register{% endif %}.
+    Ask an admin to run <code>uv run python manage.py sync_payroll</code>.
+  </div>
+{% endif %}

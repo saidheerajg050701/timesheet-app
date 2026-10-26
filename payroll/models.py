@@ -7,6 +7,8 @@ delete() / QuerySet.update() / QuerySet.delete() always refuse.
 Week records move CURRENT → EXPORTED → PAID, or CURRENT → SETTLED for a corrected version of a
 week that was already exported (paid through adjustments instead, D-118), and any of them →
 SUPERSEDED. Adjustments (the difference a correction makes) move CURRENT → EXPORTED → PAID.
+A pay period's register is saved when it is finalized and moves FINALIZED → PAID; its lines
+never change at all (D-132).
 """
 
 from django.db import models
@@ -35,6 +37,7 @@ class AppendOnlyRecord(models.Model):
     FROZEN = ()
     MOVES = {}
     LIFECYCLE = ()
+    INITIAL_STATUS = "CURRENT"  # the status every new record starts with
     EXPORT_STATUS = "EXPORTED"  # the move that also sets export_batch
 
     objects = AppendOnlyQuerySet.as_manager()
@@ -44,8 +47,10 @@ class AppendOnlyRecord(models.Model):
 
     def save(self, *args, **kwargs):
         if self._state.adding:
-            if self.status != "CURRENT" or any(getattr(self, f) for f in self.LIFECYCLE):
-                raise AppendOnlyError("A new payroll record starts as CURRENT, not exported.")
+            if self.status != self.INITIAL_STATUS or any(getattr(self, f) for f in self.LIFECYCLE):
+                raise AppendOnlyError(
+                    f"A new payroll record starts as {self.INITIAL_STATUS}, not further on."
+                )
         else:
             self._check_change()
         super().save(*args, **kwargs)
@@ -242,3 +247,141 @@ class PayrollAdjustment(AppendOnlyRecord):
             f"{self.employee_code} adjustment for {self.week_start} "
             f"v{self.old_version}→v{self.new_version} ({self.status})"
         )
+
+
+class PayrollRegister(AppendOnlyRecord):
+    """A pay period's register, saved by "Finalize & export" (D-132, D-135): one batch for the
+    period, frozen lines, then Mark as paid. OPEN and READY are never saved — they are worked
+    out live, because an approval can still go back to PENDING (payroll/services/register.py)."""
+
+    class Status(models.TextChoices):
+        FINALIZED = "FINALIZED", "Finalized & exported"
+        PAID = "PAID", "Paid"
+
+    class Ready(models.TextChoices):
+        ALL_APPROVED = "ALL_APPROVED", "Everyone approved"
+        DEADLINE = "DEADLINE", "Approval deadline passed"
+        BACKFILL = "BACKFILL", "Built from earlier exports"
+
+    period_start = models.DateField(unique=True)
+    period_end = models.DateField()
+    export_batch = models.CharField(max_length=200)  # "EXP-0007"; older data may join several
+    ready_reason = models.CharField(max_length=12, choices=Ready.choices)
+    required_count = models.PositiveIntegerField()  # who had to be approved, at finalizing
+    approved_count = models.PositiveIntegerField()
+    finalized_at = models.DateTimeField()
+    finalized_by_code = models.CharField(max_length=20, blank=True)
+    finalized_by_name = models.CharField(max_length=130)  # a person, or the system actor
+    # Lifecycle, forward only
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.FINALIZED)
+    paid_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    INITIAL_STATUS = Status.FINALIZED
+    EXPORT_STATUS = None
+    FROZEN = (
+        "period_start",
+        "period_end",
+        "export_batch",
+        "ready_reason",
+        "required_count",
+        "approved_count",
+        "finalized_at",
+        "finalized_by_code",
+        "finalized_by_name",
+        "created_at",
+    )
+    MOVES = {Status.FINALIZED: {Status.PAID: "paid_at"}, Status.PAID: {}}
+    LIFECYCLE = ("paid_at",)
+
+    def __str__(self):
+        return f"Register {self.period_start} ({self.status}, {self.export_batch})"
+
+    @property
+    def batches(self):
+        return self.export_batch.split("+")
+
+
+class FrozenRecord(models.Model):
+    """Saved once, never changed or deleted (register lines, D-132)."""
+
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise AppendOnlyError("Register lines never change once the register is finalized.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise AppendOnlyError("Register lines are never deleted.")
+
+
+CATEGORIES = ("regular", "overtime", "pto", "sick", "holiday")
+
+
+class PayrollRegisterLine(FrozenRecord):
+    """One employee's line in a finalized register (D-134). Minutes; Period and Pay totals are
+    worked out from the stored columns, so they can never disagree with them."""
+
+    class Status(models.TextChoices):
+        APPROVED = "APPROVED", "Approved"
+        NOT_SUBMITTED = "NOT_SUBMITTED", "Missed – not submitted"
+        AWAITING = "AWAITING", "Waiting for manager approval"
+        CARRY_ONLY = "CARRY_ONLY", "Carry-forward only"
+
+    register = models.ForeignKey(PayrollRegister, on_delete=models.PROTECT, related_name="lines")
+    employee_code = models.CharField(max_length=20, db_index=True)
+    employee_name = models.CharField(max_length=130)
+    department = models.CharField(max_length=100)
+    team = models.CharField(max_length=100, blank=True)
+    status = models.CharField(max_length=14, choices=Status.choices)
+    approved_by_code = models.CharField(max_length=20, blank=True)
+    approved_by_name = models.CharField(max_length=130, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    week1_regular_minutes = models.PositiveIntegerField(default=0)
+    week1_overtime_minutes = models.PositiveIntegerField(default=0)
+    week1_pto_minutes = models.PositiveIntegerField(default=0)
+    week1_sick_minutes = models.PositiveIntegerField(default=0)
+    week1_holiday_minutes = models.PositiveIntegerField(default=0)
+    week2_regular_minutes = models.PositiveIntegerField(default=0)
+    week2_overtime_minutes = models.PositiveIntegerField(default=0)
+    week2_pto_minutes = models.PositiveIntegerField(default=0)
+    week2_sick_minutes = models.PositiveIntegerField(default=0)
+    week2_holiday_minutes = models.PositiveIntegerField(default=0)
+    # Carried forward into this register: adjustments and late-approved weeks (signed, D-136)
+    carry_regular_minutes = models.IntegerField(default=0)
+    carry_overtime_minutes = models.IntegerField(default=0)
+    carry_pto_minutes = models.IntegerField(default=0)
+    carry_sick_minutes = models.IntegerField(default=0)
+    carry_holiday_minutes = models.IntegerField(default=0)
+    carry_total_minutes = models.IntegerField(default=0)
+    carry_from = models.JSONField(default=list)  # [{"week", "kind", "total_minutes"}, …]
+    week_record_ids = models.JSONField(default=list)  # what this line paid (traceability)
+    adjustment_ids = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["register", "employee_code"], name="one_line_per_employee"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.employee_code} in {self.register.period_start}"
+
+    def period(self, category):
+        return getattr(self, f"week1_{category}_minutes") + getattr(
+            self, f"week2_{category}_minutes"
+        )
+
+    @property
+    def period_total_minutes(self):
+        return sum(self.period(c) for c in CATEGORIES)
+
+    @property
+    def pay_total_minutes(self):
+        return self.period_total_minutes + self.carry_total_minutes

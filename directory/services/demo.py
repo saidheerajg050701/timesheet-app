@@ -151,10 +151,11 @@ def seed_demo(*, now, password, large=False):
 
 
 def seed_payroll(now):
-    """Publish every approved period; older periods EXPORTED and PAID; one correction (B.7)."""
-    from payroll.models import PayrollWeek
-    from payroll.services.export import export_period, mark_paid
+    """Publish every approved period; older periods' registers finalized & exported and paid,
+    the next one finalized, the newest left to finalize; one correction (B.7, D-137)."""
+    from payroll.models import PayrollRegister, PayrollWeek
     from payroll.services.publish import PublishResult, audit_result, publish_period, snapshot
+    from payroll.services.register import finalize, mark_paid
 
     tz = ZoneInfo(settings.COMPANY_TZ)
     approvals = list(
@@ -189,14 +190,11 @@ def seed_payroll(now):
             PublishResult(created=first), actor=approval.approver, at=fields["approved_at"]
         )
 
-    batches = {"exported": 0, "paid": 0}
-    for period in paid + exported_only:
+    for period in paid + exported_only:  # the approval deadlines have passed: READY
         exported_at = datetime.combine(period + timedelta(days=19), time(10), tzinfo=tz)  # Fri
-        batch = export_period(period, actor=clerk, at=exported_at)
-        batches["exported"] += 1
+        finalize(period, actor=clerk, now=exported_at)
         if period in paid:
-            mark_paid(batch, actor=clerk, at=exported_at + timedelta(days=7))
-            batches["paid"] += 1
+            mark_paid(period, actor=clerk, at=exported_at + timedelta(days=7))
     if correction:
         fixed_at = datetime.combine(
             correction.period_start + timedelta(days=29), time(10), tzinfo=tz  # a Monday
@@ -204,8 +202,8 @@ def seed_payroll(now):
         publish_period(correction, system_actor=SYSTEM_ACTOR, at=min(fixed_at, now))
     return {
         "records": PayrollWeek.objects.count(),
-        "export_batches": batches["exported"],
-        "paid_batches": batches["paid"],
+        "registers": PayrollRegister.objects.count(),
+        "paid_registers": PayrollRegister.objects.filter(status="PAID").count(),
         "corrections": PayrollWeek.objects.filter(status=PayrollWeek.Status.SUPERSEDED).count(),
     }
 

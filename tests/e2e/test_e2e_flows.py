@@ -7,6 +7,7 @@ from django.urls import reverse
 from playwright.sync_api import expect
 
 from audit.models import AuditLog
+from directory.models import Employee
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ, log_in
 from tests.factories import TEST_PASSWORD, ProjectFactory
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry
@@ -264,21 +265,28 @@ def test_reject_with_comment_then_resubmit(e2e_org, make_week, open_as):
 
 
 def test_payroll_export_and_mark_paid(e2e_org, make_week, open_as, clock):
-    """T-152: E2E payroll exports the period as CSV, then marks the batch paid."""
+    """T-152: E2E payroll finalizes & exports the period's register, downloads the detailed
+    CSV, then marks it paid (D-135)."""
     make_week(e2e_org.dev1, PERIOD)
     make_week(e2e_org.dev1, WEEK2)
     approve_period(e2e_org.manager, e2e_org.dev1, PERIOD, now=datetime.now(TZ))  # publishes
     page = open_as(e2e_org.payroll)
-    page.goto(f"{reverse('payroll')}?period={PERIOD.isoformat()}")
+    page.goto(reverse("payroll_period", args=[PERIOD]))  # the approval deadline has passed
+    expect(page.locator("#register-status")).to_have_text("Ready")
+    page.get_by_role("button", name="Finalize & export").click()
+    page.locator("#finalize-dialog").get_by_role("button", name="Finalize & export").click()
+    expect(page.get_by_role("alert")).to_contain_text("exported as batch EXP-0001")
     with page.expect_download() as download:
-        page.get_by_role("button", name=re.compile(r"Export CSV \(2 new week records\)")).click()
+        page.get_by_role("link", name="Download detailed CSV").click()
+    assert download.value.suggested_filename == (
+        "payroll-detail_2026-09-27_to_2026-10-10_EXP-0001.csv"
+    )
     text = Path(download.value.path()).read_text(encoding="utf-8-sig")
     assert text.startswith("batch,employee_code") and text.count("DEV1") == 2
 
-    page.goto(f"{reverse('payroll')}?period={PERIOD.isoformat()}")
     expect(page.locator("#payroll-records")).to_contain_text("Exported")
     page.get_by_role("button", name="Mark as paid").click()
-    expect(page.locator("#batches")).to_contain_text("Paid")
+    expect(page.locator("#register-status")).to_have_text("Paid")
     expect(page.locator("#payroll-records tbody tr", has_text="Paid")).to_have_count(2)
 
 
@@ -592,3 +600,52 @@ def test_row_menus_in_a_real_browser(e2e_org, open_as, size):
     row_menu(page, "Meetings")
     page.keyboard.press("Escape")
     expect(page.locator(".dropdown-menu.show")).to_have_count(0)
+
+
+def test_register_from_last_approval_to_paid(e2e_org, make_week, open_as, clock):
+    """T-216: E2E the register stays OPEN until the last approval, is READY right after it,
+    then Finalize & export (one batch, downloads) and Mark as paid (D-132–D-135)."""
+    clock.move_to(datetime(2026, 10, 12, 9, 0, tzinfo=TZ))  # Monday, before the 12:00 deadline
+    people = list(Employee.objects.all())
+    for person in people:
+        make_week(person, PERIOD)
+        make_week(person, WEEK2)
+        if person != e2e_org.dev2:
+            approver = person.manager or e2e_org.hr  # the CEO: approved by HR (D-11)
+            approve_period(approver, person, PERIOD, now=datetime.now(TZ))
+    payroll = open_as(e2e_org.payroll)
+    payroll.goto(reverse("payroll_period", args=[PERIOD]))
+    expect(payroll.locator("#register-status")).to_have_text("Open")
+    expect(payroll.locator("#pending")).to_contain_text("Sara Ng")
+    expect(payroll.locator("#pending")).to_contain_text("Priya Shah")  # her approver
+    expect(payroll.get_by_role("button", name="Finalize & export")).to_be_disabled()
+
+    manager = open_as(e2e_org.manager)
+    manager.goto(reverse("approval_detail", args=[PERIOD, "DEV2"]))
+    manager.get_by_role("button", name="Approve both weeks").click()
+    expect(manager.get_by_role("alert")).to_have_text("Approved Sara's period.")
+
+    payroll.reload()
+    expect(payroll.locator("#register-status")).to_have_text("Ready")
+    expect(payroll.locator("#ready-reason")).to_contain_text("Everyone who must be approved")
+    payroll.get_by_role("button", name="Finalize & export").click()
+    payroll.locator("#finalize-dialog").get_by_role("button", name="Finalize & export").click()
+    expect(payroll.get_by_role("alert")).to_contain_text("exported as batch EXP-0001")
+    expect(payroll.locator("#register-status")).to_have_text("Finalized & exported")
+    expect(payroll.locator("#register tbody tr")).to_have_count(len(people))
+    with payroll.expect_download() as download:
+        payroll.get_by_role("link", name="Download register CSV").click()
+    assert download.value.suggested_filename == (
+        "payroll-register_2026-09-27_to_2026-10-10_EXP-0001.csv"
+    )
+    lines = Path(download.value.path()).read_text(encoding="utf-8-sig").splitlines()
+    assert lines[0].startswith("employee_code,") and len(lines) == len(people) + 1
+
+    payroll.get_by_role("button", name="Mark as paid").click()
+    expect(payroll.locator("#register-status")).to_have_text("Paid")
+    expect(payroll.get_by_role("button", name="Mark as paid")).to_have_count(0)
+    payroll.goto(reverse("payroll"))
+    row = payroll.locator('#pay-periods tr[data-period="2026-09-27"]')
+    expect(row).to_contain_text("Paid")
+    expect(row).to_contain_text(f"{len(people)} of {len(people)}")
+    expect(row).to_contain_text("EXP-0001")

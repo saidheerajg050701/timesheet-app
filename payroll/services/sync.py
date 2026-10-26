@@ -1,5 +1,7 @@
 """sync_payroll: bring the payroll database back in line with the main database (D-65)."""
 
+from dataclasses import dataclass
+
 from django.db import transaction
 
 from audit.models import AuditLog
@@ -7,6 +9,7 @@ from audit.services.log import bulk_record, record
 from payroll.models import PayrollWeek
 from payroll.services.adjustments import repair
 from payroll.services.publish import adjustment_audit, publish_period, supersede_week
+from payroll.services.register import build_registers
 from timesheets.models import PeriodApproval, Timesheet
 
 SYSTEM_ACTOR = "sync_payroll"
@@ -23,6 +26,20 @@ def sync_payroll(*, at):
 
 def sync_payroll_counts(*, at):
     """sync_payroll, returning (published, superseded, adjustments) and writing one SYNC row."""
+    result = sync_payroll_report(at=at)
+    return result.published, result.superseded, result.adjustments
+
+
+@dataclass
+class SyncResult:
+    published: int
+    superseded: int
+    adjustments: int
+    registers: int  # registers built for periods exported before registers existed (D-137)
+
+
+def sync_payroll_report(*, at):
+    """The whole repair, idempotent: records, adjustments, then registers (D-125, D-137)."""
     published = superseded = 0
     approvals = PeriodApproval.objects.filter(status=PeriodApproval.Status.APPROVED).order_by(
         "period_start", "pk"
@@ -50,6 +67,7 @@ def sync_payroll_counts(*, at):
         repaired = repair(at=at)
     bulk_record([adjustment_audit(a, system_actor=SYSTEM_ACTOR, at=at) for a in repaired])
     adjustments += len(repaired)
+    registers = len(build_registers(system_actor=SYSTEM_ACTOR, at=at))
 
     record(
         AuditLog.Action.SYNC,
@@ -61,7 +79,8 @@ def sync_payroll_counts(*, at):
             "published": published,
             "superseded": superseded,
             "adjustments": adjustments,
+            "registers": registers,
         },
         at=at,
     )
-    return published, superseded, adjustments
+    return SyncResult(published, superseded, adjustments, registers)

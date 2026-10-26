@@ -9,9 +9,10 @@ from django.core.management.base import CommandError
 from audit.models import AuditLog
 from directory.models import Employee, Team, User
 from directory.services.demo import us_holidays
-from payroll.models import PayrollAdjustment, PayrollWeek
+from payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
 from payroll.services.export import corrections
 from payroll.services.publish import out_of_sync
+from payroll.services.register import READY, period_state, preview, unregistered_periods
 from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
 from timesheets.services.validation import validate_entries
 
@@ -264,9 +265,10 @@ def test_seed_needs_a_strong_demo_password(settings, password, message):
     assert not Employee.objects.exists()
 
 
-def test_seed_fills_the_payroll_database(seeded):
-    """T-114: seed payroll: approved weeks live; older periods EXPORTED/PAID; one correction,
-    settled with a +1 h adjustment carried forward to an unexported period (D-118, D-126)."""
+def test_seed_fills_the_payroll_database(seeded, fixed_now):
+    """T-114: seed payroll: approved weeks live; older periods' registers PAID, the next one
+    FINALIZED, the newest READY; one correction, settled with a +1 h adjustment carried
+    forward to the register that isn't finalized yet (D-118, D-126, D-137)."""
     assert out_of_sync() == (0, 0)
     by_period = defaultdict(Counter)
     for period, status in PayrollWeek.objects.values_list("period_start", "status"):
@@ -300,6 +302,30 @@ def test_seed_fills_the_payroll_database(seeded):
     published = AuditLog.objects.filter(action="PUBLISH")
     assert published.filter(entity_type="PayrollWeek").count() == PayrollWeek.objects.count()
     assert published.filter(entity_type="PayrollAdjustment").count() == 1
+
+    registers = list(PayrollRegister.objects.order_by("period_start"))  # Change 8
+    assert [(r.period_start, r.status) for r in registers] == [
+        (periods[0], "PAID"),
+        (periods[1], "PAID"),
+        (periods[2], "PAID"),
+        (periods[3], "FINALIZED"),
+    ]
+    assert [r.export_batch for r in registers] == batches and not unregistered_periods()
+    for register in registers:  # one line per person who had to be approved
+        assert register.lines.count() == register.required_count >= register.approved_count
+        unpaid = register.lines.exclude(status="APPROVED").count()
+        assert unpaid == register.required_count - register.approved_count
+        assert (
+            register.ready_reason == "DEADLINE"
+            and register.finalized_by_code == clerk.employee_code
+        )
+    newest = period_state(periods[4], fixed_now)
+    assert newest.status == READY and not newest.finalized
+    carried = next(
+        line for line in preview(periods[4], fixed_now).lines
+        if line.employee_code == adjustment.employee_code
+    )  # fmt: skip
+    assert carried.carry_total_minutes == 60 and carried.carry_from[0]["kind"] == "ADJUSTMENT"
 
 
 def test_seed_still_refuses_when_payroll_has_data(seeded):

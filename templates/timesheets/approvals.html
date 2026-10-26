@@ -9,7 +9,7 @@
 <header class="page-header">
   <div>
     <h1 class="h3 mb-0">Approvals</h1>
-    <p class="page-subtitle">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Hours worked never include Break time.</p>
+    <p class="page-subtitle">Pay period <strong id="period-label">{{ period|date:"M j" }} – {{ period_end|date:"M j, Y" }}</strong>. Approve by <strong id="approval-deadline">{{ deadline|date:"l, M j, g:i A" }}</strong>; payroll can finalize the period after that. Hours worked never include Break time.</p>
   </div>
   <form method="get" class="page-actions" id="period-picker">
     <a class="btn btn-outline-secondary btn-sm" href="?period={{ previous|date:'Y-m-d' }}" id="previous-period">&larr; Previous</a>
@@ -55,7 +55,7 @@
             <td>
               <span class="badges">{% include "timesheets/_flags.html" with flags=row.flags only %}</span>
             </td>
-            <td>{% include "includes/status_badge.html" with status=row.status only %}</td>
+            <td>{% include "includes/status_badge.html" with status=row.status only %}{% if overdue and row.status != "APPROVED" %} {% include "includes/status_badge.html" with status="OVERDUE" label="Overdue" only %}{% endif %}</td>
             <td><a class="btn btn-sm btn-outline-primary" href="{% url 'approval_detail' row.period_start row.employee.employee_code %}">Open</a></td>
           </tr>
         {% empty %}

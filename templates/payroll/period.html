@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% load timesheet_tags %}
+
+{% block title %}Pay period {{ period|date:"M j" }} – {{ state.period_end|date:"M j, Y" }} — Payroll{% endblock %}
+
+{% block main_class %}app-main-wide{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-1">Pay period {{ period|date:"M j" }} – {{ state.period_end|date:"M j, Y" }}</h1>
+    <p class="page-subtitle mb-0"><span id="register-status">{% include "payroll/_register_status.html" with state=state only %}</span>
+      · approved <strong id="register-approved">{{ state.approved }} of {{ state.required }}</strong>
+      · managers approve by {{ state.deadline|date:"l, M j, g:i A" }}{% if state.register %} · batch <strong>{{ state.register.export_batch }}</strong>{% endif %}</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll' %}">&larr; All pay periods</a></div>
+</header>
+
+{% include "payroll/_out_of_sync.html" %}
+
+<section class="card card-body mb-4" id="register-actions">
+  {% if state.register %}
+    <p class="mb-2">
+      {% if state.status == "PAID" %}Paid {{ state.register.paid_at|date:"M j, Y, g:i A" }}.{% else %}Finalized and exported {{ state.register.finalized_at|date:"M j, Y, g:i A" }} by {{ state.register.finalized_by_name }}. These lines never change; later corrections are carried forward to the next register.{% endif %}
+    </p>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-outline-primary" href="{% url 'payroll_register_csv' period %}">Download register CSV</a>
+      <a class="btn btn-outline-secondary" href="{% url 'payroll_detail_csv' period %}">Download detailed CSV</a>
+      {% if state.status == "FINALIZED" %}
+        <form method="post" action="{% url 'payroll_register_paid' period %}">{% csrf_token %}<button type="submit" class="btn btn-success">Mark as paid</button></form>
+      {% endif %}
+    </div>
+  {% else %}
+    {% if ready %}
+      <p class="mb-2" id="ready-reason">{% if state.ready_reason == "ALL_APPROVED" %}Everyone who must be approved is approved. The register is ready.{% else %}The managers' approval deadline has passed. {% if pending %}{{ pending|length }} {% if pending|length == 1 %}person isn't{% else %}people aren't{% endif %} approved and will get a 0.00 line; if they are approved later, their weeks are carried forward to the next register.{% endif %}{% endif %}</p>
+    {% else %}
+      <ul class="mb-2" id="waiting-for">{% for reason in state.waiting_for %}<li>{{ reason }}</li>{% empty %}<li>Waiting for the period to end.</li>{% endfor %}</ul>
+      <p class="small text-body-secondary mb-2">"Finalize &amp; export" opens when everyone is approved, or after the approval deadline ({{ state.deadline|date:"l, M j, g:i A" }}).</p>
+    {% endif %}
+    <div><button type="button" class="btn btn-primary" id="finalize-open"{% if not ready %} disabled{% endif %} onclick="document.getElementById('finalize-dialog').showModal()">Finalize &amp; export</button></div>
+    {% if ready %}
+      <dialog class="cell-dialog" id="finalize-dialog" aria-labelledby="finalize-title">
+        <div class="cell-dialog-head">
+          <h2 class="h6 mb-0" id="finalize-title">Finalize &amp; export this register?</h2>
+          <button type="button" class="btn-close" aria-label="Close" onclick="this.closest('dialog').close()"></button>
+        </div>
+        <p>The {{ rows|length }} line{{ rows|length|pluralize }} below ({{ totals.pay_total|hours2 }} hours) are saved for good and exported as one batch. After that, changes to these weeks are paid as adjustments in the next register.</p>
+        {% if pending %}<p class="mb-0">{{ pending|length }} {% if pending|length == 1 %}person isn't{% else %}people aren't{% endif %} approved and will get a 0.00 line.</p>{% endif %}
+        <form method="post" action="{% url 'payroll_finalize' period %}" class="cell-dialog-actions">
+          {% csrf_token %}
+          <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('dialog').close()">Cancel</button>
+          <button type="submit" class="btn btn-sm btn-primary">Finalize &amp; export</button>
+        </form>
+      </dialog>
+    {% endif %}
+  {% endif %}
+</section>
+
+<h2 class="section-title">Register <small class="text-body-secondary fw-normal">({% if state.register %}saved{% else %}live preview{% endif %}, hours)</small></h2>
+<div class="table-responsive table-scroll mb-2">
+  <table class="table table-sm align-middle bg-body register-table" id="register">
+    <thead>
+      <tr class="register-groups">
+        <th colspan="3"></th>
+        <th colspan="5" class="text-center">Week 1 · {{ period|date:"M j" }}</th>
+        <th colspan="5" class="text-center">Week 2 · {{ period|add_days:7|date:"M j" }}</th>
+        <th colspan="6" class="text-center">Period</th>
+        <th colspan="7" class="text-center carry-col">Carry-forward in</th>
+        <th></th>
+      </tr>
+      <tr>
+        <th>Employee</th><th>Status</th><th>Approved by</th>
+        {% for _ in "12" %}<th class="text-end">Reg.</th><th class="text-end">OT</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Hol.</th>{% endfor %}
+        <th class="text-end">Reg.</th><th class="text-end">OT</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Hol.</th><th class="text-end">Total</th>
+        <th class="text-end carry-col">Reg.</th><th class="text-end carry-col">OT</th><th class="text-end carry-col">PTO</th><th class="text-end carry-col">Sick</th><th class="text-end carry-col">Hol.</th><th class="text-end carry-col">Total</th><th class="carry-col">From</th>
+        <th class="text-end">Pay total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr data-employee="{{ row.line.employee_code }}">
+          <td class="text-nowrap">{{ row.line.employee_name }}<br><small class="text-body-secondary">{{ row.line.employee_code }} · {{ row.line.department }}{% if row.line.team %} / {{ row.line.team }}{% endif %}</small></td>
+          <td data-role="line-status">{{ row.line.get_status_display }}</td>
+          <td class="text-nowrap">{% if row.line.approved_at %}{{ row.line.approved_by_name }}<br><small class="text-body-secondary">{{ row.line.approved_at|date:"M j, g:i A" }}</small>{% else %}—{% endif %}</td>
+          {% for m in row.week1 %}<td class="text-end">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in row.week2 %}<td class="text-end">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in row.period %}<td class="text-end{% if forloop.last %} fw-semibold{% endif %}">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in row.carry %}<td class="text-end carry-col{% if forloop.last %} fw-semibold{% endif %}">{% if m %}{{ m|signed_hours }}{% else %}0.00{% endif %}</td>{% endfor %}
+          <td class="carry-col small" data-role="carry-from">{% for item in row.line.carry_from %}<div class="text-nowrap">{{ item.week|isodate|date:"M j" }} {% if item.kind == "ADJUSTMENT" %}correction{% else %}late approval{% endif %} {{ item.total_minutes|signed_hours }}</div>{% empty %}—{% endfor %}</td>
+          <td class="text-end fw-semibold" data-role="pay-total">{{ row.pay_total|hours2 }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="27" class="text-body-secondary">Nobody to pay in this period.</td></tr>
+      {% endfor %}
+    </tbody>
+    {% if rows %}
+      <tfoot>
+        <tr class="register-totals" id="register-totals">
+          <th colspan="3">Total ({{ rows|length }} line{{ rows|length|pluralize }})</th>
+          {% for m in totals.week1 %}<td class="text-end">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in totals.week2 %}<td class="text-end">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in totals.period %}<td class="text-end">{{ m|hours2 }}</td>{% endfor %}
+          {% for m in totals.carry %}<td class="text-end carry-col">{% if m %}{{ m|signed_hours }}{% else %}0.00{% endif %}</td>{% endfor %}
+          <td class="carry-col"></td>
+          <td class="text-end" data-role="pay-total">{{ totals.pay_total|hours2 }}</td>
+        </tr>
+      </tfoot>
+    {% endif %}
+  </table>
+</div>
+<p class="small text-body-secondary mb-4">Period = week 1 + week 2 (Break is never paid). Carry-forward in = differences for earlier weeks that were already paid (corrections) and weeks approved after their own register was finalized (late approvals). Pay total = Period total + Carry total.</p>
+
+{% if pending %}
+  <h2 class="section-title">Not approved yet</h2>
+  <div class="table-responsive mb-4">
+    <table class="table table-sm align-middle bg-body" id="pending">
+      <thead><tr><th>Employee</th><th>Approver</th><th>Status</th><th>Why</th></tr></thead>
+      <tbody>
+        {% for line in pending %}
+          <tr data-employee="{{ line.employee_code }}">
+            <td>{{ line.employee_name }}<br><small class="text-body-secondary">{{ line.employee_code }}</small></td>
+            <td>{{ line.approver_label }}</td>
+            <td>{{ line.get_status_display }}{% if state.deadline_passed %} {% include "includes/status_badge.html" with status="OVERDUE" label="Overdue" only %}{% endif %}</td>
+            <td class="small">{{ line.pending.blockers|join:" " }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+<h2 class="section-title">Week records and adjustments</h2>
+<form method="get" class="card card-body row g-2 align-items-end mx-0 mb-3 flex-row" id="payroll-filters">
+  <div class="col-sm-6 col-lg-3">
+    <label for="id_department" class="form-label small">Department</label>
+    <select name="department" id="id_department" class="form-select form-select-sm">
+      <option value="">All</option>
+      {% for d in departments %}<option{% if d == filters.department %} selected{% endif %}>{{ d }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <label for="id_team" class="form-label small">Team</label>
+    <select name="team" id="id_team" class="form-select form-select-sm">
+      <option value="">All</option>
+      {% for t in teams %}<option{% if t == filters.team %} selected{% endif %}>{{ t }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-sm-6 col-lg-2">
+    <label for="id_employee" class="form-label small">Employee (ID or name)</label>
+    <input type="text" name="employee" id="id_employee" value="{{ filters.employee }}" class="form-control form-control-sm">
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <label for="id_status" class="form-label small">Status</label>
+    <select name="status" id="id_status" class="form-select form-select-sm">
+      {% for value, label in status_choices %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label|title }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="col-lg-1"><button type="submit" class="btn btn-sm btn-primary w-100">Filter</button></div>
+</form>
+
+<div class="table-responsive table-scroll mb-4">
+  <table class="table table-sm align-middle bg-body" id="payroll-records">
+    <thead><tr><th>Employee</th><th>Week</th><th>v</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
+    <tbody>
+      {% for r in records %}
+        <tr>
+          <td>{{ r.employee_name }}</td><td>{{ r.week_start|date:"M j" }}</td><td>{{ r.version }}</td>
+          <td>{% include "includes/status_badge.html" with status=r.status only %}{% if r.status == "SETTLED" %}
+            <div class="small" data-role="settled-in">{% if r.settled_in %}<a href="{% url 'payroll_period' r.settled_in %}">Settled by adjustment in {{ r.settled_in|date:"M j" }} – {{ r.settled_in|add_days:13|date:"M j" }}</a>{% else %}<span class="text-body-secondary">No difference to pay</span>{% endif %}</div>{% endif %}</td>
+          <td>{{ r.export_batch|default:"—" }}</td>
+          <td class="text-end">{{ r.regular_minutes|hours2 }}</td><td class="text-end">{{ r.overtime_minutes|hours2 }}</td>
+          <td class="text-end">{{ r.pto_minutes|hours2 }}</td><td class="text-end">{{ r.sick_minutes|hours2 }}</td>
+          <td class="text-end">{{ r.holiday_minutes|hours2 }}</td><td class="text-end">{{ r.total_minutes|hours2 }}</td>
+          <td>{{ r.approved_by_name }}<br><small class="text-body-secondary">{{ r.approved_at|date:"M j, g:i A" }}</small></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="12" class="text-body-secondary">No records.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h3 class="h6">Adjustments carried to this period</h3>
+<div class="table-responsive">
+  <table class="table table-sm align-middle bg-body" id="payroll-adjustments">
+    <thead><tr><th>Employee</th><th>Original week</th><th>Versions</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
+    <tbody>
+      {% for a in adjustments %}
+        <tr data-adjustment="{{ a.employee_code }}">
+          <td>{{ a.employee_name }}</td><td>{{ a.week_start|date:"M j, Y" }}</td><td>v{{ a.old_version }} → v{{ a.new_version }}</td>
+          <td>{% if a.status == "CURRENT" %}{% include "includes/status_badge.html" with status="CURRENT" label="Scheduled" only %}{% else %}{% include "includes/status_badge.html" with status=a.status only %}{% endif %}</td>
+          <td>{{ a.export_batch|default:"—" }}</td>
+          <td class="text-end">{{ a.regular_minutes|signed_hours }}</td><td class="text-end">{{ a.overtime_minutes|signed_hours }}</td>
+          <td class="text-end">{{ a.pto_minutes|signed_hours }}</td><td class="text-end">{{ a.sick_minutes|signed_hours }}</td>
+          <td class="text-end">{{ a.holiday_minutes|signed_hours }}</td><td class="text-end fw-semibold">{{ a.total_minutes|signed_hours }}</td>
+          <td>{{ a.approved_by_name }}<br><small class="text-body-secondary">{{ a.approved_at|date:"M j, g:i A" }}</small></td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="12" class="text-body-secondary">No adjustments carried to this period.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

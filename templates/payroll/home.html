@@ -9,144 +9,40 @@
 <header class="page-header">
   <div>
     <h1 class="h3 mb-0">Payroll</h1>
-    <p class="page-subtitle">Approved hours from the payroll database: export a period, then mark it paid.</p>
+    <p class="page-subtitle">One register per pay period: preview it while approvals come in, then finalize &amp; export it and mark it paid.</p>
   </div>
   <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'payroll_corrections' %}">Corrections</a></div>
 </header>
 
-{% if missing or stale %}
-  <div class="alert alert-warning" role="alert" id="out-of-sync">
-    Payroll is out of sync with approvals:
-    {% if missing %}{{ missing }} approved week{{ missing|pluralize }} without a payroll record{% endif %}{% if missing and stale %}; {% endif %}
-    {% if stale %}{{ stale }} record{{ stale|pluralize }} for weeks no longer approved{% endif %}.
-    Ask an admin to run <code>uv run python manage.py sync_payroll</code>.
-  </div>
-{% endif %}
+{% include "payroll/_out_of_sync.html" %}
 
-<form method="get" class="card card-body row g-2 align-items-end mx-0 mb-4 flex-row" id="payroll-filters">
-  <div class="col-sm-6 col-lg-3">
-    <label for="id_period" class="form-label small">Pay period</label>
-    <select name="period" id="id_period" class="form-select form-select-sm">
-      {% for start in periods %}<option value="{{ start|date:'Y-m-d' }}"{% if start == period %} selected{% endif %}>{{ start|date:"M j" }} – {{ start|add_days:13|date:"M j, Y" }}</option>{% endfor %}
-      {% if period not in periods %}<option value="{{ period|date:'Y-m-d' }}" selected>{{ period|date:"M j" }} – {{ period|add_days:13|date:"M j, Y" }}</option>{% endif %}
-    </select>
-  </div>
-  <div class="col-sm-6 col-lg-2">
-    <label for="id_department" class="form-label small">Department</label>
-    <select name="department" id="id_department" class="form-select form-select-sm">
-      <option value="">All</option>
-      {% for d in departments %}<option{% if d == filters.department %} selected{% endif %}>{{ d }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="col-sm-6 col-lg-2">
-    <label for="id_team" class="form-label small">Team</label>
-    <select name="team" id="id_team" class="form-select form-select-sm">
-      <option value="">All</option>
-      {% for t in teams %}<option{% if t == filters.team %} selected{% endif %}>{{ t }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="col-sm-6 col-lg-2">
-    <label for="id_employee" class="form-label small">Employee (ID or name)</label>
-    <input type="text" name="employee" id="id_employee" value="{{ filters.employee }}" class="form-control form-control-sm">
-  </div>
-  <div class="col-sm-6 col-lg-2">
-    <label for="id_status" class="form-label small">Status</label>
-    <select name="status" id="id_status" class="form-select form-select-sm">
-      {% for value, label in status_choices %}<option value="{{ value }}"{% if value == filters.status %} selected{% endif %}>{{ label|title }}</option>{% endfor %}
-    </select>
-  </div>
-  <div class="col-lg-1"><button type="submit" class="btn btn-sm btn-primary w-100">Filter</button></div>
-</form>
-
-<h2 class="section-title">Totals per employee <small class="text-body-secondary fw-normal">({{ period|date:"M j" }} – {{ period|add_days:13|date:"M j, Y" }}, hours)</small></h2>
 <div class="table-responsive table-scroll mb-4">
-  <table class="table table-sm align-middle bg-body" id="payroll-totals">
-    <thead><tr><th>Employee</th><th>Department</th><th>Team</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Weeks</th><th class="text-end">Adjustments</th><th class="text-end">Total</th></tr></thead>
+  <table class="table align-middle bg-body" id="pay-periods">
+    <thead><tr><th>Pay period</th><th>Status</th><th class="text-end">Approved</th><th class="text-end">Pay total (hours)</th><th>Batch</th><th>Downloads</th></tr></thead>
     <tbody>
-      {% for t in totals %}
-        <tr data-employee="{{ t.employee_code }}">
-          <td>{{ t.employee_name }}<br><small class="text-body-secondary">{{ t.employee_code }}</small></td>
-          <td>{{ t.department }}</td><td>{{ t.team }}</td>
-          <td class="text-end">{{ t.regular|hours2 }}</td><td class="text-end">{{ t.overtime|hours2 }}</td>
-          <td class="text-end">{{ t.pto|hours2 }}</td><td class="text-end">{{ t.sick|hours2 }}</td>
-          <td class="text-end">{{ t.holiday|hours2 }}</td><td class="text-end">{{ t.weeks|hours2 }}</td>
-          <td class="text-end" data-role="adjustments">{% if t.adjustments %}{{ t.adjustments|signed_hours }}{% else %}—{% endif %}</td>
-          <td class="text-end fw-semibold">{{ t.total|hours2 }}</td>
+      {% for p in periods %}
+        <tr data-period="{{ p.period_start|date:'Y-m-d' }}">
+          <td><a href="{% url 'payroll_period' p.period_start %}">{{ p.period_start|date:"M j" }} – {{ p.period_end|date:"M j, Y" }}</a></td>
+          <td>{% include "payroll/_register_status.html" with state=p only %}</td>
+          <td class="text-end">{{ p.approved }} of {{ p.required }}</td>
+          <td class="text-end fw-semibold">{{ p.pay_total|hours2 }}</td>
+          <td>{% if p.register %}{{ p.register.export_batch }}{% else %}—{% endif %}</td>
+          <td class="text-nowrap">{% if p.register %}
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'payroll_register_csv' p.period_start %}">Register CSV</a>
+            <a class="btn btn-sm btn-outline-secondary" href="{% url 'payroll_detail_csv' p.period_start %}">Detailed CSV</a>
+          {% else %}<span class="text-body-secondary small">after finalizing</span>{% endif %}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="11" class="text-body-secondary">No payroll records match.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-<p class="small text-body-secondary">Weeks show each week's current approved hours (corrected weeks included). Adjustments are differences for earlier weeks that were already exported or paid, carried into this period's pay run; Total = weeks + adjustments.</p>
-
-<div class="card card-body d-flex flex-row flex-wrap gap-4 mb-4">
-  <form method="post" action="{% url 'payroll_export' %}" id="export-form">
-    {% csrf_token %}
-    <input type="hidden" name="period" value="{{ period|date:'Y-m-d' }}">
-    <button type="submit" class="btn btn-primary"{% if not exportable %} disabled{% endif %}>Export CSV ({{ exportable_weeks }} new week record{{ exportable_weeks|pluralize }}{% if exportable_adjustments %}, {{ exportable_adjustments }} adjustment{{ exportable_adjustments|pluralize }}{% endif %})</button>
-    <div class="small text-body-secondary mt-1">Exports every CURRENT week record and adjustment of this period as one numbered batch. Settled weeks are never exported again.</div>
-  </form>
-  <div>
-    <h3 class="h6 card-title">Batches for this period</h3>
-    <ul class="list-unstyled mb-0" id="batches">
-      {% for b in batches %}
-        <li class="mb-1">
-          <a href="{% url 'payroll_batch_csv' b.batch %}">{{ b.batch }}</a> · {{ b.records }} week{{ b.records|pluralize }}{% if b.adjustments %} + {{ b.adjustments }} adjustment{{ b.adjustments|pluralize }}{% endif %} · exported {{ b.exported_at|date:"M j, Y" }}
-          {% if b.exported %}
-            <form method="post" action="{% url 'payroll_mark_paid' b.batch %}" class="d-inline">{% csrf_token %}<button type="submit" class="btn btn-sm btn-outline-success ms-1">Mark as paid</button></form>
-          {% elif b.paid %}{% include "includes/status_badge.html" with status="PAID" only %}{% endif %}
-        </li>
-      {% empty %}
-        <li class="text-body-secondary">None yet.</li>
-      {% endfor %}
-    </ul>
-  </div>
-</div>
-
-<h2 class="section-title">Week records</h2>
-<div class="table-responsive table-scroll">
-  <table class="table table-sm align-middle bg-body" id="payroll-records">
-    <thead><tr><th>Employee</th><th>Week</th><th>v</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
-    <tbody>
-      {% for r in records %}
-        <tr>
-          <td>{{ r.employee_name }}</td><td>{{ r.week_start|date:"M j" }}</td><td>{{ r.version }}</td>
-          <td>{% include "includes/status_badge.html" with status=r.status only %}{% if r.status == "SETTLED" %}
-            <div class="small" data-role="settled-in">{% if r.settled_in %}<a href="?period={{ r.settled_in|date:'Y-m-d' }}">Settled by adjustment in {{ r.settled_in|date:"M j" }} – {{ r.settled_in|add_days:13|date:"M j" }}</a>{% else %}<span class="text-body-secondary">No difference to pay</span>{% endif %}</div>{% endif %}</td>
-          <td>{{ r.export_batch|default:"—" }}</td>
-          <td class="text-end">{{ r.regular_minutes|hours2 }}</td><td class="text-end">{{ r.overtime_minutes|hours2 }}</td>
-          <td class="text-end">{{ r.pto_minutes|hours2 }}</td><td class="text-end">{{ r.sick_minutes|hours2 }}</td>
-          <td class="text-end">{{ r.holiday_minutes|hours2 }}</td><td class="text-end">{{ r.total_minutes|hours2 }}</td>
-          <td>{{ r.approved_by_name }}<br><small class="text-body-secondary">{{ r.approved_at|date:"M j, g:i A" }}</small></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="12" class="text-body-secondary">No records.</td></tr>
+        <tr><td colspan="6" class="text-body-secondary">No pay period has ended yet.</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
-<h2 class="section-title">Adjustments carried to this period</h2>
-<div class="table-responsive">
-  <table class="table table-sm align-middle bg-body" id="payroll-adjustments">
-    <thead><tr><th>Employee</th><th>Original week</th><th>Versions</th><th>Status</th><th>Batch</th><th class="text-end">Regular</th><th class="text-end">Overtime</th><th class="text-end">PTO</th><th class="text-end">Sick</th><th class="text-end">Holiday</th><th class="text-end">Total</th><th>Approved by</th></tr></thead>
-    <tbody>
-      {% for a in adjustments %}
-        <tr data-adjustment="{{ a.employee_code }}">
-          <td>{{ a.employee_name }}</td><td>{{ a.week_start|date:"M j, Y" }}</td><td>v{{ a.old_version }} → v{{ a.new_version }}</td>
-          <td>{% if a.status == "CURRENT" %}{% include "includes/status_badge.html" with status="CURRENT" label="Scheduled" only %}{% else %}{% include "includes/status_badge.html" with status=a.status only %}{% endif %}</td>
-          <td>{{ a.export_batch|default:"—" }}</td>
-          <td class="text-end">{{ a.regular_minutes|signed_hours }}</td><td class="text-end">{{ a.overtime_minutes|signed_hours }}</td>
-          <td class="text-end">{{ a.pto_minutes|signed_hours }}</td><td class="text-end">{{ a.sick_minutes|signed_hours }}</td>
-          <td class="text-end">{{ a.holiday_minutes|signed_hours }}</td><td class="text-end fw-semibold">{{ a.total_minutes|signed_hours }}</td>
-          <td>{{ a.approved_by_name }}<br><small class="text-body-secondary">{{ a.approved_at|date:"M j, g:i A" }}</small></td>
-        </tr>
-      {% empty %}
-        <tr><td colspan="12" class="text-body-secondary">No adjustments carried to this period.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+<form method="get" action="{% url 'payroll_registers_csv' %}" class="card card-body row g-2 align-items-end mx-0 flex-row" id="download-all">
+  <div class="col-12"><h2 class="h6 mb-0">Download all periods</h2><p class="small text-body-secondary mb-0">Every finalized or paid register in one Register CSV, with period start and end columns. Leave the dates empty for all of them.</p></div>
+  <div class="col-sm-4 col-lg-3"><label for="id_from" class="form-label small">From</label><input type="date" name="from" id="id_from" class="form-control form-control-sm"></div>
+  <div class="col-sm-4 col-lg-3"><label for="id_to" class="form-label small">To</label><input type="date" name="to" id="id_to" class="form-control form-control-sm"></div>
+  <div class="col-sm-4 col-lg-3"><button type="submit" class="btn btn-sm btn-outline-primary w-100">Download all periods</button></div>
+</form>
 {% endblock %}

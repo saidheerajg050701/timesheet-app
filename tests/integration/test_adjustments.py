@@ -13,6 +13,7 @@ from audit.models import AuditLog
 from payroll.models import AppendOnlyError, PayrollAdjustment, PayrollWeek
 from payroll.services.adjustments import carry_period
 from payroll.services.export import batch_csv, export_period, mark_paid
+from payroll.services.register import finalize
 from payroll.services.sync import sync_payroll_counts
 from tests.factories import TimeEntryFactory
 from tests.forms import grid_post
@@ -122,13 +123,13 @@ def test_negative_adjustment(org, payroll, login_as):
     (adjustment,) = PayrollAdjustment.objects.all()
     assert (adjustment.regular_minutes, adjustment.overtime_minutes) == (-90, 0)
     assert adjustment.total_minutes == -90 and adjustment.period_start == LAST
-    batch = export_period(LAST, system_actor="test", at=NOW)
-    (row,) = rows_of(batch)
+    page = login_as(org.payroll).get(reverse("payroll_period", args=[LAST]))
+    assert "−1.50" in page.content.decode()  # in the register's carry-forward columns
+    register = finalize(LAST, system_actor="test", now=NOW)
+    (row,) = rows_of(register.export_batch)
     assert row["row_type"] == "ADJUSTMENT" and row["batch"] == "EXP-0002"
     assert row["regular_hours"] == "-1.50" and row["total_hours"] == "-1.50"  # a number, not '-
     assert (row["week_start"], row["original_week"]) == ("", "2026-09-13")
-    page = login_as(org.payroll).get(reverse("payroll"), {"period": LAST.isoformat()})
-    assert "−1.50" in page.content.decode()
 
 
 def test_no_adjustment_when_the_old_version_was_never_exported(org, payroll):
@@ -172,9 +173,10 @@ def test_new_full_version_is_never_exported_twice(org, payroll, login_as):
     payroll.correct(org.dev1, WEEK, time(19))
     assert export_period(PAID, system_actor="test", at=NOW) is None  # nothing new for Sep 13
     payroll.approved(org.dev2, LAST)
-    page = login_as(org.payroll).get(reverse("payroll"), {"period": LAST.isoformat()})
-    assert "Export CSV (2 new week records, 1 adjustment)" in page.content.decode()
-    second = export_period(LAST, system_actor="test", at=NOW)
+    page = login_as(org.payroll).get(reverse("payroll_period", args=[LAST])).content.decode()
+    dev1 = page.split('<tr data-employee="DEV1">')[1].split("</tr>")[0]
+    assert "+2.00" in dev1 and "Sep 13 correction" in dev1  # only the difference is carried
+    second = finalize(LAST, system_actor="test", now=NOW).export_batch
     rows = rows_of(second)
     assert [(r["employee_code"], r["row_type"]) for r in rows] == [
         ("DEV1", "ADJUSTMENT"),
@@ -226,16 +228,18 @@ def test_csv_totals_mark_paid_and_corrections(org, payroll, login_as):
     payroll.approved(org.dev1, LAST)
     client = login_as(org.payroll)
 
-    page = client.get(reverse("payroll"), {"period": LAST.isoformat()}).content.decode()
-    totals = page.split('<tr data-employee="DEV1">')[1].split("</tr>")[0]
-    assert "80.00" in totals and "+2.00" in totals and "82.00" in totals  # weeks + adjustment
+    page = client.get(reverse("payroll_period", args=[LAST])).content.decode()
+    line = page.split('<tr data-employee="DEV1">')[1].split("</tr>")[0]
+    assert "80.00" in line and "+2.00" in line and "82.00" in line  # period + carry-forward
     assert 'data-adjustment="DEV1"' in page and "Scheduled" in page and "CMD" not in page
     row = correction_row(client.get(reverse("payroll_corrections")).content.decode())
-    assert "Paid (EXP-0001)" in row and "+2.00 h → pay period Sep 27 – Oct 10, 2026" in row
+    assert "Paid (EXP-0001)" in row and "+2.00 h →" in row
+    assert 'href="/payroll/periods/2026-09-27/"' in row and "register Sep 27 – Oct 10, 2026" in row
     assert "Scheduled" in row and "=CMD" in row  # the reason, for payroll staff only
 
-    download = client.post(reverse("payroll_export"), {"period": LAST.isoformat()})
-    rows = list(csv.DictReader(io.StringIO(client.get(download.url).content.decode("utf-8-sig"))))
+    client.post(reverse("payroll_finalize", args=[LAST]))
+    download = client.get(reverse("payroll_detail_csv", args=[LAST]))
+    rows = list(csv.DictReader(io.StringIO(download.content.decode("utf-8-sig"))))
     assert list(rows[0])[:3] == ["batch", "employee_code", "row_type"]
     assert [(r["row_type"], r["week_start"], r["original_week"], r["version"]) for r in rows] == [
         ("WEEK", "2026-09-27", "", "1"),
@@ -244,12 +248,9 @@ def test_csv_totals_mark_paid_and_corrections(org, payroll, login_as):
     ]
     assert rows[2]["overtime_hours"] == "2.00" and "CMD" not in str(rows)  # no reason in CSV
     row = correction_row(client.get(reverse("payroll_corrections")).content.decode())
-    assert "Exported in EXP-0002" in row
-    paid = client.post(reverse("payroll_mark_paid", args=["EXP-0002"]))
-    assert (
-        "2 week record(s) and 1 adjustment(s) marked as paid"
-        in client.get(paid.url).content.decode()
-    )
+    assert "Exported in EXP-0002" in row and "(finalized &amp; exported)" in row
+    paid = client.post(reverse("payroll_register_paid", args=[LAST]))
+    assert "Register marked as paid." in client.get(paid.url).content.decode()
     assert PayrollAdjustment.objects.get().status == "PAID"
     corrections = client.get(reverse("payroll_corrections")).content.decode()
     assert "Paid (EXP-0002)" in correction_row(corrections)
@@ -333,16 +334,19 @@ def test_settled_week_links_to_the_period_that_paid_its_difference(org, payroll,
     mark_paid(batch, system_actor="test", at=NOW)
     payroll.correct(org.dev1, WEEK, time(19))  # +2 h → carried to Sep 27 – Oct 10
     client = login_as(org.payroll)
-    page = client.get(reverse("payroll"), {"period": PAID.isoformat()}).content.decode()
+    page = client.get(reverse("payroll_period", args=[PAID])).content.decode()
 
     def week_row(day):
         return page.split(f"<td>John Kim</td><td>{day}</td>")[1].split("</tr>")[0]
 
     corrected = week_row("Sep 13")
     assert "Settled" in corrected
-    assert '<a href="?period=2026-09-27">Settled by adjustment in Sep 27 – Oct 10</a>' in corrected
+    link = '<a href="/payroll/periods/2026-09-27/">Settled by adjustment in Sep 27 – Oct 10</a>'
+    assert link in corrected
     assert "No difference to pay" in week_row("Sep 20")  # the untouched week: settled, no money
-    carried_to = client.get(reverse("payroll"), {"period": "2026-09-27"}).content.decode()
+    old = client.get(reverse("payroll"), {"period": "2026-09-27"})  # older links still work
+    assert old.url == reverse("payroll_period", args=[date(2026, 9, 27)])
+    carried_to = client.get(old.url).content.decode()
     assert 'data-adjustment="DEV1"' in carried_to and "+2.00" in carried_to
     assert "Settled by adjustment" not in carried_to  # only Settled weeks carry the label
 

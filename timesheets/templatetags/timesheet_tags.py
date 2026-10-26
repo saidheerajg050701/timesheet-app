@@ -37,6 +37,9 @@ TONES = {
     "MISSING": "danger",
     "READ_ONLY": "neutral",
     "NOT_SUBMITTED": "neutral",
+    "READY": "info",  # pay period registers (D-132); OPEN is "warning" above
+    "FINALIZED": "submitted",
+    "OVERDUE": "danger",  # not approved after the approval deadline (D-133)
 }
 LABELS = {
     **STATUS_LABELS,
@@ -81,6 +84,12 @@ def initials(employee):
 @register.filter
 def add_days(day, days):
     return day + timedelta(days=int(days))
+
+
+@register.filter
+def isodate(value):
+    """ "2026-09-13" → a date, for dates kept as text (register carry_from)."""
+    return date.fromisoformat(value)
 
 
 @register.filter
