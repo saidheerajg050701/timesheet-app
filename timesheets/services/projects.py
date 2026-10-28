@@ -32,11 +32,12 @@ def assign_code(project):
     return project
 
 
-def search_projects(text):
+def search_projects(text, *, include_inactive=False):
     """Active projects whose I-code or name contains `text` — partial, any case ("i-00", "001",
-    "portal"); all active projects for an empty text. Sorted by I-code (D-157)."""
+    "portal"); all active projects for an empty text. Sorted by I-code (D-157). Reports also
+    offer inactive projects, which still have hours (D-161)."""
     text = (text or "").strip()
-    projects = Project.objects.filter(active=True)
+    projects = Project.objects.all() if include_inactive else Project.objects.filter(active=True)
     if text:
         projects = projects.filter(Q(code__icontains=text) | Q(name__icontains=text))
     return list(projects.order_by("number"))

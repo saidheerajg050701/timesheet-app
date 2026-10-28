@@ -90,10 +90,10 @@ Log out (top right) and in again as each of these. They all use your `DEMO_PASSW
 
 | Log in as | What to look at |
 |---|---|
-| `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row** (Project work asks for a project, then one of its tasks), click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. **Dashboard**: hours by task and by charge code. |
-| `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. |
+| `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row** (Project work asks for a project, then one of its tasks), click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. **Dashboard**: hours by task and by charge code. **Reports → Project hours**: your own hours; download Excel or CSV. |
+| `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. **Reports → Project hours** with Group by **Manager**. |
 | `payroll@yourcompany.com` (payroll) | **Payroll**: one register per pay period (Open → Ready → Finalize & export → Paid), **Pending approvals** (who still has to approve) and **Corrections**. |
-| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects (with their **Allowed tasks**), **Tasks**, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. |
+| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects (with their **Allowed tasks**), **Tasks**, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. **Reports → Project hours**: everyone. Also try `eng.director@yourcompany.com` (director): all their managers' groups. |
 | `ceo@yourcompany.com` (top manager) | **Team**: the whole company. |
 
 ## Updating an existing copy
@@ -177,7 +177,7 @@ employee in the directory, using their company email. Five wrong passwords lock 
 for 15 minutes. There is no self-service password reset: ask an admin.
 
 ## Roles and menus
-Everyone gets Dashboard, Timesheets, Requests and Profile. Team and Approvals appear for
+Everyone gets Dashboard, Timesheets, Requests, Reports and Profile. Team and Approvals appear for
 managers (anyone with reports) and directory admins; Payroll for payroll users and admins;
 Admin only for directory admins. Every page also checks permissions on the server
 (`directory/services/permissions.py`).
@@ -202,6 +202,32 @@ Measure how fast the page is for someone (read-only, prints seconds and query co
 uv run python manage.py time_team_page ceo@yourcompany.com
 uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
 ```
+
+## Reports — Project hours
+Everyone has **Reports** in the menu (`/reports/project-hours/`).
+- **Who sees what:** employees (payroll staff too) see only their own hours. Managers see
+  themselves and everyone below them; directors therefore see all their managers' groups;
+  HR admins see everyone. Asking for anyone else's hours gives "Not allowed" (403).
+- **Filters** (they stay in the address, so you can share the link): **Period** (this or last
+  pay period, last 4 or 12 weeks, or your own dates — always whole Sunday–Saturday weeks, at
+  most 53), **Projects** (type an I-code or name and pick one or more; none = all projects),
+  **Hours** (Approved, Approved + Submitted, or Everything entered). Managers also choose
+  **People** (whole tree, direct reports only, or one manager's group), **Group by** (team or
+  manager) and **Show people with no hours**.
+- **What it shows:** project hours, non-project time (Meetings, Training, Other — never
+  filtered by project) and total time; by project (with a chart), by task (including "Task
+  not recorded"), project × task and by week. Managers also get by team or **by manager**
+  ("own group" adds up to the total, "including everyone below" is the roll-up; click a
+  manager to look at their group) and **by employee**: everyone in scope, with 0.00 rows and
+  a note such as "Hours not approved yet" or "On leave". Break and leave are never counted.
+- **Downloads:** **Excel** (one tab per section) and **CSV** (one row per entry, never the
+  reason), named like `project-hours_2026-09-27_to_2026-10-10.xlsx`. Each download is written to
+  the audit log. A whole year for ~500 people takes about half a minute as Excel; the CSV is
+  quicker for that much.
+- How long it takes for someone (read-only):
+  ```bash
+  uv run python manage.py time_project_report hr@yourcompany.com --period 12w
+  ```
 
 ## Timesheets
 `/timesheets/` lists your recent weeks. A week is a **grid**: one row per category, or per

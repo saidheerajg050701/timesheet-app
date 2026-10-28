@@ -96,18 +96,21 @@ def test_roles_and_menu(org):
         "approvals": False,
         "payroll": False,
         "admin": False,
+        "reports": True,  # everyone: their own hours at least (D-160)
     }
     assert menu_for(org.payroll) == {
         "team": False,
         "approvals": False,
         "payroll": True,
         "admin": False,
+        "reports": True,  # everyone: their own hours at least (D-160)
     }
     assert menu_for(org.manager) == {
         "team": True,
         "approvals": True,
         "payroll": False,
         "admin": False,
+        "reports": True,  # everyone: their own hours at least (D-160)
     }
 
 

@@ -9,7 +9,13 @@ from playwright.sync_api import expect
 from audit.models import AuditLog
 from directory.models import Employee
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ, log_in
-from tests.factories import TEST_PASSWORD, ProjectFactory
+from tests.factories import (
+    TEST_PASSWORD,
+    EmployeeFactory,
+    ProjectFactory,
+    TimeEntryFactory,
+    UserFactory,
+)
 from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
 from timesheets.services.approvals import approve_period
 
@@ -833,3 +839,92 @@ def test_project_search_in_a_real_browser(e2e_org, open_as, size):
     expect(status_of(page)).to_have_text("Draft")
     assert TimeEntry.objects.get().project.code == "I-002"
     assert page.evaluate("document.documentElement.scrollWidth") <= size["width"]
+
+
+REPORT_FILES = "2026-09-27_to_2026-10-10"  # the last pay period at the e2e clock
+
+
+def downloads(page, prefix):
+    """Download the report's Excel and CSV; returns their file names."""
+    names = []
+    for link in ("Download Excel", "Download CSV"):
+        with page.expect_download() as download:
+            page.get_by_role("link", name=link).click()
+        names.append(download.value.suggested_filename)
+    assert names == [f"{prefix}{REPORT_FILES}.xlsx", f"{prefix}{REPORT_FILES}.csv"]
+    return names
+
+
+def choose_report_project(page, typed, project):
+    box = page.get_by_role("combobox", name="Project")
+    box.fill(typed)
+    page.get_by_role("listbox").get_by_role("option", name=project).click()
+    expect(page.locator("[data-role=project-chips]")).to_contain_text(project)
+    page.get_by_role("button", name="Apply").click()
+
+
+def test_employee_project_hours_report(e2e_org, make_week, open_as):
+    """T-252: E2E Sara opens Reports → Project hours: only her own hours; filters to one
+    project with the search box; downloads Excel and CSV with her code in the names (D-160)."""
+    mobile = ProjectFactory(number=2, name="Mobile App")
+    week = make_week(e2e_org.dev2, PERIOD, status="APPROVED")
+    week.entries.filter(work_date=PERIOD + timedelta(days=5)).update(project=mobile)  # Friday
+    make_week(e2e_org.dev1, PERIOD, status="APPROVED")  # John's hours never show for Sara
+    page = open_as(e2e_org.dev2)
+    page.get_by_role("link", name="Reports").click()
+    expect(page.get_by_role("heading", name="Project hours", level=1)).to_be_visible()
+    expect(page.locator("#summary-project")).to_have_text("40.00")
+    expect(page.locator("#summary-people")).to_have_text("1 with hours of 1 person")
+    expect(page.locator("#by-employee")).to_have_count(0)
+    expect(page.get_by_label("People", exact=True)).to_have_count(0)  # no scope for an employee
+    choose_report_project(page, "mobile", "I-002 Mobile App")
+    expect(page).to_have_url(re.compile(r"project=I-002"))
+    expect(page.locator("#summary-project")).to_have_text("8.00")
+    expect(page.locator("#by-project-table tbody tr")).to_have_count(1)
+    downloads(page, "project-hours_DEV2_")
+    exports = AuditLog.objects.filter(action="EXPORT", actor=e2e_org.dev2)
+    assert [e.after["filters"]["project"] for e in exports] == [["I-002"], ["I-002"]]
+
+
+def test_director_project_hours_report(e2e_org, make_week, open_as):
+    """T-253: E2E a director filters to one project, groups by manager, drills into a
+    manager's group and downloads Excel and CSV (D-160, D-162)."""
+    director = EmployeeFactory(
+        employee_code="DIR", first_name="Dina", last_name="Ross", manager=e2e_org.ceo,
+        email="dir@yourcompany.com",
+    )  # fmt: skip
+    UserFactory(employee=director)
+    for manager in (e2e_org.manager, e2e_org.ops_manager):
+        manager.manager = director
+        manager.save()
+    mobile = ProjectFactory(number=2, name="Mobile App")
+    make_week(e2e_org.dev1, PERIOD, status="APPROVED")
+    make_week(e2e_org.dev2, PERIOD, status="APPROVED")
+    ops = make_week(e2e_org.ops1, PERIOD, status="APPROVED")
+    ops.entries.update(project=mobile)
+    TimeEntryFactory(
+        timesheet=ops, work_date=PERIOD + timedelta(days=6), category="MEETING", project=None,
+        task=None, start_time=time(9), end_time=time(10), minutes=60,
+    )  # fmt: skip
+    page = open_as(director)
+    page.goto(reverse("project_hours"))
+    expect(page.locator("#summary-project")).to_have_text("120.00")
+    choose_report_project(page, "portal", "I-001 Customer Portal")
+    expect(page.locator("#summary-project")).to_have_text("80.00")
+    expect(page.locator("#summary-non-project")).to_have_text("1.00")  # not filtered by project
+    page.get_by_label("Group by").select_option(label="Manager")
+    page.get_by_role("button", name="Apply").click()
+    rows = page.locator("#by-manager-table tbody tr")
+    expect(rows).to_have_count(3)
+    expect(rows.nth(0)).to_contain_text("Dina Ross")
+    expect(page.locator("#by-manager-table tfoot")).to_contain_text("80.00")
+    page.locator("#by-manager-table").get_by_role("link", name="Priya Shah").click()
+    expect(page).to_have_url(re.compile(r"scope=manager.*manager=MANAGER"))
+    expect(page.get_by_label("People", exact=True)).to_have_value("manager")
+    expect(page.locator("#summary-project")).to_have_text("80.00")
+    people = page.locator("#by-employee-table tbody tr")
+    expect(people.first).to_contain_text("John Kim")
+    expect(page.locator("#by-employee-table")).not_to_contain_text("Lena Park")
+    expect(page.locator("#by-employee-table tr.is-zero")).to_contain_text(["No time entered"] * 2)
+    downloads(page, "project-hours_")
+    assert AuditLog.objects.filter(action="EXPORT", actor=director).count() == 2

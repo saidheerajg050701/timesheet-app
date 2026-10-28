@@ -1,6 +1,6 @@
-{# The project search box's list (D-157, D-158): headed groups of options sorted by I-code, or "No matching project". grid.js gives each option its id. Context: groups = [(heading, [projects])]. #}{% for heading, projects in groups %}
+{# The project search box's list (D-157, D-158): headed groups of options sorted by I-code, or "No matching project". grid.js gives each option its id. Context: groups = [(heading, [projects])]; show_inactive marks inactive projects (reports, D-161). #}{% for heading, projects in groups %}
 <div role="group" aria-label="{{ heading }}">
   <div class="project-combo-heading" role="presentation">{{ heading }}</div>
-  {% for project in projects %}<div class="project-combo-option" role="option" aria-selected="false" data-value="{{ project.pk }}" data-label="{{ project.code }} {{ project.name }}"><span class="project-combo-code">{{ project.code }}</span> {{ project.name }}</div>{% endfor %}
+  {% for project in projects %}<div class="project-combo-option" role="option" aria-selected="false" data-value="{{ project.pk }}" data-label="{{ project.code }} {{ project.name }}"><span class="project-combo-code">{{ project.code }}</span> {{ project.name }}{% if show_inactive and not project.active %} <span class="text-body-secondary">(inactive)</span>{% endif %}</div>{% endfor %}
 </div>
 {% empty %}<div class="project-combo-empty" role="presentation">No matching project</div>{% endfor %}

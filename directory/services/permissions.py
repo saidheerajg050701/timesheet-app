@@ -118,6 +118,7 @@ def menu_for(employee):
         "approvals": employee.is_admin or manager,
         "payroll": can_access_payroll(employee),
         "admin": employee.is_admin,
+        "reports": True,  # everyone: one's own hours at least (D-160)
     }
 
 

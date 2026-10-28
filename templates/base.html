@@ -27,6 +27,7 @@
             {% if menu.team %}<li class="nav-item"><a class="nav-link{% if current == 'team' or current == 'team_member' or current == 'team_member_week' %} active" aria-current="page{% endif %}" href="{% url 'team' %}">Team</a></li>{% endif %}
             {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'approvals' or current == 'approval_detail' %} active" aria-current="page{% endif %}" href="{% url 'approvals' %}">Approvals</a></li>{% endif %}
             {% if menu.approvals %}<li class="nav-item"><a class="nav-link{% if current == 'request_inbox' or current == 'request_detail' or current == 'request_edit' %} active" aria-current="page{% endif %}" href="{% url 'request_inbox' %}" id="menu-change-requests">Change requests{% if menu.open_requests %} <span class="badge rounded-pill tone-warning" title="Open change requests">{{ menu.open_requests }}</span>{% endif %}</a></li>{% endif %}
+            {% if menu.reports %}<li class="nav-item"><a class="nav-link{% if current == 'project_hours' %} active" aria-current="page{% endif %}" href="{% url 'project_hours' %}">Reports</a></li>{% endif %}
             {% if menu.payroll %}<li class="nav-item"><a class="nav-link{% if current == 'payroll' or current == 'payroll_corrections' %} active" aria-current="page{% endif %}" href="{% url 'payroll' %}">Payroll</a></li>{% endif %}
             {% if menu.admin %}<li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}">Admin</a></li>{% endif %}
           </ul>

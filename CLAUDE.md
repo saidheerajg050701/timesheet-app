@@ -43,6 +43,10 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Project codes are I-001, I-002, … (D-155): assigned only by timesheets/services/projects.py
   (assign_code, never typed or edited, never reused) and sorted by Project.number, never as text.
   Project search matching lives only in projects.search_projects (D-157).
+- Reports → Project hours (D-160–D-164): every number comes from
+  analytics/services/project_report.py (page, Excel and CSV alike; who is in it only from
+  report_people); report_files.py only lays out files, with safe_cell text, no reasons, and
+  one EXPORT audit row per download.
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
