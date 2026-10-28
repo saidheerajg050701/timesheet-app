@@ -145,6 +145,9 @@
       </div>
     </div>
   </div>
+  <div class="row g-3 mb-3">
+    {% include "analytics/parts/_tasks.html" with tasks=board.tasks charge_codes=board.charge_codes prefix="team-" whose=" across the team" %}
+  </div>
   {{ board.chart_data|json_script:"team-data" }}
 {% endif %}
 {% endblock %}

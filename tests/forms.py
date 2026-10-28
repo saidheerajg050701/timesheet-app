@@ -1,11 +1,15 @@
 """POST data for the timesheet entry rows (Phase 5b form), shared by the integration tests."""
 
 
-def work(day, start, end, project=None, category="PROJECT", reason="Feature development"):
+def work(
+    day, start, end, project=None, category="PROJECT", reason="Feature development", task="DEV"
+):
+    """A timed row; project work is booked to `task` (DEV unless told otherwise, D-151)."""
     return {
         "date": day.isoformat(),
         "category": category,
         "project": str(project.pk) if project else "",
+        "task": task if project else "",
         "start": start,
         "end": end,
         "reason": reason,
@@ -35,7 +39,8 @@ def grid_post(grid):
             for s in cell.slots:
                 data.update({
                     f"entry-{s.index}-date": s.work_date, f"entry-{s.index}-category": s.category,
-                    f"entry-{s.index}-project": s.project, f"entry-{s.index}-start": s.start,
+                    f"entry-{s.index}-project": s.project, f"entry-{s.index}-task": s.task,
+                    f"entry-{s.index}-start": s.start,
                     f"entry-{s.index}-end": s.end, f"entry-{s.index}-hours": s.hours,
                     f"entry-{s.index}-reason": s.reason,
                 })  # fmt: skip

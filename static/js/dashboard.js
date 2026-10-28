@@ -45,13 +45,18 @@
     },
   });
 
-  [["projects-chart", data.projects], ["categories-chart", data.categories]].forEach(function (pair) {
+  // "Task not recorded" (history, D-153) is drawn muted; its label says the same thing.
+  function colours(rows) {
+    return rows.map(function (r) { return r.unrecorded ? MUTED : SERIES; });
+  }
+
+  [["projects-chart", data.projects], ["categories-chart", data.categories], ["tasks-chart", data.tasks]].forEach(function (pair) {
     draw(pair[0], {
       type: "bar",
       data: {
         labels: pair[1].map(function (r) { return r.label; }),
         datasets: [{ label: "Hours", data: pair[1].map(function (r) { return r.hours; }),
-          backgroundColor: SERIES, borderRadius: 4, borderSkipped: "start", maxBarThickness: 22 }],
+          backgroundColor: colours(pair[1]), borderRadius: 4, borderSkipped: "start", maxBarThickness: 22 }],
       },
       options: {
         indexAxis: "y",

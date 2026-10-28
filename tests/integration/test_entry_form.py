@@ -55,6 +55,7 @@ FIELDS = {
     "date": "work_date",
     "category": "category",
     "project": "project",
+    "task": "task",
     "start": "start",
     "end": "end",
     "hours": "hours",
@@ -116,7 +117,7 @@ def test_hours_are_shown_for_every_row(page, project):
     """T-91: each cell shows its hours (2 decimals) on page load and after an error (both forms)."""
     client, url, week = page
     friday = FRIDAY[week]
-    project_cell = f"cell-project-{project.pk}-{friday.isoformat()}"
+    project_cell = f"cell-project-{project.pk}-dev-{friday.isoformat()}"
     assert cell_hours(client.get(url).content.decode()) == {project_cell: "3.50"}  # 08:30–12:00
     rows = form(
         work(friday, "08:30", "12:00", project),

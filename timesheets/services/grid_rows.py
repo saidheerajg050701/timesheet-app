@@ -9,35 +9,45 @@ from dataclasses import dataclass
 
 from django.core.exceptions import ValidationError
 
-from timesheets.forms import CATEGORY_GROUPS
-from timesheets.models import Project, TimeEntry
+from timesheets.forms import CATEGORY_GROUPS, split_row_key
+from timesheets.models import Project, Task, TimeEntry
+from timesheets.services.tasks import task_problem
 from timesheets.services.validation import CATEGORY_LABELS
 
 
 @dataclass
 class RowResult:
     rows: list  # EntryRow, every posted slot after the change
-    keys: list  # (category, project) rows to show even without slots
+    keys: list  # (category, project, task) rows to show even without slots
     slots: int  # filled slots moved or removed
     merged: bool = False  # the target row was already in the grid
     target: tuple = ()  # the row the slots moved to
 
 
 def split_key(text):
-    """ "PROJECT:3" → ("PROJECT", "3"); "MEETING:" → ("MEETING", "")."""
-    category, _, project = (text or "").partition(":")
-    return category, project
+    """ "PROJECT:3:DEV" → ("PROJECT", "3", "DEV"); "MEETING:" → ("MEETING", "", "")."""
+    return split_row_key(text)
 
 
-def target_problem(category, project):
-    """Why (category, project) can't be a grid row, or "": the "+ Add row" rule too (D-18)."""
+def normalized(category, project, task):
+    """Only project work has a project and a task."""
+    if category == TimeEntry.Category.PROJECT:
+        return category, project, task
+    return category, "", ""
+
+
+def target_problem(category, project, task=""):
+    """Why (category, project, task) can't be a new grid row, or "": the "+ Add row" rule too
+    (D-18, D-151) — an active project and one of its allowed, active tasks."""
     if category not in CATEGORY_LABELS:
         return "Choose a category."
-    if category == TimeEntry.Category.PROJECT and not (
-        project.isdigit() and Project.objects.filter(pk=project, active=True).exists()
-    ):
+    if category != TimeEntry.Category.PROJECT:
+        return ""
+    found = Project.objects.filter(pk=project, active=True).first() if project.isdigit() else None
+    if found is None:
         return "Choose an active project."
-    return ""
+    problem = task_problem(found, Task.objects.filter(code=task).first() if task else None)
+    return problem[:1].upper() + problem[1:] if problem else ""
 
 
 def same_kind(source, target):
@@ -46,7 +56,7 @@ def same_kind(source, target):
 
 
 def target_groups(category):
-    """The "Change project / category" choices for a row of `category`, grouped as in
+    """The "Change project, task or category" choices for a row of `category`, grouped as in
     "+ Add row": work and Break rows get Work and Break, leave rows get Leave."""
     return [
         (group, options) for group, options in CATEGORY_GROUPS if same_kind(category, options[0][0])
@@ -54,7 +64,7 @@ def target_groups(category):
 
 
 def _slots(rows, key):
-    return [r for r in rows if not r.is_blank and (r.category, r.project) == key]
+    return [r for r in rows if not r.is_blank and (r.category, r.project, r.task) == key]
 
 
 def change_row(rows, keys, source, target):
@@ -62,10 +72,9 @@ def change_row(rows, keys, source, target):
 
     A target that already has a row merges into it (D-130); the save checks overlaps as always.
     """
-    category, project = target
-    project = project if category == TimeEntry.Category.PROJECT else ""
-    target = (category, project)
-    problem = target_problem(category, project)
+    target = normalized(*target)
+    category, project, task = target
+    problem = target_problem(category, project, task)
     if problem:
         raise ValidationError(problem)
     if source[0] not in CATEGORY_LABELS:
@@ -78,7 +87,7 @@ def change_row(rows, keys, source, target):
     moving = _slots(rows, source)
     merged = target != source and (bool(_slots(rows, target)) or target in keys)
     for row in moving:
-        row.category, row.project = category, project
+        row.category, row.project, row.task = category, project, task
     keys = [k for k in keys if k != source]
     if target not in keys:
         keys.append(target)

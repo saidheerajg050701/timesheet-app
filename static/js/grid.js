@@ -1,4 +1,4 @@
-// The weekly grid (Change 2, D-106–D-110; Change 5, D-127; Change 7, D-129). Convenience only:
+// The weekly grid (Change 2, D-106–D-110; Change 5, D-127; Change 7, D-129; Change 10, D-152). Convenience only:
 // open a cell's dialog, add and remove time slots, add rows (or point at the row that is
 // already there), change or delete a whole row (the server re-draws the grid as typed), keep
 // the cell / row / day totals and the multi-slot hint live, and warn before leaving with
@@ -180,17 +180,44 @@
     row.scrollIntoView({ block: "center", inline: "nearest", behavior: still ? "auto" : "smooth" });
   }
 
-  function addRow(dialog) {
+  // --- project and task choices (Change 10, D-152) ------------------------------------
+  function chosen(dialog) {
+    // The category, project and task picked in a dialog, and the grid row key they make.
     var category = dialog.querySelector("[data-role=new-category]").value;
-    var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
+    var isProject = category === "PROJECT";
+    var project = isProject ? dialog.querySelector("[data-role=new-project]").value : "";
+    var task = isProject ? dialog.querySelector("[data-role=new-task]").value : "";
+    var key = category + ":" + project + (task ? ":" + task : "");
+    var problem = !category ? "Choose a category."
+      : isProject && !project ? "Choose a project."
+      : isProject && !task ? "Choose a task." : "";
+    return { category: category, project: project, task: task, key: key, problem: problem };
+  }
+
+  function fillTasks(dialog) {
+    // Only the chosen project's allowed, active tasks (the server checks them again).
+    var select = dialog.querySelector("[data-role=new-task]");
+    var category = dialog.querySelector("[data-role=new-category]").value;
+    var project = dialog.querySelector("[data-role=new-project]").value;
+    var source = document.getElementById("task-choices");
+    var choices = source ? JSON.parse(source.textContent) : {};
+    var keep = select.value || select.dataset.current || "";
+    select.length = 1; // keep "Choose…"
+    (choices[project] || []).forEach(function (choice) {
+      select.add(new Option(choice[1], choice[0], false, choice[0] === keep));
+    });
+    dialog.querySelector("[data-role=new-task-field]").hidden = category !== "PROJECT" || !project;
+  }
+
+  function addRow(dialog) {
+    var pick = chosen(dialog);
+    var category = pick.category, project = pick.project, task = pick.task;
     var error = dialog.querySelector("[data-role=add-row-error]");
     var grid = dialog.closest("[data-week-grid]");
-    var problem = !category ? "Choose a category."
-      : category === "PROJECT" && !project ? "Choose a project." : "";
-    error.textContent = problem;
-    error.hidden = !problem;
-    if (problem) return;
-    var existing = grid.querySelector('tr[data-row-key="' + category + ":" + project + '"]');
+    error.textContent = pick.problem;
+    error.hidden = !pick.problem;
+    if (pick.problem) return;
+    var existing = grid.querySelector('tr[data-row-key="' + pick.key + '"]');
     if (existing) {
       opener = null; // focus goes to the existing row, not back to "+ Add row"
       dialog.close();
@@ -200,12 +227,12 @@
     notice(grid, "");
     var body = grid.querySelector("[data-role=grid-rows]");
     htmx.ajax("GET", dialog.dataset.rowUrl, {
-      target: body, swap: "beforeend", values: { category: category, project: project },
+      target: body, swap: "beforeend", values: { category: category, project: project, task: task },
     }).then(function () {
       var empty = body.querySelector("tr.grid-empty");
       if (empty) empty.remove();
       dialog.close();
-      var row = body.querySelector('tr[data-row-key="' + category + ":" + project + '"]');
+      var row = body.querySelector('tr[data-row-key="' + pick.key + '"]');
       if (row) row.querySelector(".cell-button").focus();
       changed(grid);
     });
@@ -226,10 +253,9 @@
   function changeNotes(dialog) {
     // Say before saving what the change does: merge into an existing row, or Break pay.
     var row = dialog.closest("tr.grid-row");
-    var category = dialog.querySelector("[data-role=new-category]").value;
-    var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
-    var key = category + ":" + project;
-    var target = key !== row.dataset.rowKey
+    var pick = chosen(dialog);
+    var category = pick.category, key = pick.key;
+    var target = !pick.problem && key !== row.dataset.rowKey
       && row.closest("[data-week-grid]").querySelector('tr[data-row-key="' + key + '"]');
     var merge = dialog.querySelector("[data-role=merge-note]");
     merge.textContent = target ? target.dataset.rowLabel + " already has a row this week: the "
@@ -294,6 +320,7 @@
     } else if (action === "add-row") {
       var adder = button.closest("[data-week-grid]").querySelector("#add-row-dialog");
       adder.querySelector("[data-role=add-row-error]").hidden = true;
+      fillTasks(adder);
       open(adder, button);
     } else if (action === "insert-row") {
       addRow(dialog);
@@ -308,6 +335,7 @@
       var panel = row.querySelector("[data-role=" + action + "-dialog]");
       panel.querySelector("[data-role=row-error]").hidden = true;
       if (action === "change-row") {
+        fillTasks(panel);
         changeNotes(panel);
       } else {
         var minutes = filledSlots(row).reduce(function (sum, slot) { return sum + slotMinutes(slot); }, 0);
@@ -318,18 +346,19 @@
       open(panel, toggle);
     } else if (action === "confirm-change") {
       var changing = dialog.closest("tr.grid-row");
-      var category = dialog.querySelector("[data-role=new-category]").value;
-      var project = category === "PROJECT" ? dialog.querySelector("[data-role=new-project]").value : "";
+      var pick = chosen(dialog);
       var problem = dialog.querySelector("[data-role=row-error]");
-      problem.textContent = category === "PROJECT" && !project ? "Choose a project." : "";
+      problem.textContent = pick.problem;
       problem.hidden = !problem.textContent;
       if (!problem.hidden) return;
-      if (category + ":" + project === changing.dataset.rowKey) {
+      if (pick.key === changing.dataset.rowKey) {
         dialog.close(); // nothing to change
         return;
       }
-      rowAction(changing, { "row-action": "change", "new-category": category, "new-project": project },
-        category + ":" + project);
+      rowAction(changing, {
+        "row-action": "change", "new-category": pick.category, "new-project": pick.project,
+        "new-task": pick.task,
+      }, pick.key);
     } else if (action === "confirm-delete") {
       rowAction(dialog.closest("tr.grid-row"), { "row-action": "delete" });
     }
@@ -339,6 +368,9 @@
     if (event.target.matches("[data-role=new-category]")) {
       var field = event.target.closest("dialog").querySelector("[data-role=new-project-field]");
       field.hidden = event.target.value !== "PROJECT";
+    }
+    if (event.target.matches("[data-role=new-category], [data-role=new-project]")) {
+      fillTasks(event.target.closest("dialog"));
     }
     var changing = event.target.closest("[data-role=change-row-dialog]");
     if (changing) changeNotes(changing);

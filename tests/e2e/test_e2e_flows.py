@@ -27,7 +27,7 @@ def status_of(page):
     return page.locator("#week-status")
 
 
-PORTAL = "PRJ-001 Customer Portal / Project work"
+PORTAL = "PRJ-001 Customer Portal · DEV Development"
 BREAK = "Break (unpaid)"
 
 
@@ -44,12 +44,14 @@ def open_cell(page, row, day):
     return panel
 
 
-def add_row(page, category, project=None):
+def add_row(page, category, project=None, task="DEV Development"):
+    """+ Add row; project work also chooses the project, then one of its tasks (D-152)."""
     page.get_by_role("button", name="+ Add row").click()
     panel = page.locator("dialog[open]")
     panel.get_by_label("Category").select_option(label=category)
     if project:
         panel.get_by_label("Project").select_option(label=project)
+        panel.get_by_label("Task").select_option(label=task)
     panel.get_by_role("button", name="Add row", exact=True).click()
 
 
@@ -64,7 +66,7 @@ ON_TOP = """(el) => {
     return hit === el || el.contains(hit);
   });
 }"""
-MENU_ITEMS = ("Change project / category", "Delete row")
+MENU_ITEMS = ("Change row", "Delete row")
 
 
 def row_menu(page, name):
@@ -435,7 +437,7 @@ def test_add_row_for_an_existing_row_points_at_it(e2e_org, open_as):
     expect(page.locator("dialog[open]")).to_have_count(0)  # closed; no error to dismiss
     expect(page.get_by_role("alert")).to_have_count(0)
     expect(page.locator("[data-week-grid]").get_by_role("status")).to_have_text(
-        "PRJ-001 Customer Portal / Project work already has a row. Click a day to add another "
+        "PRJ-001 Customer Portal · DEV Development already has a row. Click a day to add another "
         "time slot (for example 2:00 PM – 5:00 PM)."
     )
     rows = page.locator("#entries tr.grid-row")
@@ -494,13 +496,13 @@ def test_change_and_delete_rows(e2e_org, open_as):
     panel.get_by_role("button", name="Done").click()
     expect(total).to_have_text("3.00")
 
-    panel = menu_item(page, "PRJ-001 Customer Portal", "Change project / category")
+    panel = menu_item(page, "PRJ-001 Customer Portal", "Change row")
     expect(panel.get_by_label("Category")).to_have_value("PROJECT")
     expect(panel.get_by_label("Category")).to_be_focused()
     panel.get_by_label("Project").select_option(label="PRJ-002 Mobile App")
     panel.get_by_role("button", name="Change row").click()
     expect(page.locator("dialog[open]")).to_have_count(0)
-    mobile = "PRJ-002 Mobile App / Project work"
+    mobile = "PRJ-002 Mobile App · DEV Development"
     expect(cell(page, mobile, MONDAY)).to_have_text("3.00")
     expect(page.locator('#entries tr[data-row-key^="PROJECT:"]')).to_have_count(1)
     expect(page.locator("[data-week-grid]").get_by_role("status")).to_have_text(
@@ -570,12 +572,12 @@ def test_row_menus_in_a_real_browser(e2e_org, open_as, size):
         expect(page.locator("dialog[open]")).to_have_count(0)
         expect(page.get_by_role("button", name=f"Row actions for {name}")).to_be_focused()
 
-    dialog_opens("PRJ-001 Customer Portal", "Change project / category", "Change project")
+    dialog_opens("PRJ-001 Customer Portal", "Change row", "Change project, task or category")
     panel = open_cell(page, PORTAL, MONDAY)  # a cell edit
     panel.get_by_label("Start").fill("09:00")
     panel.get_by_label("End").fill("12:00")
     panel.get_by_role("button", name="Done").click()
-    panel = menu_item(page, "PRJ-001 Customer Portal", "Change project / category")
+    panel = menu_item(page, "PRJ-001 Customer Portal", "Change row")
     panel.get_by_label("Project").select_option(label="PRJ-002 Mobile App")
     panel.get_by_role("button", name="Change row").click()  # re-draw 1
     expect(page.get_by_role("button", name="Row actions for PRJ-002 Mobile App")).to_be_focused()
@@ -587,9 +589,9 @@ def test_row_menus_in_a_real_browser(e2e_org, open_as, size):
     dialog_opens("Meetings", "Delete row", "Delete row")
     row_menu(page, "Break (unpaid)")[1].get_by_role("button", name="Delete row").click()  # empty
     expect(page.locator('#entries tr[data-row-key="BREAK:"]')).to_have_count(0)  # re-draw 2
-    dialog_opens("PTO", "Change project / category", "Change project")
+    dialog_opens("PTO", "Change row", "Change project, task or category")
     add_row(page, "Training")  # a row added after the re-draws
-    dialog_opens("Training", "Change project / category", "Change project")
+    dialog_opens("Training", "Change row", "Change project, task or category")
 
     toggle = page.get_by_role("button", name="Row actions for PRJ-002 Mobile App")
     for key, steps, heading in (("Enter", 1, "Change project"), (" ", 2, "Delete row")):
@@ -706,3 +708,51 @@ def test_manager_edits_and_approves_a_locked_employee(e2e_org, open_as):
     expect(payroll.get_by_role("alert")).to_contain_text("exported as batch EXP-0001")
     sara = payroll.locator('#register tr[data-employee="DEV2"]')
     expect(sara.locator('[data-role="pay-total"]')).to_have_text("8.00")
+
+
+def test_tasks_and_charge_codes_in_a_real_browser(e2e_org, open_as):
+    """T-236: E2E add a Project work row with a task (only the project's tasks offered), enter
+    time, change the task with ⋮, save and submit; the manager sees the charge code (D-152)."""
+    mobile = ProjectFactory(code="PRJ-002", name="Mobile App")
+    mobile.tasks.set(mobile.tasks.filter(code__in=["DEV", "TST"]))
+    page = open_as(e2e_org.dev1)
+    page.goto(week_url(THIS_WEEK))
+    page.get_by_role("button", name="+ Add row").click()
+    panel = page.locator("dialog[open]")
+    panel.get_by_label("Category").select_option(label="Project work")
+    expect(panel.get_by_label("Task")).to_be_hidden()  # asked once a project is chosen
+    panel.get_by_label("Project").select_option(label="PRJ-002 Mobile App")
+    expect(panel.get_by_label("Task").locator("option")).to_have_text(
+        ["Choose…", "DEV Development", "TST Testing & QA"]
+    )
+    panel.get_by_role("button", name="Add row", exact=True).click()
+    expect(panel.get_by_role("alert")).to_have_text("Choose a task.")
+    panel.get_by_label("Task").select_option(label="DEV Development")
+    panel.get_by_role("button", name="Add row", exact=True).click()
+    dev = "PRJ-002 Mobile App · DEV Development"
+    row = page.locator("#entries tr.grid-row", has_text="PRJ-002 Mobile App")
+    expect(row.get_by_title("Charge code")).to_have_text("PRJ-002-DEV")
+    panel = open_cell(page, dev, MONDAY)
+    panel.get_by_label("Start").fill("09:00")
+    panel.get_by_label("End").fill("12:00")
+    panel.get_by_label("Reason").fill("Test plan")
+    panel.get_by_role("button", name="Done").click()
+
+    panel = menu_item(page, "PRJ-002 Mobile App", "Change row")
+    expect(panel.get_by_label("Task")).to_have_value("DEV")
+    panel.get_by_label("Task").select_option(label="TST Testing & QA")
+    panel.get_by_role("button", name="Change row").click()
+    tst = "PRJ-002 Mobile App · TST Testing & QA"
+    expect(cell(page, tst, MONDAY)).to_have_text("3.00")
+    expect(page.locator("#entries").get_by_title("Charge code")).to_have_text(["PRJ-002-TST"])
+    page.get_by_role("button", name="Save draft").click()
+    expect(status_of(page)).to_have_text("Draft")
+    page.get_by_role("button", name="Submit").click()
+    expect(status_of(page)).to_have_text("Submitted")
+    entry = TimeEntry.objects.get()
+    assert (entry.project.code, entry.task.code, entry.reason) == ("PRJ-002", "TST", "Test plan")
+
+    manager = open_as(e2e_org.manager)
+    manager.goto(reverse("approval_detail", args=[THIS_WEEK - timedelta(weeks=1), "DEV1"]))
+    expect(manager.get_by_title("Charge code")).to_have_text(["PRJ-002-TST"])
+    expect(manager.locator("[data-week-grid]").last).to_contain_text(tst)  # week 2 of the period

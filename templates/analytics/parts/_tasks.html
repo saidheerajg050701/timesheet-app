@@ -1,0 +1,46 @@
+{% comment %}
+  "Hours by task" and "Hours by project + task" (D-153), on the dashboard and the Team page.
+  Context: `tasks` (metrics.hours_by_task), `charge_codes` (metrics.hours_by_charge_code),
+  `prefix` ("" or "team-") for the element ids, and `whose` ("" or " across the team").
+{% endcomment %}
+{% load timesheet_tags %}
+<div class="col-lg-6">
+  <div class="card h-100 shadow-sm" id="{{ prefix }}by-task">
+    <div class="card-body">
+      <h2 class="h6 text-body-secondary">Hours by task{{ whose }}</h2>
+      {% if tasks %}
+        <div style="height: 220px"><canvas id="{{ prefix }}tasks-chart" role="img" aria-label="Bar chart of hours per task; the same numbers are in the table below"></canvas></div>
+        <table class="table table-sm small mb-0 mt-2" id="{{ prefix }}tasks-table">
+          <tbody>
+            {% for code, name, minutes in tasks %}
+              <tr><th scope="row" class="fw-normal{% if not code %} fst-italic text-body-secondary{% endif %}">{% if code %}{{ code }} {% endif %}{{ name }}</th><td class="text-end">{{ minutes|hours2 }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="text-body-secondary mb-0">No project work in this range.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+<div class="col-lg-6">
+  <div class="card h-100 shadow-sm" id="{{ prefix }}by-charge-code">
+    <div class="card-body">
+      <h2 class="h6 text-body-secondary">Hours by project + task{{ whose }}</h2>
+      {% if charge_codes %}
+        <div class="table-responsive">
+          <table class="table table-sm small mb-0" id="{{ prefix }}charge-codes-table">
+            <thead><tr><th scope="col">Charge code</th><th scope="col">Project</th><th scope="col">Task</th><th scope="col" class="text-end">Hours</th></tr></thead>
+            <tbody>
+              {% for code, project, task, minutes in charge_codes %}
+                <tr><th scope="row" class="fw-normal"><span class="grid-code">{{ code }}</span></th><td>{{ project }}</td><td{% if task == "Task not recorded" %} class="fst-italic text-body-secondary"{% endif %}>{{ task }}</td><td class="text-end">{{ minutes|hours2 }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-body-secondary mb-0">No project work in this range.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>

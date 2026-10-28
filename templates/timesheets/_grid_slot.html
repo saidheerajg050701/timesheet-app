@@ -4,6 +4,7 @@
   <input type="hidden" name="entry-{{ slot.index }}-date" value="{{ cell.day|date:'Y-m-d' }}">
   <input type="hidden" name="entry-{{ slot.index }}-category" value="{{ row.category }}">
   <input type="hidden" name="entry-{{ slot.index }}-project" value="{{ row.project }}">
+  <input type="hidden" name="entry-{{ slot.index }}-task" value="{{ row.task }}">
   {% if row.kind == "leave" %}
     <label class="slot-field slot-hours-field">Hours
       <input type="text" inputmode="decimal" class="form-control form-control-sm" name="entry-{{ slot.index }}-hours" value="{{ slot.hours }}" data-role="hours" placeholder="e.g. 8 or 7.5"></label>

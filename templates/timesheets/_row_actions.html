@@ -1,14 +1,14 @@
 {# A row's "⋮" menu and its two dialogs (Change 7, D-129, D-130). Context: row, project_choices. #}{% load timesheet_tags %}
 <div class="dropdown row-actions">
-  <button type="button" class="row-actions-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" aria-label="Row actions for {{ row.name }}">⋮</button>
+  <button type="button" class="row-actions-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" aria-label="Row actions for {{ row.label }}">⋮</button>
   <ul class="dropdown-menu">
-    <li><button type="button" class="dropdown-item" data-grid-action="change-row">Change project / category</button></li>
+    <li><button type="button" class="dropdown-item" data-grid-action="change-row">Change row</button></li>
     <li><button type="button" class="dropdown-item text-danger" data-grid-action="delete-row">Delete row</button></li>
   </ul>
 </div>
 <dialog class="cell-dialog row-dialog" id="{{ row.dom_id }}-change" aria-labelledby="{{ row.dom_id }}-change-title" data-role="change-row-dialog">
   <div class="cell-dialog-head">
-    <h2 class="h6 mb-0" id="{{ row.dom_id }}-change-title">Change project / category<span class="cell-dialog-day">{{ row.label }}</span></h2>
+    <h2 class="h6 mb-0" id="{{ row.dom_id }}-change-title">Change project, task or category<span class="cell-dialog-day">{{ row.label }}</span></h2>
     <button type="button" class="btn-close" data-grid-action="close" aria-label="Close"></button>
   </div>
   <p class="small text-body-secondary">Every {% if row.kind == "leave" %}leave entry{% else %}time slot{% endif %} in this row moves; dates, {% if row.kind == "leave" %}hours{% else %}times{% endif %} and reasons stay the same.</p>
@@ -21,6 +21,12 @@
     <select class="form-select mb-3" id="{{ row.dom_id }}-project" data-role="new-project">
       <option value="">Choose…</option>
       {% for value, label in project_choices %}<option value="{{ value }}"{% if value|stringformat:"s" == row.project %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div data-role="new-task-field" hidden>
+    <label class="form-label" for="{{ row.dom_id }}-task">Task</label>
+    <select class="form-select mb-3" id="{{ row.dom_id }}-task" data-role="new-task" data-current="{{ row.task }}">
+      <option value="">Choose…</option>
     </select>
   </div>
   <p class="row-note" data-role="merge-note" hidden></p>

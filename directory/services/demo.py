@@ -22,7 +22,7 @@ from audit.models import AuditLog
 from audit.services.log import backdate, build, bulk_record
 from directory.models import Employee, Team, User
 from directory.services.importer import REQUIRED_COLUMNS, import_employees
-from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
+from timesheets.models import ChangeRequest, PeriodApproval, Project, Task, TimeEntry, Timesheet
 from timesheets.services.calendar import (
     deadline_for,
     pay_period_for,
@@ -61,6 +61,28 @@ PROJECTS = (
     ("PRJ-007", "Internal Operations", True),
     ("PRJ-008", "Legacy Billing (closed)", False),  # inactive: never used in entries (D-18)
 )
+# Change 10 (D-154): the tasks each project allows, and the tasks each team usually books to.
+PROJECT_TASKS = {
+    "PRJ-001": ("PLN", "DES", "DEV", "TST", "REL", "SUP", "DOC", "MTG"),
+    "PRJ-002": ("PLN", "DES", "DEV", "TST", "REL", "MTG"),
+    "PRJ-003": ("PLN", "DEV", "TST", "DOC", "MTG"),
+    "PRJ-004": ("PLN", "DEV", "REL", "SEC", "DOC", "MTG"),
+    "PRJ-005": ("SUP", "DOC", "TST", "MTG"),
+    "PRJ-006": ("PLN", "DOC", "MTG", "SUP"),
+    "PRJ-007": ("PLN", "DOC", "MTG", "SEC"),
+    "PRJ-008": ("DEV", "SUP"),
+}
+TEAM_TASKS = {
+    "Leadership": ("PLN", "MTG"),
+    "Engineering": ("DEV", "DES", "PLN", "MTG"),
+    "Platform": ("DEV", "TST", "REL", "MTG"),
+    "Data": ("DEV", "PLN"),
+    "People": ("DOC", "MTG", "PLN"),
+    "Operations": ("SUP", "DOC", "MTG"),
+    "Support": ("SUP", "DOC"),
+    "Payroll": ("DOC", "MTG", "PLN"),
+    "Sales": ("PLN", "MTG", "DOC"),
+}
 TEAM_PROJECTS = {
     "Leadership": ("PRJ-007", "PRJ-004"),
     "Engineering": ("PRJ-001", "PRJ-004"),
@@ -382,20 +404,36 @@ class _Seeder:
         return with_account
 
     def _projects(self):
+        """The projects, each with its allowed tasks (the 9 default tasks come from migration
+        timesheets/0007, D-148, D-154)."""
         projects = Project.objects.bulk_create(
             Project(code=code, name=name, active=active) for code, name, active in PROJECTS
         )
+        self.tasks = {t.code: t for t in Task.objects.all()}
         for project in projects:
+            codes = PROJECT_TASKS[project.code]
+            project.tasks.set([self.tasks[c] for c in codes])
             self.audit.append(
                 build(
                     AuditLog.Action.CREATE,
                     "Project",
                     project.code,
                     system_actor=SYSTEM_ACTOR,
-                    after={"name": project.name, "active": project.active},
+                    after={"name": project.name, "active": project.active, "tasks": list(codes)},
                 )
             )
         return {p.code: p for p in projects}
+
+    def _task_for(self, project, team):
+        """A task the team usually books to and the project allows (D-154)."""
+        allowed = PROJECT_TASKS[project.code]
+        usual = [c for c in TEAM_TASKS[team] if c in allowed] or list(allowed)
+        return self.tasks[self.rng.choice(usual)]
+
+    def _book_tasks(self, week):
+        for entry in week.entries:
+            if entry.category == TimeEntry.Category.PROJECT:
+                entry.task = self._task_for(entry.project, week.employee.team.name)
 
     # --- weekly history --------------------------------------------------------------------
 
@@ -424,7 +462,9 @@ class _Seeder:
                 kind = forced.get((employee.employee_code, week_start)) or self._random_kind(
                     week_start
                 )
-                weeks.append(self._week(employee, week_start, kind, workdays, team_projects))
+                week = self._week(employee, week_start, kind, workdays, team_projects)
+                self._book_tasks(week)
+                weeks.append(week)
         self._manager_edit(weeks, projects)
         return weeks
 
@@ -561,6 +601,7 @@ class _Seeder:
             before = _entry_snapshot(week.entries)
             other = next(c for c in TEAM_PROJECTS["Operations"] if c != entry.project.code)
             entry.project = projects[other]
+            entry.task = self._task_for(entry.project, week.employee.team.name)
             requested = deadline_for(week.week_start, self.tz) + timedelta(days=1)
             edited = requested + timedelta(hours=3)
             week.last_event = edited
@@ -807,6 +848,7 @@ def _entry_snapshot(entries):
             "work_date": e.work_date.isoformat(),
             "category": e.category,
             "project": e.project.code if e.project else None,
+            "task": e.task.code if e.task else None,
             "start": e.start_time.strftime("%H:%M") if e.start_time else None,
             "end": e.end_time.strftime("%H:%M") if e.end_time else None,
             "minutes": e.minutes,

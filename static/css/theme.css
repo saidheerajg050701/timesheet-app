@@ -550,6 +550,17 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
 }
 .week-grid tfoot > tr > .is-weekend { --bs-table-bg: #eef2f6; background: #eef2f6; }
 .grid-label-sub { display: block; color: var(--ts-text-muted); font-size: 0.8125rem; font-weight: 400; }
+.grid-label-sub.is-unrecorded { font-style: italic; } /* "Task not recorded": history (D-151) */
+.grid-code { /* the charge code, e.g. PRJ-001-DEV (D-150) */
+  display: inline-block;
+  margin-top: 3px;
+  padding: 0 6px;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-sm);
+  background: var(--ts-surface-muted);
+  color: var(--ts-text-muted);
+  font: 600 0.6875rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 .grid-day-total.has-error { color: var(--ts-danger); text-decoration: underline wavy; }
 .week-grid tbody tr:hover > * { --bs-table-bg-state: transparent; }
 .week-grid .grid-empty td { padding: 18px 14px; }

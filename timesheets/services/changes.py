@@ -156,7 +156,7 @@ def edit_directly(request, handler, entries, note="", *, now):
         sheet = Timesheet.objects.select_for_update().get(pk=sheet.pk)
         before = {
             "status": sheet.status,
-            "entries": entries_snapshot(sheet.entries.select_related("project")),
+            "entries": entries_snapshot(sheet.entries.select_related("project", "task")),
         }
         if sheet.status == Timesheet.Status.APPROVED:
             period_start = pay_period_for(sheet.week_start, settings.PAY_PERIOD_ANCHOR)[0]
@@ -220,7 +220,7 @@ def edit_for_approval(viewer, employee, week_start, entries, *, now):
             sheet = Timesheet.objects.create(
                 employee=employee, week_start=week_start, status=Timesheet.Status.LOCKED
             )
-        before = entries_snapshot(sheet.entries.select_related("project"))
+        before = entries_snapshot(sheet.entries.select_related("project", "task"))
         replace_entries(sheet, entries)
         record(
             AuditLog.Action.UPDATE,

@@ -10,9 +10,10 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from timesheets.forms import parse_hours, parse_time
-from timesheets.models import Project, TimeEntry
+from timesheets.models import Project, Task, TimeEntry
 from timesheets.services.calendar import week_days
 from timesheets.services.grid_rows import target_groups
+from timesheets.services.tasks import charge_code, task_label
 from timesheets.services.validation import CATEGORY_LABELS, day_label, duration, mentions
 from timesheets.services.weeks import EntryRow
 
@@ -88,22 +89,27 @@ class Cell:
 class GridRow:
     category: str
     project: str  # project id as text, "" for other categories
-    label: str
+    label: str  # "PRJ-001 Customer Portal · DEV Development", "Meetings"
     cells: list = field(default_factory=list)
+    task: str = ""  # task code; "" for other categories and for history rows (D-152)
+    charge_code: str = ""  # "PRJ-001-DEV" (project work only, D-150)
 
     @property
     def key(self):
-        return f"{self.category}:{self.project}"
+        """ "PROJECT:3:DEV"; "PROJECT:3" for history without a task; "MEETING:"."""
+        base = f"{self.category}:{self.project}"
+        return f"{base}:{self.task}" if self.task else base
 
     @property
     def name(self):
-        """ "PRJ-001 Customer Portal" — the part before " / Project work"."""
-        return self.label.split(" / ")[0]
+        """ "PRJ-001 Customer Portal" — the part before " · DEV Development"."""
+        return self.label.split(LABEL_SEPARATOR)[0]
 
     @property
     def sub(self):
-        """ "/ Project work" for project rows, shown on its own line; "" otherwise."""
-        return "/ " + self.label.split(" / ")[1] if " / " in self.label else ""
+        """ "DEV Development" (or "Task not recorded") for project rows, on its own line."""
+        parts = self.label.split(LABEL_SEPARATOR)
+        return parts[1] if len(parts) > 1 else ""
 
     @property
     def kind(self):
@@ -115,8 +121,8 @@ class GridRow:
 
     @property
     def dom_id(self):
-        """ "row-project-3", "row-meeting-0": ids of the row's action dialogs (D-129)."""
-        return f"row-{self.category.lower()}-{self.project or 0}"
+        """ "row-project-3-dev", "row-meeting-0": ids of the row's action dialogs (D-129)."""
+        return f"row-{self.category.lower()}-{self.project or 0}{_task_part(self.task)}"
 
     @property
     def slot_count(self):
@@ -124,7 +130,7 @@ class GridRow:
 
     @property
     def change_groups(self):
-        """What "Change project / category" offers this row (D-130)."""
+        """What "Change project, task or category" offers this row (D-130)."""
         return target_groups(self.category)
 
 
@@ -164,16 +170,34 @@ class Grid:
         return EntryRow(index="__INDEX__")
 
 
-def cell_id(category, project, day):
-    return f"cell-{category.lower()}-{project or 0}-{day.isoformat()}"
+LABEL_SEPARATOR = " · "
 
 
-def row_label(category, project, projects):
+def _task_part(task):
+    return f"-{task.lower()}" if task else ""
+
+
+def cell_id(category, project, day, task=""):
+    return f"cell-{category.lower()}-{project or 0}{_task_part(task)}-{day.isoformat()}"
+
+
+def row_label(category, project, projects, task="", tasks=None):
+    """ "PRJ-001 Customer Portal · DEV Development" (history: "… · Task not recorded");
+    the category label for everything else (D-150)."""
     if category != TimeEntry.Category.PROJECT:
         return ROW_LABELS.get(category, category)
     found = projects.get(project)
     name = f"{found.code} {found.name}" if found else "Unknown project"
-    return f"{name} / {ROW_LABELS['PROJECT']}"
+    known = (tasks or {}).get(task)
+    shown = task_label(known) if known else (task or task_label(None))
+    return f"{name}{LABEL_SEPARATOR}{shown}"
+
+
+def _lookups(keys):
+    """{project id: Project}, {task code: Task} for (category, project, task) keys."""
+    projects = Project.objects.in_bulk([int(p) for _, p, _ in keys if p.isdigit()])
+    tasks = Task.objects.in_bulk([t for _, _, t in keys if t], field_name="code")
+    return {str(pk): project for pk, project in projects.items()}, tasks
 
 
 def slots_text(category, count):
@@ -186,56 +210,61 @@ def slots_text(category, count):
 def row_notice(action, source, result):
     """The grid's status line after a row action (D-129, D-130)."""
     target = result.target
-    keys = [k for k in (source, target) if k]
-    projects = Project.objects.in_bulk([int(p) for _, p in keys if p.isdigit()])
-    projects = {str(pk): project for pk, project in projects.items()}
+    projects, tasks = _lookups([k for k in (source, target) if k])
+
+    def label(key):
+        category, project, task = key
+        return row_label(category, project, projects, task, tasks)
+
     slots = slots_text(source[0], result.slots)
     if action == "delete" and not result.slots:
-        return f"Deleted {row_label(*source, projects)}."  # an empty row: nothing to save
+        return f"Deleted {label(source)}."  # an empty row: nothing to save
     if action == "delete":
-        return f"Deleted {row_label(*source, projects)} ({slots}). Save to keep this change."
+        return f"Deleted {label(source)} ({slots}). Save to keep this change."
     merged = ", merged with its existing row" if result.merged else ""
-    return f"Moved {slots} to {row_label(*target, projects)}{merged}. Save to keep this change."
+    return f"Moved {slots} to {label(target)}{merged}. Save to keep this change."
 
 
 def build_grid(rows, week_start, *, editable, entries=(), problems=(), messages=(), keys=()):
     """The grid for `rows` (EntryRow: saved, or as posted after a failed save).
 
-    `keys` are extra (category, project) rows to show even without slots. `problems` are
+    `keys` are extra (category, project, task) rows to show even without slots. `problems` are
     (EntryRow, problem) pairs from parse_entries; `messages` are rule messages from
     validate_entries / save_week about `entries` — each is shown on the cell(s) it names.
     """
     days = week_days(week_start)
     iso_days = {d.isoformat(): d for d in days}
     slots = [r for r in rows if not r.is_blank]
-    wanted = {(r.category, r.project) for r in slots if r.category in ROW_LABELS}
-    wanted |= {(c, p) for c, p in keys if c in ROW_LABELS}
-    projects = Project.objects.in_bulk([int(p) for _, p in wanted if p.isdigit()])
-    projects = {str(pk): project for pk, project in projects.items()}
+    wanted = {(r.category, r.project, r.task) for r in slots if r.category in ROW_LABELS}
+    wanted |= {(c, p, t) for c, p, t in keys if c in ROW_LABELS}
+    projects, tasks = _lookups(wanted)
 
     def order(key):
-        category, project = key
+        category, project, task = key
         code = projects[project].code if project in projects else project
-        return ROW_ORDER.index(category), code
+        known = tasks.get(task)
+        return ROW_ORDER.index(category), code, (known.sort_order if known else -1), task
 
     grid_rows, cells = [], {}
-    for category, project in sorted(wanted, key=order):
-        label = row_label(category, project, projects)
-        row = GridRow(category, project, label)
+    for category, project, task in sorted(wanted, key=order):
+        label = row_label(category, project, projects, task, tasks)
+        code = charge_code(projects.get(project), tasks.get(task)) if project in projects else ""
+        row = GridRow(category, project, label, task=task, charge_code=code)
         for day in days:
-            cell = Cell(cell_id(category, project, day), day, label=f"{label}, {day:%a %b %-d}")
+            the_id = cell_id(category, project, day, task)
+            cell = Cell(the_id, day, label=f"{label}, {day:%a %b %-d}")
             row.cells.append(cell)
-            cells[(category, project, day.isoformat())] = cell
+            cells[(category, project, task, day.isoformat())] = cell
         grid_rows.append(row)
     for slot in sorted(slots, key=lambda s: (s.start, s.hours, s.index)):
-        cell = cells.get((slot.category, slot.project, slot.work_date))
+        cell = cells.get((slot.category, slot.project, slot.task, slot.work_date))
         if cell is not None:
             cell.slots.append(slot)
 
     grid = Grid(week_start, days, grid_rows, editable)
     grid.next_index = max((r.index for r in rows), default=-1) + 1
     for row, problem in problems:
-        cell = cells.get((row.category, row.project, row.work_date))
+        cell = cells.get((row.category, row.project, row.task, row.work_date))
         if cell is None:  # no row or day to show it on (e.g. no category chosen)
             where = f" on {day_label(iso_days[row.work_date])}" if row.work_date in iso_days else ""
             grid.errors.append((f"An entry{where}: {problem}", None))
@@ -260,7 +289,8 @@ def _place(message, entries, cells, iso_days, grid):
         )
         if named:
             project = str(entry.project.pk) if entry.project else ""
-            cell = cells.get((entry.category, project, entry.work_date.isoformat()))
+            task = entry.task.code if entry.task else ""
+            cell = cells.get((entry.category, project, task, entry.work_date.isoformat()))
             if cell is not None and cell not in targets:
                 targets.append(cell)
     for cell in targets:

@@ -66,7 +66,7 @@ def save_week(employee, week_start, entries, *, now, submit=False):
         )
         if sheet.status not in (Timesheet.Status.DRAFT, Timesheet.Status.REOPENED):
             raise WeekLocked("This week was submitted meanwhile and can't be changed.")
-        before = entries_snapshot(sheet.entries.select_related("project"))
+        before = entries_snapshot(sheet.entries.select_related("project", "task"))
         replace_entries(sheet, entries)
         after = entries_snapshot(entries)
         if sheet.status == Timesheet.Status.REOPENED and before != after:  # D-51
@@ -121,6 +121,7 @@ def replace_entries(sheet, entries):
             work_date=e.work_date,
             category=e.category,
             project=e.project,
+            task=e.task,
             minutes=e.minutes,
             reason=e.reason.strip(),
             start_time=e.start_time,
@@ -147,6 +148,7 @@ def entries_snapshot(entries):
             "work_date": e.work_date.isoformat(),
             "category": e.category,
             "project": e.project.code if e.project else None,
+            "task": e.task.code if e.task else None,
             "start": e.start_time.strftime("%H:%M") if e.start_time else None,
             "end": e.end_time.strftime("%H:%M") if e.end_time else None,
             "minutes": e.minutes,
@@ -168,6 +170,7 @@ class EntryRow:
     work_date: str = ""  # ISO date
     category: str = ""
     project: str = ""  # project id
+    task: str = ""  # task code (project work, D-151)
     start: str = ""  # HH:MM
     end: str = ""
     hours: str = ""
@@ -178,7 +181,15 @@ class EntryRow:
     def is_blank(self):
         """Nothing typed: the day alone doesn't count, since blank rows come with one pre-filled."""
         return not any(
-            (self.category, self.project, self.start, self.end, self.hours, self.reason.strip())
+            (
+                self.category,
+                self.project,
+                self.task,
+                self.start,
+                self.end,
+                self.hours,
+                self.reason.strip(),
+            )
         )
 
 
@@ -191,13 +202,16 @@ def entry_rows(timesheet):
     """The week's entries as rows, by date and start time."""
     if timesheet is None:
         return []
-    entries = timesheet.entries.select_related("project").order_by("work_date", "start_time", "pk")
+    entries = timesheet.entries.select_related("project", "task").order_by(
+        "work_date", "start_time", "pk"
+    )
     return [
         EntryRow(
             index=i,
             work_date=e.work_date.isoformat(),
             category=e.category,
             project=str(e.project_id or ""),
+            task=e.task.code if e.task else "",
             start=e.start_time.strftime("%H:%M") if e.start_time else "",
             end=e.end_time.strftime("%H:%M") if e.end_time else "",
             hours=minutes_to_hours_text(e.minutes),

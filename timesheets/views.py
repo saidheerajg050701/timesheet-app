@@ -14,8 +14,15 @@ from timesheets.models import ChangeRequest, Timesheet
 from timesheets.services.approvals import approval_for_week
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.changes import can_request_change, open_request_for, raise_request
-from timesheets.services.grid_rows import change_row, delete_row, split_key, target_problem
+from timesheets.services.grid_rows import (
+    change_row,
+    delete_row,
+    normalized,
+    split_key,
+    target_problem,
+)
 from timesheets.services.summary import summarize
+from timesheets.services.tasks import task_choices
 from timesheets.services.weeks import (
     STATUS_LABELS,
     WeekLocked,
@@ -146,13 +153,15 @@ def _week_context(me, state, attempt, now):
 
 
 def grid_choices(week_start, rows_url):
-    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18),
-    and where its row actions post the week as typed (D-129)."""
+    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18)
+    and each project's allowed active tasks (D-152), and where its row actions post the week as
+    typed (D-129)."""
     return {
         "row_url": reverse("timesheet_row", args=[week_start]),
         "rows_url": rows_url,
         "category_groups": CATEGORY_GROUPS,
         "project_choices": project_choices(),
+        "task_choices": task_choices(),
     }
 
 
@@ -163,7 +172,7 @@ def row_action(request, week_start, rows_url):
     keys = parse_grid_keys(request.POST)
     action = request.POST.get("row-action")
     source = split_key(request.POST.get("row-key"))
-    target = (request.POST.get("new-category", ""), request.POST.get("new-project", ""))
+    target = tuple(request.POST.get(f"new-{n}", "") for n in ("category", "project", "task"))
     try:
         if action == "delete":
             result = delete_row(parsed.rows, keys, source)
@@ -205,14 +214,14 @@ def timesheet_totals(request, week):
 
 @require_GET
 def timesheet_row(request, week):
-    """HTMX: one empty grid row for "+ Add row" (D-107). Active projects only (D-18)."""
+    """HTMX: one empty grid row for "+ Add row" (D-107): an active project and one of its
+    allowed, active tasks for project work (D-18, D-152)."""
     _, week_start = _own_week(request, week)
-    category = request.GET.get("category", "")
-    project = request.GET.get("project", "") if category == "PROJECT" else ""
-    problem = target_problem(category, project)
+    key = normalized(*(request.GET.get(n, "") for n in ("category", "project", "task")))
+    problem = target_problem(*key)
     if problem:
         return HttpResponseBadRequest(problem)
-    grid = build_grid([], week_start, editable=True, keys=[(category, project)])
+    grid = build_grid([], week_start, editable=True, keys=[key])
     context = {"row": grid.rows[0], "grid": grid, "project_choices": project_choices()}
     return render(request, "timesheets/_grid_row.html", context)
 

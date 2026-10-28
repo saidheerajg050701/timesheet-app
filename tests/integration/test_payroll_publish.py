@@ -15,7 +15,7 @@ from payroll.models import AppendOnlyError, PayrollWeek
 from payroll.services.export import export_period, mark_paid
 from payroll.services.publish import out_of_sync, publish_period
 from payroll.services.sync import sync_payroll
-from tests.factories import EmployeeFactory, TimeEntryFactory
+from tests.factories import EmployeeFactory, TimeEntryFactory, task
 from timesheets.models import ChangeRequest, PeriodApproval
 from timesheets.services.approvals import approve_period
 from timesheets.services.changes import edit_directly
@@ -127,7 +127,16 @@ def test_approved_week_edited_later_gets_a_new_version(
     week1 = old.source_timesheet_id
     change = ChangeRequest.objects.create(timesheet_id=week1, requester=org.dev1, reason="Fix")
     entries = [
-        EntryData(WEEK1 + timedelta(days=1), "PROJECT", project, 180, "Fixed", time(9), time(12))
+        EntryData(
+            WEEK1 + timedelta(days=1),
+            "PROJECT",
+            project,
+            180,
+            "Fixed",
+            time(9),
+            time(12),
+            task("DEV"),
+        )
     ]
     with django_capture_on_commit_callbacks(execute=True):
         edit_directly(change, org.manager, entries, now=NOW + timedelta(hours=1))
@@ -282,7 +291,16 @@ def test_supersede_failure_is_repaired_by_sync(
         timesheet_id=week1.source_timesheet_id, requester=org.dev1, reason="Fix"
     )
     entries = [
-        EntryData(WEEK1 + timedelta(days=1), "PROJECT", project, 240, "Fixed", time(9), time(13))
+        EntryData(
+            WEEK1 + timedelta(days=1),
+            "PROJECT",
+            project,
+            240,
+            "Fixed",
+            time(9),
+            time(13),
+            task("DEV"),
+        )
     ]
     with (
         mock.patch(

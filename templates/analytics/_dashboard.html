@@ -21,6 +21,7 @@
       <div class="col-12">{% include "analytics/parts/_hours_chart.html" %}</div>
       <div class="col-lg-6">{% include "analytics/parts/_projects.html" %}</div>
       <div class="col-lg-6">{% include "analytics/parts/_categories.html" %}</div>
+      {% include "analytics/parts/_tasks.html" with tasks=dash.tasks charge_codes=dash.charge_codes prefix="" whose="" %}
     </div>
   {% endif %}
   {% include "analytics/parts/_approvals.html" %}

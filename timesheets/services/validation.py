@@ -4,8 +4,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, time, timedelta
 
-from timesheets.models import Project, TimeEntry
+from timesheets.models import Project, Task, TimeEntry
 from timesheets.services.calendar import employed_on
+from timesheets.services.tasks import charge_code, task_problem
 
 STEP_MINUTES = 15  # B.1 row 17
 MAX_DAY_MINUTES = 24 * 60
@@ -24,6 +25,7 @@ class EntryData:
     reason: str = ""
     start_time: time | None = None
     end_time: time | None = None
+    task: Task | None = None  # project work only (D-151)
 
 
 def day_label(day):
@@ -103,8 +105,13 @@ def _row_problems(entry):
             problems.append("project work needs a project.")
         elif not entry.project.active:
             problems.append(f"project {entry.project.code} is no longer active.")
-    elif entry.project is not None:  # includes Break (D-39)
-        problems.append("only project work can have a project.")
+        elif problem := task_problem(entry.project, entry.task):  # D-151
+            problems.append(problem)
+    else:
+        if entry.project is not None:  # includes Break (D-39)
+            problems.append("only project work can have a project.")
+        if entry.task is not None:
+            problems.append("only project work can have a task.")
     return problems
 
 
@@ -122,8 +129,9 @@ def _has_valid_times(entry):
 
 
 def _label(entry):
+    """The charge code for project work ("PRJ-001-DEV", D-150), otherwise the category."""
     if entry.category == TimeEntry.Category.PROJECT and entry.project is not None:
-        return entry.project.code
+        return charge_code(entry.project, entry.task)
     return CATEGORY_LABELS.get(entry.category, entry.category)
 
 
@@ -132,7 +140,7 @@ def _span(entry):
 
 
 def describe(entry):
-    """E.g. "Tue 20 Oct, PRJ-001 09:00–12:00" — used in every message about a row."""
+    """E.g. "Tue 20 Oct, PRJ-001-DEV 09:00–12:00" — used in every message about a row."""
     text = f"{day_label(entry.work_date)}, {_label(entry)}"
     if entry.start_time is not None and entry.end_time is not None:
         text += f" {_span(entry)}"

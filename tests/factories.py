@@ -1,5 +1,6 @@
 """factory_boy factories (B.11)."""
 
+import importlib
 from datetime import date, time
 
 import factory
@@ -8,11 +9,27 @@ from django.conf import settings
 from factory.django import DjangoModelFactory
 
 from directory.models import Employee, Team, User
-from timesheets.models import Project, TimeEntry, Timesheet
+from timesheets.models import Project, Task, TimeEntry, Timesheet
 
 TEST_PASSWORD = "Test-Password-123!"
 
 factory.random.reseed_random("timesheet-app-tests")  # repeatable Faker values
+
+
+def default_tasks():
+    """The 9 default tasks of migration timesheets/0007 (Change 10) — made again when a
+    transactional (browser) test has emptied the tables."""
+    if not Task.objects.exists():
+        from django.apps import apps
+
+        migration = importlib.import_module("timesheets.migrations.0007_default_tasks")
+        migration.add_default_tasks(apps, None)
+    return Task.objects.all()
+
+
+def task(code="DEV"):
+    default_tasks()
+    return Task.objects.get(code=code)
 
 
 class TeamFactory(DjangoModelFactory):
@@ -55,9 +72,18 @@ class UserFactory(DjangoModelFactory):
 class ProjectFactory(DjangoModelFactory):
     class Meta:
         model = Project
+        skip_postgeneration_save = True  # the tasks hook only sets the many-to-many list
 
     code = factory.Sequence(lambda n: f"PRJ-{900 + n}")
     name = factory.Sequence(lambda n: f"Project {n}")
+
+    @factory.post_generation
+    def tasks(self, create, extracted, **kwargs):
+        """All active tasks allowed, as a new project in Admin (D-149), unless given."""
+        if create:
+            self.tasks.set(
+                extracted if extracted is not None else default_tasks().filter(active=True)
+            )
 
 
 class TimesheetFactory(DjangoModelFactory):
@@ -76,6 +102,9 @@ class TimeEntryFactory(DjangoModelFactory):
     work_date = factory.LazyAttribute(lambda o: o.timesheet.week_start)
     category = TimeEntry.Category.PROJECT
     project = factory.SubFactory(ProjectFactory)
+    task = factory.LazyAttribute(  # project work is booked to a task (D-151)
+        lambda o: task("DEV") if o.category == TimeEntry.Category.PROJECT else None
+    )
     start_time = time(9, 0)
     end_time = time(17, 0)
     minutes = 480

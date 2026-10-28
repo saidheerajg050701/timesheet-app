@@ -1,24 +1,38 @@
 from datetime import date, time
 
+import pytest
+
 from directory.models import Employee
-from timesheets.models import Project
+from tests.factories import ProjectFactory, task
 from timesheets.services.validation import EntryData, duration, validate_entries
+
+# Since Change 10 the rules read a project's allowed tasks, so the projects are saved (D-151).
+pytestmark = pytest.mark.django_db
 
 WEEK = date(2026, 10, 18)  # Sunday: the week runs Sun 18 – Sat 24 Oct (D-111)
 TUESDAY = date(2026, 10, 20)
-ACTIVE = Project(code="PRJ-001", name="Customer Portal", active=True)
-INACTIVE = Project(code="PRJ-008", name="Legacy Billing", active=False)
+ACTIVE = INACTIVE = DEV = None  # set for every test by the fixture below
+
+
+@pytest.fixture(autouse=True)
+def projects():
+    global ACTIVE, INACTIVE, DEV
+    ACTIVE = ProjectFactory(code="PRJ-001", name="Customer Portal")  # allows every task
+    INACTIVE = ProjectFactory(code="PRJ-008", name="Legacy Billing", active=False)
+    DEV = task("DEV")
 
 
 def employee(hire=date(2020, 1, 6), end=None):
     return Employee(hire_date=hire, end_date=end)
 
 
-def work(start="09:00", end="17:00", day=TUESDAY, category="PROJECT", project=ACTIVE, **extra):
-    """A timed row; minutes = end − start unless given."""
+def work(start="09:00", end="17:00", day=TUESDAY, category="PROJECT", project="active", **extra):
+    """A timed row; minutes = end − start unless given; project work is booked to DEV."""
+    project = ACTIVE if project == "active" else project
     start_time, end_time = time.fromisoformat(start), time.fromisoformat(end)
     minutes = extra.pop("minutes", max(duration(start_time, end_time), 0))
     reason = extra.pop("reason", "Feature development")
+    extra.setdefault("task", DEV if category == "PROJECT" and project is not None else None)
     return EntryData(day, category, project, minutes, reason, start_time, end_time, **extra)
 
 
@@ -104,7 +118,7 @@ def test_timed_rows_on_one_day_must_not_overlap():
     overlap = errors_for(
         work("09:00", "12:00"), work("11:00", "13:00", category="MEETING", project=None)
     )
-    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001 and 11:00–13:00 Meetings overlap."]
+    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001-DEV and 11:00–13:00 Meetings overlap."]
     assert has(errors_for(work("09:00", "17:00"), brk("12:00", "12:30")), "overlap")
     assert has(errors_for(brk("12:00", "13:00"), brk("12:45", "13:15")), "overlap")
     back_to_back = [work("09:00", "12:00"), brk("12:00", "12:30"), work("12:30", "17:00")]
@@ -133,7 +147,7 @@ def test_empty_reasons_are_accepted():
     off_step = errors_for(work("09:10", "12:00", reason=""))
     assert len(off_step) == 1 and "15-minute steps" in off_step[0]
     overlap = errors_for(work("09:00", "12:00", reason=""), brk("11:30", "12:15"))
-    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001 and 11:30–12:15 Break time overlap."]
+    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001-DEV and 11:30–12:15 Break time overlap."]
     assert not has(off_step + overlap, "reason")
 
 

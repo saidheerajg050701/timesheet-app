@@ -2,10 +2,29 @@ from django.db import models
 from django.db.models import F, Q
 
 
+class Task(models.Model):
+    """What project work was spent on, e.g. DEV Development (Change 10, D-148). Admin-managed,
+    never deleted (deactivate instead); the code is fixed once added."""
+
+    code = models.CharField(max_length=10, unique=True)
+    name = models.CharField(max_length=80)
+    description = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ("sort_order", "code")
+
+    def __str__(self):
+        return f"{self.code} {self.name}"
+
+
 class Project(models.Model):
     code = models.CharField(max_length=20, unique=True)
     name = models.CharField(max_length=120)
     active = models.BooleanField(default=True)
+    # The tasks project work on this project may be booked to (D-149)
+    tasks = models.ManyToManyField(Task, blank=True, related_name="projects")
 
     def __str__(self):
         return f"{self.code} {self.name}"
@@ -58,6 +77,11 @@ class TimeEntry(models.Model):
     work_date = models.DateField()  # within the week and within hire_date…end_date (D-19)
     project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.PROTECT)
     # PROJECT entries must have an active project; all other categories must have none (D-18)
+    task = models.ForeignKey(
+        Task, null=True, blank=True, on_delete=models.PROTECT, related_name="entries"
+    )
+    # PROJECT entries saved from Change 10 on have an allowed, active task; entries saved
+    # before keep none ("Task not recorded", D-151); other categories never have one.
     category = models.CharField(max_length=10, choices=Category.choices)
     start_time = models.TimeField(null=True, blank=True)  # work and Break rows (D-37)
     end_time = models.TimeField(null=True, blank=True)
@@ -74,6 +98,10 @@ class TimeEntry(models.Model):
             models.CheckConstraint(
                 condition=Q(start_time__isnull=True) | Q(end_time__gt=F("start_time")),
                 name="entry_end_after_start",
+            ),
+            models.CheckConstraint(
+                condition=Q(category="PROJECT") | Q(task__isnull=True),
+                name="task_only_for_project_work",
             ),
         ]
 

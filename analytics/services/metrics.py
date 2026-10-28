@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from payroll.services.hours import HoursSplit, split_hours
-from timesheets.models import PeriodApproval, Project, TimeEntry, Timesheet
+from timesheets.models import PeriodApproval, Project, Task, TimeEntry, Timesheet
 from timesheets.services.calendar import (
     OUTSIDE_EMPLOYMENT,
     WeekState,
@@ -24,6 +24,7 @@ from timesheets.services.calendar import (
     week_state,
 )
 from timesheets.services.summary import WeekSummary, summarize
+from timesheets.services.tasks import TASK_NOT_RECORDED, charge_code
 from timesheets.services.validation import CATEGORY_LABELS
 
 RANGES = (4, 12, 26)
@@ -130,6 +131,53 @@ def hours_by_project(rows):
     return sorted(totals.values(), key=lambda t: (-t[2], t[0]))
 
 
+def _project_entries(rows):
+    for row in rows:
+        for e in row.entries:
+            if e.category == TimeEntry.Category.PROJECT and e.project is not None:
+                yield e
+
+
+def _task_order(task):
+    """Tasks in their admin order; "Task not recorded" (history, D-151) always last."""
+    return (1, 0, "") if task is None else (0, task.sort_order, task.code)
+
+
+def hours_by_task(rows):
+    """[(code, name, minutes)] of Project work, largest first (D-153). Entries saved before
+    tasks existed are one line of their own: ("", "Task not recorded", minutes), last."""
+    totals = {}
+    for e in _project_entries(rows):
+        totals[e.task] = totals.get(e.task, 0) + e.minutes
+    ordered = sorted(totals.items(), key=lambda t: (t[0] is None, -t[1], _task_order(t[0])))
+    return [
+        (task.code, task.name, minutes) if task else ("", TASK_NOT_RECORDED, minutes)
+        for task, minutes in ordered
+    ]
+
+
+def hours_by_charge_code(rows):
+    """[(charge code, project name, task name, minutes)] of Project work, by project code then
+    task order (D-153). History without a task: (project code, name, "Task not recorded", m)."""
+    totals = {}
+    for e in _project_entries(rows):
+        key = (e.project, e.task)
+        totals[key] = totals.get(key, 0) + e.minutes
+    ordered = sorted(totals.items(), key=lambda t: (t[0][0].code, _task_order(t[0][1])))
+    return [
+        (charge_code(project, task), project.name, task.name if task else TASK_NOT_RECORDED, m)
+        for (project, task), m in ordered
+    ]
+
+
+def task_chart(tasks):
+    """Chart values for hours_by_task(); the "Task not recorded" bar is drawn muted."""
+    return [
+        {"label": code or name, "hours": round(m / 60, 2), "unrecorded": not code}
+        for code, name, m in tasks
+    ]
+
+
 @dataclass
 class Categories:
     rows: list = field(default_factory=list)  # [(label, minutes)] work + leave, fixed order
@@ -217,6 +265,8 @@ class Dashboard:
     current: CurrentWeek
     punctuality: Punctuality
     projects: list
+    tasks: list
+    charge_codes: list
     categories: Categories
     overtime: Overtime
     periods: list
@@ -256,6 +306,7 @@ class Dashboard:
             "projects": [
                 {"label": code, "hours": round(m / 60, 2)} for code, _, m in self.projects
             ],
+            "tasks": task_chart(self.tasks),
             "categories": [
                 {"label": label, "hours": round(m / 60, 2)} for label, m in self.categories.rows
             ],
@@ -264,11 +315,12 @@ class Dashboard:
 
 @dataclass(frozen=True, slots=True)
 class EntryFacts:
-    """The parts of a TimeEntry the metrics read (summarize, split_hours, by project)."""
+    """The parts of a TimeEntry the metrics read (summarize, split_hours, by project/task)."""
 
     FIELDS = ("work_date", "category", "start_time", "end_time", "minutes")
 
     project: object  # Project or None
+    task: object  # Task or None (other categories, and project work saved before tasks)
     work_date: date
     category: str
     start_time: object
@@ -276,13 +328,16 @@ class EntryFacts:
     minutes: int
 
 
+TASK_FIELDS = ("task_id", "task__code", "task__name", "task__sort_order")
+
+
 def load_many(employees, starts):
     """Four database reads, whatever the range or the number of people (D-80, D-86):
-    the weeks, their entries, the projects and the approvals.
+    the weeks, their entries (with their task, D-153), the projects and the approvals.
 
     Each loaded Timesheet carries its entries as `sheet.loaded_entries`: a list of read-only
-    EntryFacts sharing one Project object per project — far cheaper than model instances
-    and a per-sheet prefetch for a large team (D-86).
+    EntryFacts sharing one Project (and Task) object per project (task) — far cheaper than
+    model instances and a per-sheet prefetch for a large team (D-86).
 
     Returns ({employee id: {week_start: Timesheet}}, {employee id: {period: PeriodApproval}}).
     """
@@ -294,15 +349,19 @@ def load_many(employees, starts):
         by_id[sheet.pk] = sheet
     if by_id:
         projects = Project.objects.in_bulk()
+        tasks = {None: None}
         entries = (
             TimeEntry.objects.filter(
                 timesheet__employee_id__in=ids, timesheet__week_start__in=starts
             )
             .order_by("pk")
-            .values_list("timesheet_id", "project_id", *EntryFacts.FIELDS)
+            .values_list("timesheet_id", "project_id", *TASK_FIELDS, *EntryFacts.FIELDS)
         )
-        for sheet_id, project_id, *facts in entries:
-            by_id[sheet_id].loaded_entries.append(EntryFacts(projects.get(project_id), *facts))
+        for sheet_id, project_id, task_id, code, name, order, *facts in entries:
+            if task_id not in tasks:  # the fields the metrics read, joined into this query
+                tasks[task_id] = Task(pk=task_id, code=code, name=name, sort_order=order)
+            facts = EntryFacts(projects.get(project_id), tasks[task_id], *facts)
+            by_id[sheet_id].loaded_entries.append(facts)
     periods = {period_start_for(start) for start in starts}
     decisions = PeriodApproval.objects.filter(
         employee_id__in=ids, period_start__in=periods
@@ -331,6 +390,8 @@ def dashboard_for(employee, weeks, now):
         current=current_week(employee, sheets.get(starts[-1]), now),
         punctuality=punctuality(rows, now),
         projects=hours_by_project(rows),
+        tasks=hours_by_task(rows),
+        charge_codes=hours_by_charge_code(rows),
         categories=hours_by_category(rows),
         overtime=overtime(rows),
         periods=approval_outcomes(employee, starts, approvals, now),

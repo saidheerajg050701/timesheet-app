@@ -2,7 +2,7 @@
 <tr class="grid-row kind-{{ row.kind }}" data-row-key="{{ row.key }}" data-kind="{{ row.kind }}" data-row-label="{{ row.label }}">
   <th scope="row" class="grid-label">
     <div class="grid-label-row">
-      <div><span class="grid-label-text">{{ row.name }}{% if row.sub %} <span class="grid-label-sub">{{ row.sub }}</span>{% endif %}</span>{% if row.kind == "break" %} <span class="grid-tag">not counted</span>{% elif row.kind == "leave" %} <span class="grid-tag">leave</span>{% endif %}</div>
+      <div><span class="grid-label-text">{{ row.name }}{% if row.sub %} <span class="grid-label-sub{% if not row.task %} is-unrecorded{% endif %}">· {{ row.sub }}</span>{% endif %}</span>{% if row.charge_code %} <span class="grid-code" title="Charge code">{{ row.charge_code }}</span>{% endif %}{% if row.kind == "break" %} <span class="grid-tag">not counted</span>{% elif row.kind == "leave" %} <span class="grid-tag">leave</span>{% endif %}</div>
       {% if grid.editable %}{% include "timesheets/_row_actions.html" %}{% endif %}
     </div>
     {% if grid.editable %}<input type="hidden" name="grid-row" value="{{ row.key }}">{% endif %}

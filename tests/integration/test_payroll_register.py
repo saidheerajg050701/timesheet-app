@@ -36,7 +36,7 @@ from payroll.services.register import (
     table,
 )
 from payroll.services.sync import sync_payroll_report
-from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory
+from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory, task
 from timesheets.models import Timesheet
 from timesheets.services.approvals import (
     approve_period,
@@ -101,7 +101,7 @@ def correct(person, week, monday_end, project, capture, *, now=NOW):
         end = monday_end if offset == 1 else time(17)
         minutes = (end.hour - 9) * 60 + end.minute
         day = week + timedelta(days=offset)
-        rows.append(EntryData(day, "PROJECT", project, minutes, "Work", time(9), end))
+        rows.append(EntryData(day, "PROJECT", project, minutes, "Work", time(9), end, task("DEV")))
     period = week if (week - date(2026, 1, 4)).days % 14 == 0 else week - timedelta(weeks=1)
     with capture(execute=True):
         edit_directly(change, person.manager, rows, "Fixed", now=now)

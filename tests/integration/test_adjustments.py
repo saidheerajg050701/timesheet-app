@@ -15,7 +15,7 @@ from payroll.services.adjustments import carry_period
 from payroll.services.export import batch_csv, export_period, mark_paid
 from payroll.services.register import finalize
 from payroll.services.sync import sync_payroll_counts
-from tests.factories import TimeEntryFactory
+from tests.factories import TimeEntryFactory, task
 from tests.forms import grid_post
 from timesheets.models import PeriodApproval
 from timesheets.services.approvals import approve_period
@@ -55,7 +55,14 @@ def payroll(org, make_week, project, fixed_now, django_capture_on_commit_callbac
             minutes = (end.hour - 9) * 60 + end.minute
             rows.append(
                 EntryData(
-                    week + timedelta(days=offset), "PROJECT", project, minutes, "Work", time(9), end
+                    week + timedelta(days=offset),
+                    "PROJECT",
+                    project,
+                    minutes,
+                    "Work",
+                    time(9),
+                    end,
+                    task("DEV"),
                 )
             )
         with django_capture_on_commit_callbacks(execute=True):

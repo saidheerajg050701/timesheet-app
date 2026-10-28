@@ -90,10 +90,10 @@ Log out (top right) and in again as each of these. They all use your `DEMO_PASSW
 
 | Log in as | What to look at |
 |---|---|
-| `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row**, click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. |
+| `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row** (Project work asks for a project, then one of its tasks), click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. **Dashboard**: hours by task and by charge code. |
 | `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. |
 | `payroll@yourcompany.com` (payroll) | **Payroll**: one register per pay period (Open → Ready → Finalize & export → Paid), **Pending approvals** (who still has to approve) and **Corrections**. |
-| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. |
+| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects (with their **Allowed tasks**), **Tasks**, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. |
 | `ceo@yourcompany.com` (top manager) | **Team**: the whole company. |
 
 ## Updating an existing copy
@@ -108,6 +108,11 @@ uv run python manage.py migrate --database=payroll
 ```
 Then start the app again (`runserver`) and reload the browser page once with ⌘⇧R (Command +
 Shift + R).
+
+`migrate` also adds the 9 standard tasks (PLN, DES, DEV, TST, REL, SUP, SEC, DOC, MTG) and
+allows all of them on every existing project. Project work saved before tasks existed keeps no
+task and shows **"Task not recorded"**; a week like that needs a task on its project rows when
+it is saved again.
 
 **Only once**, if you used a version from before the pay period registers (Change 8) and had
 already exported payroll, also run this (it is safe to repeat):
@@ -170,13 +175,15 @@ Admin only for directory admins. Every page also checks permissions on the serve
 The home page shows your own last 4, 12 or 26 weeks: this week's status with a live countdown
 to Saturday 12:00, hours worked per week against expected hours, on-time / late / missed
 weeks, overtime (same rule as payroll), hours by project and by category (Break shown
-separately, unpaid), and the approval outcome of each pay period. Every chart also lists its
+separately, unpaid), **hours by task** and **hours by project + task** (by charge code, e.g.
+PRJ-001-DEV; older project work without a task is its own "Task not recorded" line), and the
+approval outcome of each pay period. Every chart also lists its
 numbers. A week you never submitted counts as missed, even if your manager approved it later.
 
 ## Team
 Managers open **Team** (`/team/`) to see the people under them; admins see everyone. Filters: whole tree or direct reports, team, last 4 / 12 / 26 weeks.
 The page shows team hours per week against expected, average utilization (hours worked ÷ (expected − leave), finished weeks), a sortable table per person,
-who hasn't submitted this week, and hours by project. Click a name for a read-only view of that person's dashboard and timesheets.
+who hasn't submitted this week, hours by project, by task and by project + task (charge code). Click a name for a read-only view of that person's dashboard and timesheets.
 
 Measure how fast the page is for someone (read-only, prints seconds and query count):
 
@@ -186,10 +193,18 @@ uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
 ```
 
 ## Timesheets
-`/timesheets/` lists your recent weeks. A week is a **grid**: one row per project or category,
-a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours** column and footer.
-- **+ Add row** adds a category (and a project for Project work). Each project or category has
-  one row, so using **+ Add row** again for one that is already there takes you to its row.
+`/timesheets/` lists your recent weeks. A week is a **grid**: one row per category, or per
+project **and task** for Project work, a column per day (a week runs **Sunday to Saturday**) and a
+**Total worked hours** column and footer.
+- **Tasks and charge codes:** Project work is always booked to a project **and** one of that
+  project's tasks (for example DEV Development or TST Testing & QA). The row shows
+  "PRJ-001 Customer Portal · DEV Development" and its **charge code** PRJ-001-DEV. Other
+  categories (Meetings, Training, Break, leave …) have no project and no task. Older project
+  work saved before tasks existed shows **"Task not recorded"**; when such a week is saved
+  again, choose a task for that row (the ⋮ menu does it for the whole row).
+- **+ Add row** adds a category; Project work also asks for the project and then one of its
+  active tasks. Each category, or project + task, has one row, so using **+ Add row** again for
+  one that is already there takes you to its row.
 - **Click a day to enter time.** Work and Break use one or more time slots with a start and an
   end (15-minute steps, same day, no overlaps) and an optional reason. Leave (PTO, Sick, Holiday)
   uses hours and an optional reason.
@@ -197,9 +212,9 @@ a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours
   around a Break), click the day again. Its slots are listed with an empty new one ready to
   fill, or use **+ Add another time slot**. The cell then shows e.g. "8.00 · 2 slots", and its
   tooltip lists the times.
-- **Picked the wrong project or category?** Each row's **⋮** menu can **Change project /
-  category** (all its slots move; dates, times and reasons stay; if the new one already has a
-  row they merge) or **Delete row** (after a confirmation showing how many slots and hours).
+- **Picked the wrong project, task or category?** Each row's **⋮** menu has **Change row**
+  (choose another category, project or task; all its slots move; dates, times and reasons stay;
+  if the new one already has a row they merge) or **Delete row** (after a confirmation showing how many slots and hours).
   Both apply to the grid at once and are kept when you save the week.
 - **Totals:** Break is unpaid and never counted in Total worked hours; leave is shown
   separately. The day summary below the grid shows first start, last end, hours worked,
@@ -272,6 +287,8 @@ uv run python manage.py sync_payroll       # safe to repeat; also creates missin
 Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every change is written to the audit log with the admin's name.
 
 - **Employees, teams, projects:** add and edit. Nothing can be deleted: deactivate employees and clear *Active* on projects instead.
+- **Tasks** (what project work is spent on: code, name, description, active, sort order): add and edit; the code can't change once added. Clear *Active* instead of deleting. The page shows how many saved entries use the task.
+- **Allowed tasks** on a project: tick the tasks people may book to it (a new project starts with every active task ticked). Removing a task, or deactivating one, that saved entries use is allowed: those entries keep it, you get a note saying how many, and open weeks must choose another task when they are saved again.
 - **Deactivate / Reactivate:** select employees in the list and choose the action. Deactivate asks for the end date (today by default) and logs the person out; their history stays and their submitted weeks can still be approved and paid.
 - **Reset password:** on an employee's page. HR types a temporary password; the person must choose a new one at their next login. Any login lockout is cleared.
 - **Import CSV / Export CSV:** on the employee list. Export uses the same columns as import, so you can edit the file and import it again; you always see a summary (or the errors with line numbers) before anything changes.

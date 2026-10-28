@@ -40,14 +40,17 @@
     });
   }
 
-  var projects = document.getElementById("team-projects-chart");
-  if (projects) {
-    new Chart(projects, {
+  // Hours by project and by task; "Task not recorded" (history, D-153) is drawn muted.
+  [["team-projects-chart", data.projects], ["team-tasks-chart", data.tasks]].forEach(function (pair) {
+    var canvas = document.getElementById(pair[0]);
+    if (!canvas) return;
+    new Chart(canvas, {
       type: "bar",
       data: {
-        labels: data.projects.map(function (p) { return p.label; }),
-        datasets: [{ label: "Hours", data: data.projects.map(function (p) { return p.hours; }),
-          backgroundColor: SERIES, borderRadius: 4, borderSkipped: "start", maxBarThickness: 22 }],
+        labels: pair[1].map(function (p) { return p.label; }),
+        datasets: [{ label: "Hours", data: pair[1].map(function (p) { return p.hours; }),
+          backgroundColor: pair[1].map(function (p) { return p.unrecorded ? MUTED : SERIES; }),
+          borderRadius: 4, borderSkipped: "start", maxBarThickness: 22 }],
       },
       options: {
         indexAxis: "y",
@@ -56,5 +59,5 @@
         plugins: { legend: { display: false }, tooltip: { callbacks: { label: label } } },
       },
     });
-  }
+  });
 })();

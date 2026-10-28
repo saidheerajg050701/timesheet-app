@@ -107,6 +107,7 @@ def test_edit_directly_writes_before_and_after(org, weeks, login_as, project):
             "work_date": "2026-10-12",
             "category": "PROJECT",
             "project": "PRJ-001",
+            "task": "DEV",  # Change 10: the audit names the task (D-151)
             "start": "09:00",
             "end": "17:00",
             "minutes": 480,
@@ -325,6 +326,7 @@ def test_reopened_past_week_is_editable_until_window_ends(org, weeks, login_as, 
         "work_date": "2026-10-05",
         "category": "PROJECT",
         "project": "PRJ-001",
+        "task": "DEV",  # Change 10: the audit names the task (D-151)
         "start": "08:00",
         "end": "17:00",
         "minutes": 540,
@@ -409,7 +411,9 @@ def test_edit_directly_without_a_reason(org, weeks, login_as, project):
     row = AuditLog.objects.get(action=AuditLog.Action.UPDATE, entity_type="Timesheet")
     assert [(e["end"], e["reason"]) for e in row.after["entries"]] == [("17:30", "")]
     html = login_as(org.dev1).get(reverse("timesheet_week", args=[LAST_WEEK])).content.decode()
-    panel = html.split(f'id="cell-project-{project.pk}-{day.isoformat()}"')[1].split("</dialog>")[0]
+    panel = html.split(f'id="cell-project-{project.pk}-dev-{day.isoformat()}"')[1].split(
+        "</dialog>"
+    )[0]
     assert "17:30" in panel and ">Reason<" not in panel  # nothing to show
 
     with pytest.raises(ValidationError, match="Explain what needs to change"):

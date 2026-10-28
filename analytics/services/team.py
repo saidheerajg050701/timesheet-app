@@ -125,6 +125,20 @@ def team_projects(stats):
     return sorted(totals.values(), key=lambda t: (-t[2], t[0]))
 
 
+def _all_rows(stats):
+    return [row for person in stats for row in person.rows]
+
+
+def team_tasks(stats):
+    """hours_by_task across the selected people (D-153)."""
+    return metrics.hours_by_task(_all_rows(stats))
+
+
+def team_charge_codes(stats):
+    """hours_by_charge_code across the selected people (D-153)."""
+    return metrics.hours_by_charge_code(_all_rows(stats))
+
+
 def people_in_range(candidates, sheets, starts):
     """Employed on a day of the range; inactive people only with a timesheet in it (D-81)."""
     first, last = starts[0], starts[-1] + timedelta(days=6)
@@ -153,6 +167,8 @@ class TeamDashboard:
     by_week: list = field(default_factory=list)
     compliance: list = field(default_factory=list)
     projects: list = field(default_factory=list)
+    tasks: list = field(default_factory=list)
+    charge_codes: list = field(default_factory=list)
 
     @property
     def worked(self):
@@ -179,6 +195,7 @@ class TeamDashboard:
             "projects": [
                 {"label": code, "hours": round(m / 60, 2)} for code, _, m in self.projects
             ],
+            "tasks": metrics.task_chart(self.tasks),
         }
 
 
@@ -228,4 +245,6 @@ def team_dashboard(
         by_week=team_weeks(stats, starts),
         compliance=compliance(stats, now),
         projects=team_projects(stats),
+        tasks=team_tasks(stats),
+        charge_codes=team_charge_codes(stats),
     )

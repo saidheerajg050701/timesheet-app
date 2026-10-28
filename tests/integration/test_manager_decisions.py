@@ -344,7 +344,7 @@ def test_edit_page_helpers(org, project, make_week, login_as, fixed_now):
     assert summary.status_code == 200 and 'id="day-summary"' in summary.content.decode()
     rows = client.post(
         reverse("approval_week_rows", args=args),
-        {**posted, "row-action": "delete", "row-key": f"PROJECT:{project.pk}"},
+        {**posted, "row-action": "delete", "row-key": f"PROJECT:{project.pk}:DEV"},
     )
     assert rows.status_code == 200 and rows.context["grid"].rows == []
     bad = client.post(edit_url(org.dev1, WEEK1), form(work(MON, "9am", "12:00", project)))
