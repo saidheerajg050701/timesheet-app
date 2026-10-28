@@ -1,0 +1,9 @@
+{# The project search box of "+ Add row" and ⋮ Change row (Change 10b, D-157): a combobox that asks the editor's projects URL (the grid's data-projects-url) and keeps the chosen project's id in the hidden new-project field. Context: combo_id, value (project id or ""), label ("I-001 Customer Portal" or ""), hidden (True to start hidden). #}
+<div class="project-combo" data-role="new-project-field"{% if hidden %} hidden{% endif %}>
+  <label class="form-label" for="{{ combo_id }}">Project</label>
+  <input type="text" class="form-control" id="{{ combo_id }}" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="{{ combo_id }}-list" aria-describedby="{{ combo_id }}-hint" autocomplete="off" spellcheck="false" placeholder="Type an I-code or a name" value="{{ label }}" data-role="project-search" data-chosen="{{ label }}">
+  <input type="hidden" data-role="new-project" value="{{ value }}" data-initial="{{ value }}">
+  <div class="form-text" id="{{ combo_id }}-hint">For example i-002 or portal. ↑/↓ to move, Enter to choose.</div>
+  <div class="project-combo-list" id="{{ combo_id }}-list" role="listbox" aria-label="Projects" hidden></div>
+  <p class="visually-hidden" role="status" aria-live="polite" data-role="project-count"></p>
+</div>

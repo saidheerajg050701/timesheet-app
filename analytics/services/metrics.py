@@ -157,13 +157,13 @@ def hours_by_task(rows):
 
 
 def hours_by_charge_code(rows):
-    """[(charge code, project name, task name, minutes)] of Project work, by project code then
-    task order (D-153). History without a task: (project code, name, "Task not recorded", m)."""
+    """[(charge code, project name, task name, minutes)] of Project work, by I-code then task
+    order (D-153, D-155). History without a task: (project code, name, "Task not recorded", m)."""
     totals = {}
     for e in _project_entries(rows):
         key = (e.project, e.task)
         totals[key] = totals.get(key, 0) + e.minutes
-    ordered = sorted(totals.items(), key=lambda t: (t[0][0].code, _task_order(t[0][1])))
+    ordered = sorted(totals.items(), key=lambda t: (t[0][0].number, _task_order(t[0][1])))
     return [
         (charge_code(project, task), project.name, task.name if task else TASK_NOT_RECORDED, m)
         for (project, task), m in ordered

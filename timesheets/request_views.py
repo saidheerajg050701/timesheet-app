@@ -8,7 +8,7 @@ from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from directory.services.permissions import approvals_required, can_approve, ensure
 from timesheets.forms import parse_entries
@@ -20,7 +20,14 @@ from timesheets.services.changes import (
     unlock_request,
 )
 from timesheets.services.summary import summarize
-from timesheets.views import SaveAttempt, grid_choices, row_action, week_grid
+from timesheets.views import (
+    SaveAttempt,
+    editor_urls,
+    grid_choices,
+    project_list,
+    row_action,
+    week_grid,
+)
 
 RECENT = 20
 
@@ -108,7 +115,7 @@ def request_edit(request, pk):
             "errors": grid.errors,
             "summary": summarize(entries, sheet.employee, sheet.week_start),
             "summary_url": reverse("request_totals", args=[change.pk]),
-            **grid_choices(sheet.week_start, reverse("request_rows", args=[change.pk])),
+            **grid_choices(sheet.week_start, editor_urls("request", change.pk)),
         },
     )
 
@@ -117,8 +124,15 @@ def request_edit(request, pk):
 def request_rows(request, pk):
     """HTMX: Edit directly's row actions (D-129); saved and audited with the week (D-49)."""
     change = _handleable(request, pk, open_only=True)
-    url = reverse("request_rows", args=[change.pk])
-    return row_action(request, change.timesheet.week_start, url)
+    return row_action(request, change.timesheet.week_start, editor_urls("request", change.pk))
+
+
+@require_GET
+def request_projects(request, pk):
+    """HTMX: Edit directly's project search — the employee's recent projects (D-157, D-158)."""
+    change = _handleable(request, pk, open_only=True)
+    sheet = change.timesheet
+    return project_list(request, sheet.employee, sheet.week_start)
 
 
 @require_POST

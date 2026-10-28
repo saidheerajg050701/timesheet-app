@@ -26,7 +26,7 @@ def dev1(org, login_as, fixed_now):
 
 @pytest.fixture
 def mobile(db):
-    return ProjectFactory(code="PRJ-002", name="Mobile App")
+    return ProjectFactory(number=2, name="Mobile App")
 
 
 def week_url(week=WEEK):
@@ -82,7 +82,7 @@ def test_delete_a_row_with_slots(dev1, project):
     assert [m for _, m, _ in grid.footer] == [0, 60, 0, 0, 0, 0, 0] and grid.worked == 60
     assert 'data-role="week-total">1.00<' in html and 'data-role="row-total">1.00<' in html
     assert notice(html) == (
-        "Deleted PRJ-001 Customer Portal · DEV Development (3 time slots). "
+        "Deleted I-001 Customer Portal · DEV Development (3 time slots). "
         "Save to keep this change."
     )
     assert not TimeEntry.objects.exists()  # nothing saved by the row action itself
@@ -110,7 +110,7 @@ def test_delete_an_empty_row_and_a_break_row(dev1, project):
 
 
 def test_change_project(dev1, project, mobile):
-    """T-193: PRJ-001 → PRJ-002 keeps every slot's day, times and reason; saved as PRJ-002."""
+    """T-193: I-001 → I-002 keeps every slot's day, times and reason; saved as I-002."""
     posted = form(
         work(MONDAY, "09:00", "12:00", project, reason="Login"),
         work(TUESDAY, "13:00", "15:00", project, reason=""),
@@ -125,21 +125,21 @@ def test_change_project(dev1, project, mobile):
         task="DEV",
     )
     grid = response.context["grid"]
-    assert [r.label for r in grid.rows] == ["PRJ-002 Mobile App · DEV Development"]
+    assert [r.label for r in grid.rows] == ["I-002 Mobile App · DEV Development"]
     assert slots_of(grid) == [
         (0, MONDAY.isoformat(), "PROJECT", str(mobile.pk), "09:00", "12:00", "Login"),
         (1, TUESDAY.isoformat(), "PROJECT", str(mobile.pk), "13:00", "15:00", ""),
     ]
     assert grid.worked == 300
     assert notice(response.content.decode()) == (
-        "Moved 2 time slots to PRJ-002 Mobile App · DEV Development. Save to keep this change."
+        "Moved 2 time slots to I-002 Mobile App · DEV Development. Save to keep this change."
     )
     assert not TimeEntry.objects.exists()
     assert dev1.post(week_url(), grid_post(grid)).status_code == 302
     saved = TimeEntry.objects.order_by("work_date")
     assert [(e.project.code, e.start_time, e.end_time, e.reason) for e in saved] == [
-        ("PRJ-002", time(9), time(12), "Login"),
-        ("PRJ-002", time(13), time(15), ""),
+        ("I-002", time(9), time(12), "Login"),
+        ("I-002", time(13), time(15), ""),
     ]
 
 
@@ -156,14 +156,14 @@ def test_change_into_an_existing_row_merges(dev1, project, mobile):
         task="DEV",
     )
     grid = response.context["grid"]
-    assert [r.label for r in grid.rows] == ["PRJ-002 Mobile App · DEV Development"]
+    assert [r.label for r in grid.rows] == ["I-002 Mobile App · DEV Development"]
     assert len(grid.rows[0].cells[1].slots) == 2 and grid.worked == 420
     assert notice(response.content.decode()) == (
-        "Moved 1 time slot to PRJ-002 Mobile App · DEV Development, merged with its existing row. "
+        "Moved 1 time slot to I-002 Mobile App · DEV Development, merged with its existing row. "
         "Save to keep this change."
     )
     assert dev1.post(week_url(), grid_post(grid)).status_code == 302
-    assert set(TimeEntry.objects.values_list("project__code", flat=True)) == {"PRJ-002"}
+    assert set(TimeEntry.objects.values_list("project__code", flat=True)) == {"I-002"}
 
     clashing = form(work(MONDAY, "09:00", "12:00", project), work(MONDAY, "11:00", "13:00", mobile))
     grid = act(
@@ -176,7 +176,7 @@ def test_change_into_an_existing_row_merges(dev1, project, mobile):
         task="DEV",
     ).context["grid"]
     html = dev1.post(week_url(), grid_post(grid)).content.decode()
-    message = "Mon 19 Oct: 09:00–12:00 PRJ-002-DEV and 11:00–13:00 PRJ-002-DEV overlap."
+    message = "Mon 19 Oct: 09:00–12:00 I-002-DEV and 11:00–13:00 I-002-DEV overlap."
     target = f"cell-project-{mobile.pk}-dev-{MONDAY.isoformat()}"
     assert message in html and re.search(rf'aria-controls="{target}"[^>]*aria-invalid="true"', html)
     assert TimeEntry.objects.filter(start_time=time(13)).count() == 1  # the earlier save, kept
@@ -203,7 +203,7 @@ def test_allowed_changes(dev1, project):
     grid = act(dev1, posted, "change", "PTO:", category="SICK").context["grid"]
     assert [r.label for r in grid.rows][1] == "Sick" and grid.rows[1].minutes == 480
 
-    inactive = ProjectFactory(code="PRJ-009", name="Old", active=False)
+    inactive = ProjectFactory(number=9, name="Old", active=False)
     refused = {
         "a leave row can only change to another kind of leave": (source, {"category": "PTO"}),
         "only to work or Break": ("PTO:", {"category": "MEETING"}),
@@ -270,7 +270,7 @@ def test_row_actions_in_edit_directly_are_audited(org, project, mobile, login_as
         task="DEV",
     ).context["grid"]  # fmt: skip
     grid = act(manager, grid_post(grid), "delete", "MEETING:", url=url).context["grid"]
-    assert [r.label for r in grid.rows] == ["PRJ-002 Mobile App · DEV Development"]
+    assert [r.label for r in grid.rows] == ["I-002 Mobile App · DEV Development"]
     assert not AuditLog.objects.filter(action="UPDATE").exists()  # nothing saved yet
 
     data = {**grid_post(grid), "note": "Moved Monday to the mobile app; dropped the meeting."}
@@ -278,11 +278,11 @@ def test_row_actions_in_edit_directly_are_audited(org, project, mobile, login_as
     (row,) = AuditLog.objects.filter(action="UPDATE", entity_type="Timesheet")
     assert row.actor == org.manager and row.change_request_id == change.pk
     assert [(e["category"], e["project"]) for e in row.before["entries"]] == [
-        ("PROJECT", "PRJ-001"),
+        ("PROJECT", "I-001"),
         ("MEETING", None),
     ]
     assert [(e["category"], e["project"], e["start"], e["end"]) for e in row.after["entries"]] == [
-        ("PROJECT", "PRJ-002", "09:00", "17:00")
+        ("PROJECT", "I-002", "09:00", "17:00")
     ]
     assert ChangeRequest.objects.get().status == "EDITED"
     assert Timesheet.objects.get().status == "SUBMITTED"
@@ -298,7 +298,7 @@ def test_row_action_markup(org, project, login_as, fixed_now, make_week):
     )
     assert dev1.post(week_url(), posted).status_code == 302
     html = dev1.get(week_url()).content.decode()
-    assert 'aria-label="Row actions for PRJ-001 Customer Portal · DEV Development"' in html
+    assert 'aria-label="Row actions for I-001 Customer Portal · DEV Development"' in html
     assert 'aria-label="Row actions for PTO"' in html
     assert f'data-rows-url="{rows_url()}"' in html
     work_dialog = html.split(f'id="row-project-{project.pk}-dev-change"')[1].split("</dialog>")[0]
@@ -307,9 +307,11 @@ def test_row_action_markup(org, project, login_as, fixed_now, make_week):
         assert f'value="{value}"' in work_dialog and f'value="{value}"' not in leave_dialog
     for value in ("PTO", "SICK", "HOLIDAY"):
         assert f'value="{value}"' in leave_dialog and f'value="{value}"' not in work_dialog
-    assert f'<option value="{project.pk}" selected>' in work_dialog
+    assert 'role="combobox"' in work_dialog  # the row's project in its search box (D-157)
+    assert 'value="I-001 Customer Portal" data-role="project-search"' in work_dialog
+    assert f'data-role="new-project" value="{project.pk}"' in work_dialog
     delete = html.split(f'id="row-project-{project.pk}-dev-delete"')[1].split("</dialog>")[0]
-    assert "Delete PRJ-001 Customer Portal? This removes 2 time slots (7.00 h) from this week." in (
+    assert "Delete I-001 Customer Portal? This removes 2 time slots (7.00 h) from this week." in (
         delete
     )
     assert "This removes 1 leave entry (8.00 h)" in html

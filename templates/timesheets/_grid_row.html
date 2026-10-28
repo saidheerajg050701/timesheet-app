@@ -1,4 +1,4 @@
-{# One grid row (D-106): label (with its row actions when editable, D-129), seven day cells with their dialogs, row total. Context: row, grid; editable grids also project_choices. #}{% load timesheet_tags %}
+{# One grid row (D-106): label (with its row actions when editable, D-129), seven day cells with their dialogs, row total. Context: row, grid; editable grids also task choices and the projects URL on the grid. #}{% load timesheet_tags %}
 <tr class="grid-row kind-{{ row.kind }}" data-row-key="{{ row.key }}" data-kind="{{ row.kind }}" data-row-label="{{ row.label }}">
   <th scope="row" class="grid-label">
     <div class="grid-label-row">

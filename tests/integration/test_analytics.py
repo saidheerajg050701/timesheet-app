@@ -50,7 +50,7 @@ def me(db):
 
 def test_dashboard_numbers_for_known_data(me, project, login_as, fixed_now):
     """T-40: on-time rate, overtime and hours by project for known data — exact numbers."""
-    other = ProjectFactory(code="PRJ-002", name="Mobile App")
+    other = ProjectFactory(number=2, name="Mobile App")
     work_days(submitted(me, W[3]), project)  # Sep 27: on time, 40 h
     work_days(submitted(me, W[2], late=True), project, end=time(18))  # Oct 4: late, 45 h
     # Oct 11: no timesheet → missed
@@ -61,12 +61,12 @@ def test_dashboard_numbers_for_known_data(me, project, login_as, fixed_now):
     p = dash.punctuality
     assert (p.on_time, p.late, p.missed, p.rate) == (1, 1, 1, 33)
     assert (dash.overtime.minutes, dash.overtime.weeks) == (300, 1)
-    assert dash.projects == [("PRJ-001", "Customer Portal", 5100), ("PRJ-002", "Mobile App", 540)]
+    assert dash.projects == [("I-001", "Customer Portal", 5100), ("I-002", "Mobile App", 540)]
     assert dash.worked == 5100 + 540 and dash.expected == 4 * 2400
 
     html = login_as(me).get(reverse("home"), {"weeks": 4}).content.decode()
     assert 'id="on-time-rate">33%<' in html and 'id="overtime-hours">5.00<' in html
-    assert 'PRJ-001 Customer Portal</th><td class="text-end">85.00' in html
+    assert 'I-001 Customer Portal</th><td class="text-end">85.00' in html
 
 
 def test_range_filter(me, project, login_as, fixed_now):

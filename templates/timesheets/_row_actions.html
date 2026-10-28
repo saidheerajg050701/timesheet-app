@@ -1,4 +1,4 @@
-{# A row's "⋮" menu and its two dialogs (Change 7, D-129, D-130). Context: row, project_choices. #}{% load timesheet_tags %}
+{# A row's "⋮" menu and its two dialogs (Change 7, D-129, D-130). Context: row. #}{% load timesheet_tags %}
 <div class="dropdown row-actions">
   <button type="button" class="row-actions-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" aria-label="Row actions for {{ row.label }}">⋮</button>
   <ul class="dropdown-menu">
@@ -16,13 +16,7 @@
   <select class="form-select mb-3" id="{{ row.dom_id }}-category" data-role="new-category">
     {% for group, options in row.change_groups %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}"{% if value == row.category %} selected{% endif %}>{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
   </select>
-  <div data-role="new-project-field"{% if row.category != "PROJECT" %} hidden{% endif %}>
-    <label class="form-label" for="{{ row.dom_id }}-project">Project</label>
-    <select class="form-select mb-3" id="{{ row.dom_id }}-project" data-role="new-project">
-      <option value="">Choose…</option>
-      {% for value, label in project_choices %}<option value="{{ value }}"{% if value|stringformat:"s" == row.project %} selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-  </div>
+  {% with combo_id=row.dom_id|add:"-project" %}{% if row.category == "PROJECT" %}{% include "timesheets/_project_combo.html" with combo_id=combo_id value=row.project label=row.name hidden=False only %}{% else %}{% include "timesheets/_project_combo.html" with combo_id=combo_id value="" label="" hidden=True only %}{% endif %}{% endwith %}
   <div data-role="new-task-field" hidden>
     <label class="form-label" for="{{ row.dom_id }}-task">Task</label>
     <select class="form-select mb-3" id="{{ row.dom_id }}-task" data-role="new-task" data-current="{{ row.task }}">

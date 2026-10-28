@@ -49,10 +49,20 @@ class ProjectAdmin(AuditedAdmin):
     list_display = ("code", "name", "active")
     list_filter = ("active",)
     search_fields = ("code", "name")
+    ordering = ("number",)
     save_service = staticmethod(save_project)
+
+    def get_fields(self, request, obj=None):
+        """The I-code is assigned when a project is added and never edited (D-155)."""
+        return ("code", "name", "active", "tasks") if obj else ("name", "active", "tasks")
 
     def get_readonly_fields(self, request, obj=None):
         return ("code",) if obj else ()  # entries and audit rows refer to the code
+
+    def render_change_form(self, request, context, add=False, **kwargs):
+        if add:
+            context["subtitle"] = "The I-code (I-001, I-002, …) is assigned when you save."
+        return super().render_change_form(request, context, add=add, **kwargs)
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "tasks":

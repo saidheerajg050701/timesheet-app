@@ -24,6 +24,9 @@ urlpatterns = [
     path("timesheets/<isodate:week>/row/", views.timesheet_row, name="timesheet_row"),
     path("timesheets/<isodate:week>/rows/", views.timesheet_rows, name="timesheet_rows"),
     path(
+        "timesheets/<isodate:week>/projects/", views.timesheet_projects, name="timesheet_projects"
+    ),
+    path(
         "timesheets/<isodate:week>/request-change/",
         views.request_change,
         name="request_change",
@@ -47,6 +50,11 @@ urlpatterns = [
         name="approval_week_rows",
     ),
     path(
+        "approvals/<isodate:period>/<str:employee_code>/weeks/<isodate:week>/projects/",
+        approval_views.approval_week_projects,
+        name="approval_week_projects",
+    ),
+    path(
         "approvals/<isodate:period>/<str:employee_code>/weeks/<isodate:week>/totals/",
         approval_views.approval_week_totals,
         name="approval_week_totals",
@@ -55,6 +63,11 @@ urlpatterns = [
     path("approvals/requests/<int:pk>/", request_views.request_detail, name="request_detail"),
     path("approvals/requests/<int:pk>/edit/", request_views.request_edit, name="request_edit"),
     path("approvals/requests/<int:pk>/rows/", request_views.request_rows, name="request_rows"),
+    path(
+        "approvals/requests/<int:pk>/projects/",
+        request_views.request_projects,
+        name="request_projects",
+    ),
     path(
         "approvals/requests/<int:pk>/totals/",
         request_views.request_totals,

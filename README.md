@@ -114,6 +114,17 @@ allows all of them on every existing project. Project work saved before tasks ex
 task and shows **"Task not recorded"**; a week like that needs a task on its project rows when
 it is saved again.
 
+Project codes are **I-001, I-002, …** since Change 10b. `migrate` renames older PRJ-xxx codes
+to I-xxx (same number) and prints each rename; old audit rows keep the old code. While you only
+have demo data, it is simplest to start again with fresh demo data instead:
+```bash
+uv run python manage.py backup_db                    # a backup first
+mkdir -p backups/before-10b && mv db.sqlite3 payroll.sqlite3 backups/before-10b/
+uv run python manage.py migrate
+uv run python manage.py migrate --database=payroll
+uv run python manage.py seed_demo
+```
+
 **Only once**, if you used a version from before the pay period registers (Change 8) and had
 already exported payroll, also run this (it is safe to repeat):
 ```bash
@@ -176,7 +187,7 @@ The home page shows your own last 4, 12 or 26 weeks: this week's status with a l
 to Saturday 12:00, hours worked per week against expected hours, on-time / late / missed
 weeks, overtime (same rule as payroll), hours by project and by category (Break shown
 separately, unpaid), **hours by task** and **hours by project + task** (by charge code, e.g.
-PRJ-001-DEV; older project work without a task is its own "Task not recorded" line), and the
+I-001-DEV; older project work without a task is its own "Task not recorded" line), and the
 approval outcome of each pay period. Every chart also lists its
 numbers. A week you never submitted counts as missed, even if your manager approved it later.
 
@@ -198,13 +209,18 @@ project **and task** for Project work, a column per day (a week runs **Sunday to
 **Total worked hours** column and footer.
 - **Tasks and charge codes:** Project work is always booked to a project **and** one of that
   project's tasks (for example DEV Development or TST Testing & QA). The row shows
-  "PRJ-001 Customer Portal · DEV Development" and its **charge code** PRJ-001-DEV. Other
+  "I-001 Customer Portal · DEV Development" and its **charge code** I-001-DEV. Other
   categories (Meetings, Training, Break, leave …) have no project and no task. Older project
   work saved before tasks existed shows **"Task not recorded"**; when such a week is saved
   again, choose a task for that row (the ⋮ menu does it for the whole row).
 - **+ Add row** adds a category; Project work also asks for the project and then one of its
   active tasks. Each category, or project + task, has one row, so using **+ Add row** again for
   one that is already there takes you to its row.
+- **Finding a project:** the Project box is a search. Type part of an I-code or a name
+  ("i-002", "001", "portal" — any case), then click the project or use ↑/↓ and Enter; Esc
+  closes the list. With nothing typed it shows **Your recent projects** (the ones used in the 4
+  weeks before this week) and then all active projects, sorted by I-code. "No matching project"
+  means nothing fits; inactive projects never appear.
 - **Click a day to enter time.** Work and Break use one or more time slots with a start and an
   end (15-minute steps, same day, no overlaps) and an optional reason. Leave (PTO, Sick, Holiday)
   uses hours and an optional reason.
@@ -287,6 +303,7 @@ uv run python manage.py sync_payroll       # safe to repeat; also creates missin
 Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every change is written to the audit log with the admin's name.
 
 - **Employees, teams, projects:** add and edit. Nothing can be deleted: deactivate employees and clear *Active* on projects instead.
+- **Project codes** are assigned by the app: a new project gets the next I-code (I-001, I-002, …, I-1000 after I-999) when you save. You only type the name; the code is shown after saving and can never be edited or reused.
 - **Tasks** (what project work is spent on: code, name, description, active, sort order): add and edit; the code can't change once added. Clear *Active* instead of deleting. The page shows how many saved entries use the task.
 - **Allowed tasks** on a project: tick the tasks people may book to it (a new project starts with every active task ticked). Removing a task, or deactivating one, that saved entries use is allowed: those entries keep it, you get a note saying how many, and open weeks must choose another task when they are saved again.
 - **Deactivate / Reactivate:** select employees in the list and choose the action. Deactivate asks for the end date (today by default) and logs the person out; their history stays and their submitted weeks can still be approved and paid.

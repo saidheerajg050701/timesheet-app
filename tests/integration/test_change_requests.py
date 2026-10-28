@@ -106,7 +106,7 @@ def test_edit_directly_writes_before_and_after(org, weeks, login_as, project):
         {
             "work_date": "2026-10-12",
             "category": "PROJECT",
-            "project": "PRJ-001",
+            "project": "I-001",
             "task": "DEV",  # Change 10: the audit names the task (D-151)
             "start": "09:00",
             "end": "17:00",
@@ -325,7 +325,7 @@ def test_reopened_past_week_is_editable_until_window_ends(org, weeks, login_as, 
     assert audit.after["entries"][0] == {
         "work_date": "2026-10-05",
         "category": "PROJECT",
-        "project": "PRJ-001",
+        "project": "I-001",
         "task": "DEV",  # Change 10: the audit names the task (D-151)
         "start": "08:00",
         "end": "17:00",

@@ -29,6 +29,7 @@ from timesheets.services.calendar import (
     week_start_for,
     working_days,
 )
+from timesheets.services.projects import assign_code
 
 SYSTEM_ACTOR = "seed_demo"
 logger = logging.getLogger(__name__)
@@ -51,26 +52,26 @@ LARGE_FACTOR = 14  # staff per team multiplier for --large (~500 employees)
 LATE_RATE, MISSED_RATE = 0.03, 0.02
 EARLIEST_HIRE = date(2018, 1, 8)
 
-PROJECTS = (
-    ("PRJ-001", "Customer Portal", True),
-    ("PRJ-002", "Mobile App", True),
-    ("PRJ-003", "Data Warehouse", True),
-    ("PRJ-004", "Cloud Migration", True),
-    ("PRJ-005", "Service Desk Upgrade", True),
-    ("PRJ-006", "CRM Rollout", True),
-    ("PRJ-007", "Internal Operations", True),
-    ("PRJ-008", "Legacy Billing (closed)", False),  # inactive: never used in entries (D-18)
+PROJECTS = (  # (name, active), coded I-001 … I-008 in this order by assign_code (D-155)
+    ("Customer Portal", True),
+    ("Mobile App", True),
+    ("Data Warehouse", True),
+    ("Cloud Migration", True),
+    ("Service Desk Upgrade", True),
+    ("CRM Rollout", True),
+    ("Internal Operations", True),
+    ("Legacy Billing (closed)", False),  # inactive: never used in entries (D-18)
 )
 # Change 10 (D-154): the tasks each project allows, and the tasks each team usually books to.
 PROJECT_TASKS = {
-    "PRJ-001": ("PLN", "DES", "DEV", "TST", "REL", "SUP", "DOC", "MTG"),
-    "PRJ-002": ("PLN", "DES", "DEV", "TST", "REL", "MTG"),
-    "PRJ-003": ("PLN", "DEV", "TST", "DOC", "MTG"),
-    "PRJ-004": ("PLN", "DEV", "REL", "SEC", "DOC", "MTG"),
-    "PRJ-005": ("SUP", "DOC", "TST", "MTG"),
-    "PRJ-006": ("PLN", "DOC", "MTG", "SUP"),
-    "PRJ-007": ("PLN", "DOC", "MTG", "SEC"),
-    "PRJ-008": ("DEV", "SUP"),
+    "I-001": ("PLN", "DES", "DEV", "TST", "REL", "SUP", "DOC", "MTG"),
+    "I-002": ("PLN", "DES", "DEV", "TST", "REL", "MTG"),
+    "I-003": ("PLN", "DEV", "TST", "DOC", "MTG"),
+    "I-004": ("PLN", "DEV", "REL", "SEC", "DOC", "MTG"),
+    "I-005": ("SUP", "DOC", "TST", "MTG"),
+    "I-006": ("PLN", "DOC", "MTG", "SUP"),
+    "I-007": ("PLN", "DOC", "MTG", "SEC"),
+    "I-008": ("DEV", "SUP"),
 }
 TEAM_TASKS = {
     "Leadership": ("PLN", "MTG"),
@@ -84,15 +85,15 @@ TEAM_TASKS = {
     "Sales": ("PLN", "MTG", "DOC"),
 }
 TEAM_PROJECTS = {
-    "Leadership": ("PRJ-007", "PRJ-004"),
-    "Engineering": ("PRJ-001", "PRJ-004"),
-    "Platform": ("PRJ-001", "PRJ-002"),
-    "Data": ("PRJ-003", "PRJ-004"),
-    "People": ("PRJ-007",),
-    "Operations": ("PRJ-005", "PRJ-007"),
-    "Support": ("PRJ-005",),
-    "Payroll": ("PRJ-007",),
-    "Sales": ("PRJ-006",),
+    "Leadership": ("I-007", "I-004"),
+    "Engineering": ("I-001", "I-004"),
+    "Platform": ("I-001", "I-002"),
+    "Data": ("I-003", "I-004"),
+    "People": ("I-007",),
+    "Operations": ("I-005", "I-007"),
+    "Support": ("I-005",),
+    "Payroll": ("I-007",),
+    "Sales": ("I-006",),
 }
 
 # Generated team leads: key → (job title, team, department, manager code)
@@ -406,9 +407,11 @@ class _Seeder:
     def _projects(self):
         """The projects, each with its allowed tasks (the 9 default tasks come from migration
         timesheets/0007, D-148, D-154)."""
-        projects = Project.objects.bulk_create(
-            Project(code=code, name=name, active=active) for code, name, active in PROJECTS
-        )
+        projects = []
+        for name, active in PROJECTS:  # the app's own I-code rule (D-155)
+            project = assign_code(Project(name=name, active=active))
+            project.save()
+            projects.append(project)
         self.tasks = {t.code: t for t in Task.objects.all()}
         for project in projects:
             codes = PROJECT_TASKS[project.code]
@@ -419,7 +422,12 @@ class _Seeder:
                     "Project",
                     project.code,
                     system_actor=SYSTEM_ACTOR,
-                    after={"name": project.name, "active": project.active, "tasks": list(codes)},
+                    after={
+                        "code": project.code,
+                        "name": project.name,
+                        "active": project.active,
+                        "tasks": list(codes),
+                    },
                 )
             )
         return {p.code: p for p in projects}

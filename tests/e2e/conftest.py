@@ -76,7 +76,7 @@ def e2e_org(settings, clock):
         ops1=person("OPS1", "Lena", "Park", ops_manager),
         payroll=person("PAYROLL", "Paul", "Ames", ceo, is_payroll=True),
         candidate=person("QA1", "Ravi", "Kumar", manager, account=False, job_title="QA Engineer"),
-        project=ProjectFactory(code="PRJ-001", name="Customer Portal"),
+        project=ProjectFactory(number=1, name="Customer Portal"),
     )
 
 

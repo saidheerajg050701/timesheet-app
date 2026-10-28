@@ -136,7 +136,7 @@ def login_as(client):
 
 @pytest.fixture
 def project(db):
-    return ProjectFactory(code="PRJ-001", name="Customer Portal")
+    return ProjectFactory(number=1, name="Customer Portal")
 
 
 @pytest.fixture

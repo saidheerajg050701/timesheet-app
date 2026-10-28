@@ -22,6 +22,7 @@ from directory.services.permissions import manager_map
 from directory.services.rules import creates_loop, domain_error, in_company_domain
 from payroll.services.export import safe_cell
 from timesheets.models import TimeEntry
+from timesheets.services.projects import assign_code
 
 ACTIVE = Employee.Status.ACTIVE
 INACTIVE = Employee.Status.INACTIVE
@@ -264,8 +265,14 @@ def save_team(actor, team):
 
 
 def save_project(actor, project):
-    """Add or change a project; audited by its code (D-88). The code is fixed once added."""
-    return _save_simple(actor, project, "Project", lambda p: p.code, ("code", "name", "active"))
+    """Add or change a project; audited by its code (D-88). A new project gets the next I-code
+    (D-155); the code never changes afterwards."""
+    with transaction.atomic():
+        if project.pk is None:
+            assign_code(project)
+        return _save_simple(
+            actor, project, "Project", lambda p: p.code, ("code", "name", "active")
+        )
 
 
 # --- CSV export ---------------------------------------------------------------------------

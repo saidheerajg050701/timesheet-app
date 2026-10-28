@@ -85,7 +85,7 @@ def entry(
 @pytest.fixture
 def mixed_week(org, project):
     """Two projects, a meeting, a break and PTO, with two slots in one cell."""
-    other = ProjectFactory(code="PRJ-002", name="Mobile App")
+    other = ProjectFactory(number=2, name="Mobile App")
     sheet = TimesheetFactory(employee=org.dev1, week_start=WEEK, status="DRAFT")
     entry(sheet, MONDAY, time(9), time(12), project=project, reason="Login page")
     entry(sheet, MONDAY, time(12), time(12, 30), category="BREAK", reason="Lunch")
@@ -103,8 +103,8 @@ def test_grid_layout_and_totals(dev1, project, mixed_week):
     html = response.content.decode()
     grid = response.context["grid"]
     assert [r.label for r in grid.rows] == [
-        "PRJ-001 Customer Portal · DEV Development",
-        "PRJ-002 Mobile App · DEV Development",
+        "I-001 Customer Portal · DEV Development",
+        "I-002 Mobile App · DEV Development",
         "Meetings",
         "Break (unpaid)",
         "PTO",
@@ -135,7 +135,7 @@ def test_add_row(dev1, project):
     assert 'data-row-key="MEETING:"' in html and html.count('class="cell-button"') == 7
     task = {"category": "PROJECT", "project": project.pk, "task": "DEV"}  # Change 10: with a task
     html = dev1.get(row_url, task).content.decode()
-    assert f'data-row-key="PROJECT:{project.pk}:DEV"' in html and "PRJ-001 Customer Portal" in html
+    assert f'data-row-key="PROJECT:{project.pk}:DEV"' in html and "I-001 Customer Portal" in html
     assert dev1.get(row_url, {"category": "NOPE"}).status_code == 400
     assert dev1.get(row_url, {"category": "PROJECT"}).status_code == 400
     project.active = False
@@ -201,11 +201,11 @@ def test_overlap_error_is_shown_on_the_right_cells(dev1, project):
     )
     html = dev1.post(url(), posted).content.decode()
     assert not TimeEntry.objects.exists()
-    message = "Mon 19 Oct: 09:00–12:00 PRJ-001-DEV and 11:00–13:00 Meetings overlap."
+    message = "Mon 19 Oct: 09:00–12:00 I-001-DEV and 11:00–13:00 Meetings overlap."
     for target in (cell("PROJECT", project, MONDAY), cell("MEETING", None, MONDAY)):
         assert re.search(rf'aria-controls="{target}"[^>]*aria-invalid="true"', html)
         assert message in dialog(html, target)
-    label = "PRJ-001 Customer Portal · DEV Development, Tue Oct 20: 1.00 hours, 1 slot"
+    label = "I-001 Customer Portal · DEV Development, Tue Oct 20: 1.00 hours, 1 slot"
     assert f'aria-label="{label}">' in html  # an unaffected cell keeps its slot, not marked
     summary = html.split('id="errors"')[1].split("</div>")[0]
     assert message in summary and 'data-grid-action="open"' in summary
@@ -284,7 +284,7 @@ def test_two_slots_for_one_project_on_one_day(dev1, project):
     html = response.content.decode()
     grid = response.context["grid"]
     assert [r.label for r in grid.rows] == [
-        "PRJ-001 Customer Portal · DEV Development",
+        "I-001 Customer Portal · DEV Development",
         "Break (unpaid)",
     ]  # one row for the project, not two
     target = cell("PROJECT", project, WEEK)
@@ -306,7 +306,7 @@ def test_overlapping_third_slot_is_refused_on_its_cell(dev1, project):
     html = response.content.decode()
     assert response.status_code == 200  # shown again, not saved
     assert entries_snapshot(TimeEntry.objects.select_related("project")) == before
-    message = "Sun 18 Oct: 14:00–17:00 PRJ-001-DEV and 16:00–18:00 PRJ-001-DEV overlap."
+    message = "Sun 18 Oct: 14:00–17:00 I-001-DEV and 16:00–18:00 I-001-DEV overlap."
     target = cell("PROJECT", project, WEEK)
     assert re.search(rf'aria-controls="{target}"[^>]*aria-invalid="true"', html)
     assert message in dialog(html, target) and slots(dialog(html, target)) == 3

@@ -17,8 +17,8 @@ ACTIVE = INACTIVE = DEV = None  # set for every test by the fixture below
 @pytest.fixture(autouse=True)
 def projects():
     global ACTIVE, INACTIVE, DEV
-    ACTIVE = ProjectFactory(code="PRJ-001", name="Customer Portal")  # allows every task
-    INACTIVE = ProjectFactory(code="PRJ-008", name="Legacy Billing", active=False)
+    ACTIVE = ProjectFactory(number=1, name="Customer Portal")  # allows every task
+    INACTIVE = ProjectFactory(number=8, name="Legacy Billing", active=False)
     DEV = task("DEV")
 
 
@@ -118,7 +118,7 @@ def test_timed_rows_on_one_day_must_not_overlap():
     overlap = errors_for(
         work("09:00", "12:00"), work("11:00", "13:00", category="MEETING", project=None)
     )
-    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001-DEV and 11:00–13:00 Meetings overlap."]
+    assert overlap == ["Tue 20 Oct: 09:00–12:00 I-001-DEV and 11:00–13:00 Meetings overlap."]
     assert has(errors_for(work("09:00", "17:00"), brk("12:00", "12:30")), "overlap")
     assert has(errors_for(brk("12:00", "13:00"), brk("12:45", "13:15")), "overlap")
     back_to_back = [work("09:00", "12:00"), brk("12:00", "12:30"), work("12:30", "17:00")]
@@ -147,7 +147,7 @@ def test_empty_reasons_are_accepted():
     off_step = errors_for(work("09:10", "12:00", reason=""))
     assert len(off_step) == 1 and "15-minute steps" in off_step[0]
     overlap = errors_for(work("09:00", "12:00", reason=""), brk("11:30", "12:15"))
-    assert overlap == ["Tue 20 Oct: 09:00–12:00 PRJ-001-DEV and 11:30–12:15 Break time overlap."]
+    assert overlap == ["Tue 20 Oct: 09:00–12:00 I-001-DEV and 11:30–12:15 Break time overlap."]
     assert not has(off_step + overlap, "reason")
 
 

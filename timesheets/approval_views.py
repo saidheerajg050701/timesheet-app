@@ -8,7 +8,7 @@ from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from directory.models import Employee
 from directory.services.permissions import approvals_required
@@ -35,7 +35,14 @@ from timesheets.services.changes import (
     unlock_from_approvals,
 )
 from timesheets.services.summary import summarize
-from timesheets.views import SaveAttempt, grid_choices, row_action, week_grid
+from timesheets.views import (
+    SaveAttempt,
+    editor_urls,
+    grid_choices,
+    project_list,
+    row_action,
+    week_grid,
+)
 
 
 def _period_from(value, now):
@@ -143,11 +150,6 @@ def _approval_week(request, period, employee_code, week):
     return employee, row, view
 
 
-def _edit_urls(period, employee_code, week):
-    args = [period, employee_code, week]
-    return reverse("approval_week_rows", args=args), reverse("approval_week_totals", args=args)
-
-
 @approvals_required
 def approval_week_edit(request, period, employee_code, week):
     """The approver edits a SUBMITTED or LOCKED week in the weekly grid (D-140)."""
@@ -173,7 +175,7 @@ def approval_week_edit(request, period, employee_code, week):
     sheet = view.sheet
     entries = attempt.entries if attempt else list(sheet.entries.all()) if sheet else []
     grid = week_grid(sheet, week, attempt, editable=True)
-    rows_url, summary_url = _edit_urls(period, employee_code, week)
+    summary_url = reverse("approval_week_totals", args=[period, employee_code, week])
     return render(
         request,
         "timesheets/approval_edit.html",
@@ -185,7 +187,7 @@ def approval_week_edit(request, period, employee_code, week):
             "summary": summarize(entries, employee, week),
             "summary_url": summary_url,
             "detail_url": detail,
-            **grid_choices(week, rows_url),
+            **grid_choices(week, editor_urls("approval_week", period, employee_code, week)),
         },
     )
 
@@ -202,7 +204,16 @@ def _editable(request, period, employee_code, week):
 def approval_week_rows(request, period, employee_code, week):
     """HTMX: the edit grid's row actions (D-129); saved with the week (D-140)."""
     _editable(request, period, employee_code, week)
-    return row_action(request, week, _edit_urls(period, employee_code, week)[0])
+    urls = editor_urls("approval_week", period, employee_code, week)
+    return row_action(request, week, urls)
+
+
+@require_GET
+@approvals_required
+def approval_week_projects(request, period, employee_code, week):
+    """HTMX: the Approvals edit's project search — the employee's recent projects (D-157)."""
+    employee = _editable(request, period, employee_code, week)
+    return project_list(request, employee, week)
 
 
 @require_POST

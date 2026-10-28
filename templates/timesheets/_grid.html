@@ -1,5 +1,5 @@
-{# The weekly grid (D-106–D-110). Context: grid (timesheets.grid.Grid), optional grid_id when a page shows several; editable grids also need row_url, rows_url, category_groups, project_choices, task_choices (D-152), and after a row action its notice (D-129). #}{% load timesheet_tags %}
-<div class="week-grid-wrap{% if grid.editable %} is-editable{% endif %}" data-week-grid{% if grid.editable %} data-rows-url="{{ rows_url }}"{% endif %}>
+{# The weekly grid (D-106–D-110). Context: grid (timesheets.grid.Grid), optional grid_id when a page shows several; editable grids also need row_url, rows_url, projects_url (D-157), category_groups, task_choices (D-152), and after a row action its notice (D-129). #}{% load timesheet_tags %}
+<div class="week-grid-wrap{% if grid.editable %} is-editable{% endif %}" data-week-grid{% if grid.editable %} data-rows-url="{{ rows_url }}" data-projects-url="{{ projects_url }}"{% endif %}>
   <div class="table-responsive grid-scroll">
     <table class="table week-grid mb-0" id="{{ grid_id|default:'entries' }}" data-next-index="{{ grid.next_index }}" aria-label="Week of {{ grid.week_start|date:'M j, Y' }}: hours per project or category and day">
       <thead>
@@ -38,13 +38,7 @@
         <option value="">Choose…</option>
         {% for group, options in category_groups %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
       </select>
-      <div data-role="new-project-field" hidden>
-        <label class="form-label" for="add-row-project">Project</label>
-        <select class="form-select mb-3" id="add-row-project" data-role="new-project">
-          <option value="">Choose…</option>
-          {% for value, label in project_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select>
-      </div>
+      {% include "timesheets/_project_combo.html" with combo_id="add-row-project" value="" label="" hidden=True only %}
       <div data-role="new-task-field" hidden>
         <label class="form-label" for="add-row-task">Task</label>
         <select class="form-select mb-3" id="add-row-task" data-role="new-task">

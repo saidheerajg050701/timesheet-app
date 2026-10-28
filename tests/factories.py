@@ -10,6 +10,7 @@ from factory.django import DjangoModelFactory
 
 from directory.models import Employee, Team, User
 from timesheets.models import Project, Task, TimeEntry, Timesheet
+from timesheets.services.projects import format_code
 
 TEST_PASSWORD = "Test-Password-123!"
 
@@ -74,7 +75,8 @@ class ProjectFactory(DjangoModelFactory):
         model = Project
         skip_postgeneration_save = True  # the tasks hook only sets the many-to-many list
 
-    code = factory.Sequence(lambda n: f"PRJ-{900 + n}")
+    number = factory.Sequence(lambda n: 900 + n)  # tests choose low numbers: number=2 → I-002
+    code = factory.LazyAttribute(lambda o: format_code(o.number))
     name = factory.Sequence(lambda n: f"Project {n}")
 
     @factory.post_generation

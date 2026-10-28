@@ -86,7 +86,7 @@ def test_team_metrics_for_known_data(known_team, login_as):
         (W1, 2400, 7200),
         (THIS_WEEK, 480, 7200),
     ]
-    assert board.projects == [("PRJ-001", "Customer Portal", 12300)]
+    assert board.projects == [("I-001", "Customer Portal", 12300)]
     html = login_as(org.director).get(reverse("team"), {"weeks": 4}).content.decode()
     assert 'id="team-utilization">56%<' in html and 'id="team-worked">205.00<' in html
     assert 'id="team-data" type="application/json"' in html

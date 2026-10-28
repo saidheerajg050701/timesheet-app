@@ -40,6 +40,9 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Project work is booked to a project and a task (D-148–D-152): the task rule lives only in
   timesheets/services/validation.py with timesheets/services/tasks.py; the charge code
   "<project>-<task>" is computed by tasks.charge_code, never stored. Payroll never sees tasks.
+- Project codes are I-001, I-002, … (D-155): assigned only by timesheets/services/projects.py
+  (assign_code, never typed or edited, never reused) and sorted by Project.number, never as text.
+  Project search matching lives only in projects.search_projects (D-157).
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).

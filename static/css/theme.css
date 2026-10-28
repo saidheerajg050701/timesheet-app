@@ -551,7 +551,7 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
 .week-grid tfoot > tr > .is-weekend { --bs-table-bg: #eef2f6; background: #eef2f6; }
 .grid-label-sub { display: block; color: var(--ts-text-muted); font-size: 0.8125rem; font-weight: 400; }
 .grid-label-sub.is-unrecorded { font-style: italic; } /* "Task not recorded": history (D-151) */
-.grid-code { /* the charge code, e.g. PRJ-001-DEV (D-150) */
+.grid-code { /* the charge code, e.g. I-001-DEV (D-150) */
   display: inline-block;
   margin-top: 3px;
   padding: 0 6px;
@@ -562,6 +562,34 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
   font: 600 0.6875rem/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 .grid-day-total.has-error { color: var(--ts-danger); text-decoration: underline wavy; }
+/* The project search box in "+ Add row" and ⋮ Change row (D-157): the list is part of the
+   dialog (never clipped), scrolls, and fits a phone. */
+.project-combo { margin-bottom: 1rem; }
+.project-combo .form-text { margin-top: 0.25rem; }
+.project-combo-list {
+  margin-top: 0.25rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  border: 1px solid var(--ts-border-strong);
+  border-radius: var(--ts-radius-sm);
+  background: var(--ts-surface);
+}
+.project-combo-heading {
+  position: sticky;
+  top: 0;
+  padding: 0.375rem 0.75rem 0.25rem;
+  background: var(--ts-surface-muted);
+  color: var(--ts-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.project-combo-option { padding: 0.5rem 0.75rem; cursor: pointer; overflow-wrap: anywhere; }
+.project-combo-option:hover { background: var(--ts-surface-muted); }
+.project-combo-option.is-active { background: var(--ts-accent-soft); color: var(--ts-accent-soft-text); }
+.project-combo-code { font-weight: 600; }
+.project-combo-empty { padding: 0.5rem 0.75rem; color: var(--ts-text-muted); }
 .week-grid tbody tr:hover > * { --bs-table-bg-state: transparent; }
 .week-grid .grid-empty td { padding: 18px 14px; }
 .error-link { color: inherit; text-decoration: underline; font-weight: 500; }

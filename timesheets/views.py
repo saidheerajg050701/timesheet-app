@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from timesheets.forms import CATEGORY_GROUPS, parse_entries, parse_grid_keys, project_choices
+from timesheets.forms import CATEGORY_GROUPS, parse_entries, parse_grid_keys
 from timesheets.grid import build_grid, row_notice
 from timesheets.models import ChangeRequest, Timesheet
 from timesheets.services.approvals import approval_for_week
@@ -21,6 +21,7 @@ from timesheets.services.grid_rows import (
     split_key,
     target_problem,
 )
+from timesheets.services.projects import project_options
 from timesheets.services.summary import summarize
 from timesheets.services.tasks import task_choices
 from timesheets.services.weeks import (
@@ -148,24 +149,38 @@ def _week_context(me, state, attempt, now):
         "next_week": state.week_start + timedelta(weeks=1)
         if state.week_start < current_week
         else None,
-        **grid_choices(state.week_start, reverse("timesheet_rows", args=[state.week_start])),
+        **grid_choices(state.week_start, editor_urls("timesheet", state.week_start)),
     }
 
 
-def grid_choices(week_start, rows_url):
-    """What the editable grid's "+ Add row" dialog offers: categories, active projects (D-18)
-    and each project's allowed active tasks (D-152), and where its row actions post the week as
-    typed (D-129)."""
+def editor_urls(name, *args):
+    """(rows_url, projects_url) of one week editor — "timesheet" (the employee's own week),
+    "request" (Edit directly) or "approval_week" (the Approvals edit): where its row actions
+    post the week as typed (D-129) and where its project search box asks (D-157)."""
+    return reverse(f"{name}_rows", args=args), reverse(f"{name}_projects", args=args)
+
+
+def grid_choices(week_start, urls):
+    """What the editable grid's "+ Add row" and ⋮ dialogs offer: categories, a project search
+    box (active projects, D-18, D-157) and each project's allowed active tasks (D-152)."""
+    rows_url, projects_url = urls
     return {
         "row_url": reverse("timesheet_row", args=[week_start]),
         "rows_url": rows_url,
+        "projects_url": projects_url,
         "category_groups": CATEGORY_GROUPS,
-        "project_choices": project_choices(),
         "task_choices": task_choices(),
     }
 
 
-def row_action(request, week_start, rows_url):
+def project_list(request, employee, week_start):
+    """HTMX: the project search box's list for `employee`'s week (D-157, D-158). The caller
+    has already checked that this user may edit that week."""
+    groups = project_options(request.GET.get("q", ""), employee, week_start)
+    return render(request, "timesheets/_project_options.html", {"groups": groups})
+
+
+def row_action(request, week_start, urls):
     """HTMX: the grid as typed with one row changed or deleted (D-129, D-130). Never saves:
     the caller has already checked that this user may edit this week."""
     parsed = parse_entries(request.POST, week_start)
@@ -185,7 +200,7 @@ def row_action(request, week_start, rows_url):
     context = {
         "grid": build_grid(result.rows, week_start, editable=True, keys=result.keys),
         "notice": row_notice(action, source, result),
-        **grid_choices(week_start, rows_url),
+        **grid_choices(week_start, urls),
     }
     return render(request, "timesheets/_grid.html", context)
 
@@ -196,7 +211,16 @@ def timesheet_rows(request, week):
     me, week_start = _own_week(request, week)
     if not week_state(me, week_start, load_sheet(me, week_start), timezone.now()).editable:
         raise WeekLocked("This week can't be changed.")
-    return row_action(request, week_start, reverse("timesheet_rows", args=[week_start]))
+    return row_action(request, week_start, editor_urls("timesheet", week_start))
+
+
+@require_GET
+def timesheet_projects(request, week):
+    """HTMX: the project search list for the employee's own open week (D-157)."""
+    me, week_start = _own_week(request, week)
+    if not week_state(me, week_start, load_sheet(me, week_start), timezone.now()).editable:
+        raise WeekLocked("This week can't be changed.")
+    return project_list(request, me, week_start)
 
 
 @require_POST
@@ -222,7 +246,7 @@ def timesheet_row(request, week):
     if problem:
         return HttpResponseBadRequest(problem)
     grid = build_grid([], week_start, editable=True, keys=[key])
-    context = {"row": grid.rows[0], "grid": grid, "project_choices": project_choices()}
+    context = {"row": grid.rows[0], "grid": grid}
     return render(request, "timesheets/_grid_row.html", context)
 
 

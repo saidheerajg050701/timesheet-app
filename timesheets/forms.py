@@ -54,12 +54,6 @@ def parse_time(text):
     return time.fromisoformat(text) if text else None
 
 
-def project_choices(extra_ids=()):
-    """Active projects, plus any already used on this week's rows (shown, then rejected)."""
-    projects = Project.objects.filter(active=True) | Project.objects.filter(pk__in=extra_ids)
-    return [(str(p.pk), f"{p.code} {p.name}") for p in projects.order_by("code")]
-
-
 def day_choices(week_start):
     return [(d.isoformat(), day_label(d)) for d in week_days(week_start)]
 

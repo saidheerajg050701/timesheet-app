@@ -129,7 +129,7 @@ def _has_valid_times(entry):
 
 
 def _label(entry):
-    """The charge code for project work ("PRJ-001-DEV", D-150), otherwise the category."""
+    """The charge code for project work ("I-001-DEV", D-150), otherwise the category."""
     if entry.category == TimeEntry.Category.PROJECT and entry.project is not None:
         return charge_code(entry.project, entry.task)
     return CATEGORY_LABELS.get(entry.category, entry.category)
@@ -140,7 +140,7 @@ def _span(entry):
 
 
 def describe(entry):
-    """E.g. "Tue 20 Oct, PRJ-001-DEV 09:00–12:00" — used in every message about a row."""
+    """E.g. "Tue 20 Oct, I-001-DEV 09:00–12:00" — used in every message about a row."""
     text = f"{day_label(entry.work_date)}, {_label(entry)}"
     if entry.start_time is not None and entry.end_time is not None:
         text += f" {_span(entry)}"
@@ -149,7 +149,7 @@ def describe(entry):
 
 def mentions(entry):
     """The texts that name `entry` in the messages above: its describe() prefix, and the
-    "09:00–12:00 PRJ-001" span used in overlap messages (None for leave). The weekly grid uses
+    "09:00–12:00 I-001" span used in overlap messages (None for leave). The weekly grid uses
     them to show each message on the right cell (D-108); the rules don't."""
     span = f"{_span(entry)} {_label(entry)}" if _has_valid_times(entry) else None
     return describe(entry), span

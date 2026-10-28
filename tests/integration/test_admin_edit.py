@@ -133,13 +133,13 @@ def test_add_and_edit_teams_projects_and_employees(org, login_as):
     ]
     assert rows("Team")[1].after == {"department": "Analytics"}
 
-    client.post(url(Project, "add"), {"code": "PRJ-777", "name": "Pilot", "active": "on"})
-    project = Project.objects.get(code="PRJ-777")
-    client.post(url(Project, "change", project.pk), {"code": "PRJ-999", "name": "Pilot 2"})
+    client.post(url(Project, "add"), {"name": "Pilot", "active": "on"})  # the app's I-code
+    project = Project.objects.get(code="I-001")
+    client.post(url(Project, "change", project.pk), {"code": "I-999", "name": "Pilot 2"})
     project.refresh_from_db()
-    assert (project.code, project.name, project.active) == ("PRJ-777", "Pilot 2", False)
+    assert (project.code, project.name, project.active) == ("I-001", "Pilot 2", False)
     assert [(r.action, r.before, r.after) for r in rows("Project")] == [
-        ("CREATE", None, {"code": "PRJ-777", "name": "Pilot", "active": True}),
+        ("CREATE", None, {"code": "I-001", "name": "Pilot", "active": True}),
         ("UPDATE", {"name": "Pilot", "active": True}, {"name": "Pilot 2", "active": False}),
     ]
 

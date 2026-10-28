@@ -1,6 +1,6 @@
 """Tasks and charge codes (Change 10, D-148–D-151): the one place for what a task means.
 
-A charge code is "<project code>-<task code>", e.g. PRJ-001-DEV. It is worked out, never
+A charge code is "<project code>-<task code>", e.g. I-001-DEV. It is worked out, never
 stored. Project work saved before tasks existed has no task: "Task not recorded".
 """
 
@@ -10,7 +10,7 @@ TASK_NOT_RECORDED = "Task not recorded"
 
 
 def charge_code(project, task):
-    """ "PRJ-001-DEV"; just the project code when the entry has no task (history)."""
+    """ "I-001-DEV"; just the project code when the entry has no task (history)."""
     return f"{project.code}-{task.code}" if task is not None else project.code
 
 

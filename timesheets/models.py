@@ -20,11 +20,18 @@ class Task(models.Model):
 
 
 class Project(models.Model):
-    code = models.CharField(max_length=20, unique=True)
+    """A project, coded I-001, I-002, … — assigned by the app, never typed or edited
+    (timesheets/services/projects.py, D-155)."""
+
+    number = models.PositiveIntegerField(unique=True)  # the I-code's number; sorts I-999 < I-1000
+    code = models.CharField(max_length=20, unique=True)  # "I-" + number, at least 3 digits
     name = models.CharField(max_length=120)
     active = models.BooleanField(default=True)
     # The tasks project work on this project may be booked to (D-149)
     tasks = models.ManyToManyField(Task, blank=True, related_name="projects")
+
+    class Meta:
+        ordering = ("number",)
 
     def __str__(self):
         return f"{self.code} {self.name}"

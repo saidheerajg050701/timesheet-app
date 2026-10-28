@@ -175,7 +175,7 @@ class EntryRow:
     end: str = ""
     hours: str = ""
     reason: str = ""
-    label: str = ""  # read-only display, e.g. "PRJ-001 Customer Portal"
+    label: str = ""  # read-only display, e.g. "I-001 Customer Portal"
 
     @property
     def is_blank(self):

@@ -51,7 +51,7 @@ class Cell:
     day: date
     slots: list = field(default_factory=list)  # EntryRow, in time order
     errors: list = field(default_factory=list)
-    label: str = ""  # "PRJ-001 Customer Portal, Mon Oct 19"
+    label: str = ""  # "I-001 Customer Portal, Mon Oct 19"
 
     @property
     def minutes(self):
@@ -89,10 +89,10 @@ class Cell:
 class GridRow:
     category: str
     project: str  # project id as text, "" for other categories
-    label: str  # "PRJ-001 Customer Portal · DEV Development", "Meetings"
+    label: str  # "I-001 Customer Portal · DEV Development", "Meetings"
     cells: list = field(default_factory=list)
     task: str = ""  # task code; "" for other categories and for history rows (D-152)
-    charge_code: str = ""  # "PRJ-001-DEV" (project work only, D-150)
+    charge_code: str = ""  # "I-001-DEV" (project work only, D-150)
 
     @property
     def key(self):
@@ -102,7 +102,7 @@ class GridRow:
 
     @property
     def name(self):
-        """ "PRJ-001 Customer Portal" — the part before " · DEV Development"."""
+        """ "I-001 Customer Portal" — the part before " · DEV Development"."""
         return self.label.split(LABEL_SEPARATOR)[0]
 
     @property
@@ -182,7 +182,7 @@ def cell_id(category, project, day, task=""):
 
 
 def row_label(category, project, projects, task="", tasks=None):
-    """ "PRJ-001 Customer Portal · DEV Development" (history: "… · Task not recorded");
+    """ "I-001 Customer Portal · DEV Development" (history: "… · Task not recorded");
     the category label for everything else (D-150)."""
     if category != TimeEntry.Category.PROJECT:
         return ROW_LABELS.get(category, category)
@@ -241,9 +241,9 @@ def build_grid(rows, week_start, *, editable, entries=(), problems=(), messages=
 
     def order(key):
         category, project, task = key
-        code = projects[project].code if project in projects else project
+        number = projects[project].number if project in projects else 0  # I-999 before I-1000
         known = tasks.get(task)
-        return ROW_ORDER.index(category), code, (known.sort_order if known else -1), task
+        return ROW_ORDER.index(category), number, project, (known.sort_order if known else -1), task
 
     grid_rows, cells = [], {}
     for category, project, task in sorted(wanted, key=order):
