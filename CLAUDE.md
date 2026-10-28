@@ -40,7 +40,9 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
-- Never commit .env, db.sqlite3 or payroll.sqlite3. Keep .env.example up to date.
+- Never commit .env, db.sqlite3 or payroll.sqlite3. Keep .env.example up to date; if you change
+  its DJANGO_SECRET_KEY or DEMO_PASSWORD example values, update directory/checks.py and seed_demo
+  (they refuse those values, D-145, D-146; T-225/T-226 check they match).
 - Always run Python through uv (`uv run ...`); add packages with `uv add`, never pip.
 
 ## Commands

@@ -1,55 +1,157 @@
 # Employee Timesheet App
 
-A local-only Django web app for weekly timesheets, biweekly approvals and a separate payroll
-database. The full specification is [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md).
+A web app that runs on your own computer for weekly timesheets, two-week approvals and a separate
+payroll database. Employees enter their hours in a weekly grid, managers approve every
+two weeks, and payroll exports one register per pay period. The full specification is
+[docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md).
 
-## Setup on a new Mac
-1. Install the tools from the guide's Part A (Homebrew, uv, Git) and check them:
-   ```bash
-   bash scripts/doctor.sh                     # until it says "Ready to build"
-   ```
-2. Get the code into `~/Documents/timesheet-app` (keep it out of iCloud-synced folders, see D.2) and install the packages:
-   ```bash
-   cd ~/Documents/timesheet-app
-   uv python install 3.13                     # if doctor.sh says Python 3.13 is missing
-   uv sync                                    # Python packages into .venv
-   uv run playwright install chromium         # browser for the end-to-end tests (once)
-   ```
-3. Create your private settings file (never commit it):
-   ```bash
-   cp .env.example .env
-   uv run python -c "import secrets; print(secrets.token_urlsafe(50))"   # paste as DJANGO_SECRET_KEY
-   ```
-   Then edit `.env`: the secret key, `DEMO_PASSWORD` (12+ characters), `COMPANY_EMAIL_DOMAIN`,
-   `COMPANY_TZ`, `PAY_PERIOD_ANCHOR` (a **Sunday**, e.g. `2026-01-04`; the app refuses to start otherwise), and keep `DJANGO_DEBUG=False` for daily use (error pages then never show code
-   or settings).
-4. Create both databases and, if you want, the demo company:
-   ```bash
-   uv run python manage.py migrate                      # main database  → db.sqlite3
-   uv run python manage.py migrate --database=payroll   # payroll database → payroll.sqlite3
-   uv run python manage.py seed_demo                    # optional demo data (refuses if data exists)
-   ```
+## Quick start (about 10 minutes)
 
-After pulling new code later, run `uv sync` and both `migrate` commands again.
+Type each command in **Terminal** (Applications → Utilities → Terminal). After each step,
+check that you see the ✅ result before going on.
 
-## Run
+**1. What you need:** a Mac with macOS 13 or newer (Linux works too), **Git** and **uv**.
 ```bash
-uv run python manage.py runserver          # http://127.0.0.1:8000 — stop with Control + C
+git --version
+```
+✅ You see something like `git version 2.4x`. If not, on a Mac run `xcode-select --install`.
+```bash
+brew install uv          # Mac with Homebrew; on Linux: curl -LsSf https://astral.sh/uv/install.sh | sh
+uv --version
+```
+✅ You see `uv 0.x.x`.
+
+**2. Download the app**
+```bash
+git clone https://github.com/saidheerajg050701/timesheet-app.git ~/Documents/timesheet-app
+cd ~/Documents/timesheet-app
+```
+✅ `Cloning into '…/timesheet-app'… done.` and `ls` shows `manage.py`.
+
+> **Keep it out of iCloud.** If your Mac syncs *Desktop & Documents Folders* to iCloud
+> (System Settings → your name → iCloud → iCloud Drive), turn that off, or clone to
+> `~/Projects/timesheet-app` instead. iCloud can lock or damage the database files.
+
+**3. Check your computer**
+```bash
+bash scripts/doctor.sh
+```
+✅ It ends with `✅ Ready to RUN the app.` (The second line, about *building with Claude Code*,
+only matters if you want to change the app; ⚠️ there is fine.)
+
+**4. Install the app's software**
+```bash
+uv sync
+```
+✅ It ends with `Installed … packages`. uv downloads Python 3.13 by itself if needed (the
+version is in `.python-version`).
+
+**5. Create your private settings file**
+```bash
+cp .env.example .env
+uv run python -c "import secrets; print(secrets.token_urlsafe(50))"
+open -e .env             # opens it in TextEdit; on Linux use any text editor
+```
+In `.env`, **you must change these two lines** (the example values are refused):
+- `DJANGO_SECRET_KEY=` → paste the long random text the second command printed.
+- `DEMO_PASSWORD=` → a password of your own, 12+ characters. All demo logins will use it.
+
+Leave the other lines as they are for now. Save the file, then check:
+```bash
+uv run python manage.py check
+```
+✅ `System check identified no issues (1 silenced).` If it says the secret key is still the
+example, go back to step 5. `.env` is private: it is never uploaded to Git.
+
+**6. Create the two databases**
+```bash
+uv run python manage.py migrate
+uv run python manage.py migrate --database=payroll
+```
+✅ Each one lists `Applying … OK` lines and ends without errors. You now have `db.sqlite3` and
+`payroll.sqlite3` in the folder.
+
+**7. Fill in the demo company**
+```bash
+uv run python manage.py seed_demo
+```
+✅ `Demo company created:` followed by counts (employees, accounts, timesheets, payroll …).
+
+**8. Start the app**
+```bash
+uv run python manage.py runserver
+```
+✅ `Starting development server at http://127.0.0.1:8000/`. Open **http://127.0.0.1:8000** in
+your browser and log in as **`dev2@yourcompany.com`** with your `DEMO_PASSWORD`.
+✅ You see Sara's **Dashboard**. To stop the app, press Control + C in Terminal.
+
+### First look
+Log out (top right) and in again as each of these. They all use your `DEMO_PASSWORD`:
+
+| Log in as | What to look at |
+|---|---|
+| `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row**, click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. |
+| `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. |
+| `payroll@yourcompany.com` (payroll) | **Payroll**: one register per pay period (Open → Ready → Finalize & export → Paid), **Pending approvals** (who still has to approve) and **Corrections**. |
+| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. |
+| `ceo@yourcompany.com` (top manager) | **Team**: the whole company. |
+
+## Updating an existing copy
+When there is a new version:
+```bash
+cd ~/Documents/timesheet-app
+uv run python manage.py backup_db                    # a backup of both databases first
+git pull
+uv sync
+uv run python manage.py migrate
+uv run python manage.py migrate --database=payroll
+```
+Then start the app again (`runserver`) and reload the browser page once with ⌘⇧R (Command +
+Shift + R).
+
+**Only once**, if you used a version from before the pay period registers (Change 8) and had
+already exported payroll, also run this (it is safe to repeat):
+```bash
+uv run python manage.py build_registers              # registers for periods you already exported
 ```
 
-## Demo logins
-After `seed_demo`, these accounts exist; all use the `DEMO_PASSWORD` you put in `.env`.
+## Troubleshooting
+- **"That port is already in use" / port 8000 busy.** Another copy is still running: stop it
+  with Control + C in its Terminal window. Or use another port:
+  `uv run python manage.py runserver 8001` and open http://127.0.0.1:8001.
+- **`seed_demo` says the database already has data.** It never overwrites anything. To start
+  over with a fresh demo, **move** the databases away (never delete them):
+  ```bash
+  mkdir -p backups/old && mv db.sqlite3 payroll.sqlite3 backups/old/
+  uv run python manage.py migrate && uv run python manage.py migrate --database=payroll
+  uv run python manage.py seed_demo
+  ```
+- **"DJANGO_SECRET_KEY is still the example value" or "…is only N characters".** Make a new
+  key with `uv run python -c "import secrets; print(secrets.token_urlsafe(50))"` and paste it
+  into `.env` as `DJANGO_SECRET_KEY`. With `DJANGO_DEBUG=False` the app won't start until you do.
+- **"DEMO_PASSWORD is still the example value".** Put a password of your own (12+ characters)
+  in `.env` as `DEMO_PASSWORD`, then run `seed_demo` again.
+- **"Account locked" after wrong passwords.** Wait 15 minutes, or ask HR to reset the password
+  (Admin → the employee → Reset password).
+- **Forgot the demo password.** It is the `DEMO_PASSWORD` line in your `.env` file.
+- **Payroll says "out of sync".** Run `uv run python manage.py sync_payroll` (safe to repeat).
+- **Browser tests can't find Chromium.** Run `uv run playwright install chromium` once, or use
+  your Google Chrome: `bash scripts/test_all.sh --browser-channel chrome`.
+- **A page looks wrong right after an update.** Reload it once with ⌘⇧R.
 
-| Email | What to try |
-|---|---|
-| `hr@yourcompany.com` | Admin: Django Admin, everyone's team view |
-| `ceo@yourcompany.com` | Admin and top-level manager |
-| `eng.director@yourcompany.com` | Manager of managers (Team shows indirect reports) |
-| `eng.manager@yourcompany.com` | Manager: approvals and change requests |
-| `dev1@yourcompany.com`, `dev2@yourcompany.com` | Employees |
-| `ops.manager@yourcompany.com` | Manager of a second team |
-| `payroll@yourcompany.com` | Payroll only |
-| `finance.manager@yourcompany.com` | Payroll and manager |
+## Demo logins
+After `seed_demo`, these accounts exist. All use the `DEMO_PASSWORD` you put in `.env`.
+
+| Email | Who | What to try |
+|---|---|---|
+| `hr@yourcompany.com` | Lena Ortiz | Admin: Django Admin, everyone's team view, approves the CEO |
+| `ceo@yourcompany.com` | Asha Rao | Admin and top-level manager |
+| `eng.director@yourcompany.com` | Mark Lee | Manager of managers (Team shows indirect reports) |
+| `eng.manager@yourcompany.com` | Priya Shah | Manager: approvals and change requests |
+| `dev1@yourcompany.com`, `dev2@yourcompany.com` | John Kim, Sara Ng | Employees |
+| `ops.manager@yourcompany.com` | Tom Hall | Manager of a second team |
+| `payroll@yourcompany.com` | Nina Patel | Payroll only |
+| `finance.manager@yourcompany.com` | Omar Diaz | Payroll and manager |
 
 `qa1@`, `ops1@` and `ops2@yourcompany.com` have no account yet: use them to try **Sign up**.
 
@@ -69,10 +171,9 @@ The home page shows your own last 4, 12 or 26 weeks: this week's status with a l
 to Saturday 12:00, hours worked per week against expected hours, on-time / late / missed
 weeks, overtime (same rule as payroll), hours by project and by category (Break shown
 separately, unpaid), and the approval outcome of each pay period. Every chart also lists its
-numbers.
+numbers. A week you never submitted counts as missed, even if your manager approved it later.
 
 ## Team
-
 Managers open **Team** (`/team/`) to see the people under them; admins see everyone. Filters: whole tree or direct reports, team, last 4 / 12 / 26 weeks.
 The page shows team hours per week against expected, average utilization (hours worked ÷ (expected − leave), finished weeks), a sortable table per person,
 who hasn't submitted this week, and hours by project. Click a name for a read-only view of that person's dashboard and timesheets.
@@ -86,43 +187,57 @@ uv run python manage.py time_team_page ceo@yourcompany.com --weeks 26 --direct
 
 ## Timesheets
 `/timesheets/` lists your recent weeks. A week is a **grid**: one row per project or category,
-a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours** column and footer. **+ Add row** adds a
-category (and a project for Project work); each project or category has one row, so using
-**+ Add row** again for one that is already there takes you to its row. Click a day to enter
-time: work and Break use one or more time slots with a start and an end (15-minute steps, same
-day, no overlaps) and an optional reason. To work on the same project twice in a day (for example 08:00–13:00
-and 14:00–17:00 around a Break), click the day again: its slots are listed with an empty new one
-ready to fill, or use **+ Add another time slot**; the cell then shows e.g. "8.00 · 2 slots" and
-its tooltip lists the times. Picked the wrong project or category? Each row's **⋮** menu can
-**Change project / category** (all its slots move; dates, times and reasons stay; if the new one
-already has a row they merge) or **Delete row** (after a confirmation showing how many slots and
-hours); both apply to the grid at once and are kept when you save the week. Leave (PTO, Sick, Holiday) uses hours and an optional reason; read-only weeks show a reason only
-when one was entered. Break is unpaid and never counted in Total
-worked hours; leave is shown separately. The day summary below shows first start, last end,
-hours worked, expected hours, Break and Leave. **Save draft** or **Submit** before Saturday
-12:00 company time; after that an unsubmitted week is locked and counted as missed. All rules are
-checked on the server when you save, and problems are shown on the cell they belong to.
+a column per day (a week runs **Sunday to Saturday**) and a **Total worked hours** column and footer.
+- **+ Add row** adds a category (and a project for Project work). Each project or category has
+  one row, so using **+ Add row** again for one that is already there takes you to its row.
+- **Click a day to enter time.** Work and Break use one or more time slots with a start and an
+  end (15-minute steps, same day, no overlaps) and an optional reason. Leave (PTO, Sick, Holiday)
+  uses hours and an optional reason.
+- **Twice in a day:** to work on the same project twice (for example 08:00–13:00 and 14:00–17:00
+  around a Break), click the day again. Its slots are listed with an empty new one ready to
+  fill, or use **+ Add another time slot**. The cell then shows e.g. "8.00 · 2 slots", and its
+  tooltip lists the times.
+- **Picked the wrong project or category?** Each row's **⋮** menu can **Change project /
+  category** (all its slots move; dates, times and reasons stay; if the new one already has a
+  row they merge) or **Delete row** (after a confirmation showing how many slots and hours).
+  Both apply to the grid at once and are kept when you save the week.
+- **Totals:** Break is unpaid and never counted in Total worked hours; leave is shown
+  separately. The day summary below the grid shows first start, last end, hours worked,
+  expected hours, Break and Leave. Read-only weeks show a reason only when one was entered.
+- **Deadline:** **Save draft** or **Submit** before Saturday 12:00 company time. After that an
+  unsubmitted week is locked and counted as missed.
+- All rules are checked on the server when you save, and problems are shown on the cell they
+  belong to.
 
 ## Change requests
 On a submitted, locked or approved week, **Request change** sends a reason to your manager
 (admins handle employees with no manager; nobody handles their own). `/requests/` shows your
-requests. Managers work through **Change requests** (`/approvals/requests/`): **Reject**,
-**Unlock** (the employee can edit until the later of 48 hours from now and the week's Saturday
-12:00) or **Edit directly** (same rules as the timesheet page). Every step is in the audit log;
-changing an approved week puts its pay period back to pending.
+requests. Managers work through **Change requests** (`/approvals/requests/`):
+- **Reject**
+- **Unlock**: the employee can edit until the later of 48 hours from now and the week's
+  Saturday 12:00.
+- **Edit directly**: same rules as the timesheet page.
+
+Every step is in the audit log, and changing an approved week puts its pay period back to
+pending.
 
 ## Approvals
-Managers (and admins, for employees with no manager) open **Approvals** to pick a pay period
-(14 days, two Sunday-to-Saturday weeks counted from `PAY_PERIOD_ANCHOR`, a Sunday; default: the most recent completed one) and review each direct report's two weeks:
-hours worked (Break never counts), leave, and Late / Overtime / Missing days flags. A period
-can be approved or rejected (with a comment) once its weeks are submitted **or locked**. For a
-locked week (the employee never submitted) the manager can **Edit** it in the weekly grid, then
-approve it with the hours entered (after a confirmation) or reject it; it is marked "Not
-submitted by employee" and still counts as missed. A reopened week waits for the employee until
-their window ends. A locked week still has an Unlock button. Clean rows can be bulk approved.
-Nobody approves their own timesheet. Approve each period by **Monday 12:00** after it ends
-(settings `APPROVAL_DEADLINE_DAYS` and `APPROVAL_DEADLINE_TIME`); after that, rows not yet
-approved are marked **Overdue** — payroll can pay the period only once everyone is approved.
+Managers (and admins, for employees with no manager) open **Approvals** to pick a pay period:
+14 days, two Sunday-to-Saturday weeks counted from `PAY_PERIOD_ANCHOR`, a Sunday. The default is
+the most recent completed one. They review each direct report's two weeks: hours worked (Break
+never counts), leave, and Late / Overtime / Missing days flags.
+- A period can be **approved** or **rejected** (with a comment) once its weeks are submitted
+  **or locked**.
+- **Locked weeks** (the employee never submitted): the manager can **Edit** the week in the
+  weekly grid, then approve it with the hours entered (after a confirmation) or reject it.
+  The week is marked "Not submitted by employee" and still counts as missed. A locked week also
+  still has an Unlock button.
+- **Reopened weeks** wait for the employee until their window ends.
+- **Bulk approve:** clean rows can be approved together.
+- Nobody approves their own timesheet.
+- **Deadline:** approve each period by **Monday 12:00** after it ends (settings
+  `APPROVAL_DEADLINE_DAYS` and `APPROVAL_DEADLINE_TIME`). After that, rows not yet approved are
+  marked **Overdue**. Payroll can pay the period only once everyone is approved.
 
 ## Payroll
 Approved weeks are copied into a separate database, `payroll.sqlite3`, right after the
@@ -134,26 +249,22 @@ first, with its **register**: one line per employee with Week 1, Week 2 and Peri
 **carry-forward** columns (highlighted) and the **Pay total**, plus a totals row.
 - **Open**: approvals are still coming in. You see how many are approved and who is still
   pending (no hours yet). **Pending approvals** lists, per manager, who still has to be
-  approved and why (also as CSV); HR finds it in the Admin header too.
+  approved and why (also as CSV). HR finds it in the Admin header too.
 - **Ready**: every person who must be approved is approved (locked weeks included) and no change
   request is open. The deadline alone never makes a period ready.
 - **Finalize & export** saves the register for good as one batch (`EXP-0007`). Download the
   **Register CSV** and the **Detailed CSV** (week and adjustment rows) as often as you like;
   **Download all periods** gives every finalized register in one file. Then **Mark as paid**.
 
-Records are append-only: a changed week is superseded and a new version is written after
+Records are append-only: a changed week is superseded, and a new version is written after
 re-approval. If the week was already in a finalized register, the difference (for example
-+2.00 overtime hours or −1.50 regular hours) becomes a **pay adjustment** in the carry-forward
-columns of the next register that isn't finalized yet; someone approved after their register
-was finalized is carried forward the same way. **Corrections** lists every changed week and the
-register that pays its difference. If the page says payroll is out of sync, run:
++2.00 overtime hours or −1.50 regular hours) becomes a **pay adjustment**. It goes in the
+carry-forward columns of the next register that isn't finalized yet. Someone approved after
+their register was finalized is carried forward the same way. **Corrections** lists every
+changed week and the register that pays its difference. If the page says payroll is out of
+sync, run:
 ```bash
 uv run python manage.py sync_payroll       # safe to repeat; also creates missing adjustments and registers
-```
-After updating to this version, run once (it is safe to repeat):
-```bash
-uv run python manage.py migrate --database=payroll   # the new register tables
-uv run python manage.py build_registers              # registers for periods you already exported
 ```
 
 ## Admin (HR)
@@ -164,6 +275,7 @@ Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every chang
 - **Deactivate / Reactivate:** select employees in the list and choose the action. Deactivate asks for the end date (today by default) and logs the person out; their history stays and their submitted weeks can still be approved and paid.
 - **Reset password:** on an employee's page. HR types a temporary password; the person must choose a new one at their next login. Any login lockout is cleared.
 - **Import CSV / Export CSV:** on the employee list. Export uses the same columns as import, so you can edit the file and import it again; you always see a summary (or the errors with line numbers) before anything changes.
+- **Pending approvals** (in the Admin header): which managers still have people to approve in a pay period. Read only.
 - Timesheets, approvals, change requests, payroll records and the audit log are read-only here.
 
 ## Look and feel
@@ -173,37 +285,20 @@ colour change happens in one place. Fonts are the system fonts (nothing is downl
 period, request and payroll statuses always use the same badge component
 (`templates/includes/status_badge.html`).
 
-To review the pages yourself, take screenshots of the main pages for an employee, a manager,
-payroll and HR at laptop and phone width (uses the test databases only, never your data):
-```bash
-SCREENSHOTS_DIR=~/Desktop/timesheet-screenshots uv run pytest scripts/visual_review --browser-channel chrome
-```
-
 ## Demo data and the employee directory
 ```bash
 uv run python manage.py seed_demo            # demo company: ~50 employees, 12–13 weeks of history
 uv run python manage.py seed_demo --large    # ~500 employees, 52 weeks (performance testing)
 uv run python manage.py import_employees data/your_file.csv   # create/update employees by employee_code
 ```
-`seed_demo` refuses to run when the database already has data. Every demo login uses the
-`DEMO_PASSWORD` from `.env`.
+`seed_demo` refuses to run when the database already has data, and it refuses the example
+`DEMO_PASSWORD`. Every demo login uses the `DEMO_PASSWORD` from `.env`.
 
 To create an admin login for an existing directory admin employee (ACTIVE, `is_admin` on,
 no account yet):
 ```bash
 uv run python manage.py createsuperuser    # asks for the employee code, e.g. EMP-0007
 ```
-
-## Test
-```bash
-uv run pytest -m "not e2e"                 # fast unit + integration tests (~1 minute)
-uv run pytest -m e2e                       # end-to-end tests in a real browser (needs Chromium, see setup)
-bash scripts/test_all.sh                   # everything: ruff, migrations, Django check, coverage ≥ 80 %, e2e
-uv run pytest -m "not e2e" --cov --cov-report=html   # coverage report → open htmlcov/index.html
-```
-Tests use their own temporary databases and a fixed clock; they never touch `db.sqlite3` or
-`payroll.sqlite3`. The end-to-end tests start a test server by themselves. No Chromium yet? Use
-your installed Google Chrome: `bash scripts/test_all.sh --browser-channel chrome`.
 
 ## Backup and restore
 Back up **both** databases at once (safe while the app runs):
@@ -224,16 +319,51 @@ Copy the `backups/` folder somewhere safe (it is not in Git). To restore:
    ```
 
 ## Known limitations (version 1)
-- Runs on one Mac with SQLite over plain HTTP: fine for one person or a trusted office network, not for the internet (no HTTPS; see B.12 D-97).
+- Runs on one computer with SQLite over plain HTTP. That's fine for one person or a trusted office network, but not for the internet (no HTTPS; see B.12 D-97).
 - No notifications or email, so no "forgot password" link: HR sets a temporary password in Admin.
 - No holiday calendar (enter Holiday rows by hand) and no delegated approvals when a manager is away.
 - All deadlines use one company time zone (`COMPANY_TZ`).
 - The payroll CSV is the app's own format, not a payroll provider's.
 - Changing someone's expected weekly hours applies to every week shown afterwards (no history per week).
 
-## Layout
+## For developers / running the tests
+
+**Extra tools.** `bash scripts/doctor.sh` should also say `✅ Ready to BUILD with Claude Code`.
+That needs Claude Code, Antigravity, your Git name and email, and the Xcode Command Line Tools.
+The browser tests need Chromium once:
+```bash
+uv run playwright install chromium
+```
+
+**Tests**
+```bash
+uv run pytest -m "not e2e"                 # fast unit + integration tests (~1 minute)
+uv run pytest -m e2e                       # end-to-end tests in a real browser
+bash scripts/test_all.sh                   # everything: ruff, migrations, Django check, coverage ≥ 80 %, e2e
+bash scripts/test_all.sh --browser-channel chrome   # the same, using your installed Google Chrome
+uv run pytest -m "not e2e" --cov --cov-report=html  # coverage report → open htmlcov/index.html
+```
+Tests use their own temporary databases and a fixed clock; they never touch `db.sqlite3` or
+`payroll.sqlite3`. The end-to-end tests start a test server by themselves.
+
+**Screenshots for a visual review.** This takes the main pages for an employee, a manager,
+payroll and HR at laptop and phone width. It uses the test databases only, never your data:
+```bash
+SCREENSHOTS_DIR=~/Desktop/timesheet-screenshots uv run pytest scripts/visual_review --browser-channel chrome
+```
+
+**Working with Claude Code**
+- The rules live in [CLAUDE.md](CLAUDE.md) and the specification in
+  [docs/BUILD_GUIDE.md](docs/BUILD_GUIDE.md): Part B is the source of truth, and B.12 records
+  every decision (D-numbers). B.11 lists every test (T-numbers).
+- Ask for one change at a time. Claude Code plans first, records new decisions and tests in
+  the guide, and runs `bash scripts/test_all.sh` until it passes.
+- You review what changed and commit it yourself. `.env`, `db.sqlite3` and `payroll.sqlite3`
+  are never committed.
+
+**Layout**
 - `config/`: settings (read from `.env`), URLs
 - `directory/`, `timesheets/`, `audit/`, `payroll/`, `analytics/`: Django apps. Business rules live in each app's `services/` package
 - `payroll/routers.py`: sends the payroll app to `payroll.sqlite3` and keeps every other app out of it
 - `templates/`, `static/vendor/`: Bootstrap 5, HTMX and Chart.js, saved locally (no JS build step)
-- `tests/`: pytest suite (see B.11 in the guide); `scripts/visual_review/`: the screenshot tool
+- `tests/`: pytest suite (see B.11 in the guide); `scripts/visual_review/`: the screenshot tool; `scripts/doctor.sh`: the environment check

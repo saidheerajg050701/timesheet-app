@@ -8,6 +8,8 @@ from django.utils import timezone
 
 from directory.services.demo import DemoDataExists, seed_demo
 
+EXAMPLE_DEMO_PASSWORD = "choose-a-strong-demo-password"  # the value in .env.example (D-146)
+
 
 class Command(BaseCommand):
     help = "Build the demo company (refuses if the database already has data)."
@@ -23,6 +25,11 @@ class Command(BaseCommand):
         password = settings.DEMO_PASSWORD
         if not password:
             raise CommandError("Set DEMO_PASSWORD in .env first.")
+        if password == EXAMPLE_DEMO_PASSWORD:
+            raise CommandError(
+                "DEMO_PASSWORD is still the example value from .env.example — choose your own "
+                "password (12+ characters) in .env."
+            )
         try:
             validate_password(password)
         except ValidationError as exc:  # messages never contain the password itself

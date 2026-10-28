@@ -9,6 +9,7 @@
 
 | Version | Change | Details |
 |---|---|---|
+| 3.3 | **README & first-run checks** | The README starts with a 10-minute Quick start (with the result to expect after each command), then Updating, Troubleshooting and a developers section. `doctor.sh` answers separately "Ready to RUN the app" (Git, uv, Python 3.13, port 8000) and "Ready to BUILD with Claude Code" (warnings only) and works on Linux. The example `DJANGO_SECRET_KEY` (or one under 50 characters) is a system-check warning while developing and an error for daily use; `seed_demo` refuses the example `DEMO_PASSWORD` (D-145–D-147, T-225, T-226) |
 | 3.2 | **Change 9 – Managers decide everyone; payroll waits for everyone** | On Approvals the manager can now **edit, approve or reject** every required person whose weeks are **submitted or locked** (not only submitted): Edit opens the week in the weekly grid (no change request needed); Approve with a locked week asks for a confirmation ("Week 1 was not submitted by …; it will be approved with X.XX hours", with 0.00 / missing-day warnings). Such weeks are marked **"Not submitted by employee"** and still count as missed. A reopened week waits for the employee until its window ends. A register is **READY only when everyone is approved** — the deadline is just a reminder (Overdue); no more 0.00 lines; while OPEN payroll sees only progress and who is pending. New **Pending approvals by manager** page (+ CSV) for payroll and HR. No migration (D-139–D-144, T-217–T-224) |
 | 3.1 | **Change 8 – Pay Period Register** | Each ended pay period has a **register**: one line per employee with Week 1, Week 2 and Period hours (regular, overtime, PTO, sick, holiday), highlighted **carry-forward** columns (corrections to already-paid weeks and weeks approved after their register was finalized, with the original weeks) and **Pay total**, plus a totals row. It is a live preview while **OPEN**, **READY** once everyone is approved or the managers' **approval deadline** (new setting, Monday 12:00 after the period) has passed, then **Finalize & export** saves it for good as one batch and **Mark as paid** closes it. People not approved by then get a 0.00 line. Register CSV, detailed CSV and "Download all periods"; the old any-time Export button is gone. New payroll tables (migration `payroll/0003`), `build_registers` for earlier exports; the Approvals page shows the deadline and "Overdue" (D-132–D-138, T-203–T-216) |
 | 3.0 | **Change 7 – Edit or delete a whole row** | Each row of an editable grid (the employee's own open week, the manager's Edit directly) has a "⋮" menu: **Change project / category** moves every slot of the row to another project or category (dates, times and reasons kept; into a row that already exists they merge; work ↔ Break allowed with a warning, leave only to another leave type) and **Delete row** removes the row's slots for this week after a confirmation that says how many slots and hours. The server re-draws the grid as typed; nothing is saved until the week is saved, so every rule, the audit row and pay adjustments work as before. No schema change. *Fix before release:* the menu opens from the start of ⋮, on top of the table, and `/static/` files are revalidated on every page load so a browser never runs a new page with cached old CSS/JS (D-129–D-131, T-191–T-202) |
@@ -53,7 +54,8 @@
 | Change 6 | Optional reason on time entries (post-release) | `23439ce` (with Change 7) | Done |
 | Change 7 | Edit or delete a whole row in the weekly grid (post-release) | `23439ce` | Done |
 | Change 8 | Pay Period Register (post-release) | `85f22e2` | Done |
-| Change 9 | Managers decide everyone each period; registers wait for everyone (post-release) | (commit pending) | Done — ready to commit; no migration |
+| Change 9 | Managers decide everyone each period; registers wait for everyone (post-release) | `0f34b45` | Done |
+| README & first-run checks | Quick start README, doctor.sh run/build split, example secret key and demo password refused (post-release) | (commit pending) | Done — ready to commit |
 
 ---
 
@@ -101,7 +103,7 @@ For each tool, run the **Check** command and compare with **"Installed if…"**.
 | 1 | Xcode Command Line Tools | `xcode-select -p` | It prints a path | `xcode-select --install` (click **Install** in the pop-up, wait to finish) |
 | 2 | Homebrew | `brew --version` | It prints `Homebrew 4.x` | See below |
 | 3a | uv | `uv --version` | It prints `uv 0.x` | `brew install uv` |
-| 3b | Python 3.12+ | `uv python find '>=3.12'` | It prints a path to a Python file | `uv python install 3.13` |
+| 3b | Python 3.13 | `uv python find 3.13` | It prints a path to a Python file | `uv python install 3.13` (`uv sync` also installs it, from `.python-version`) |
 | 4 | Git | `git --version` | It prints a version | Comes with step 1 |
 | 5 | SQLite CLI (optional) | `sqlite3 --version` | It prints a version | `brew install sqlite` |
 | 6 | Antigravity | `ls -d /Applications/Antigravity.app` | It prints `/Applications/Antigravity.app` | Download from **antigravity.google/download** (Apple Silicon), or `brew install --cask antigravity` |
@@ -155,9 +157,11 @@ The separate file **doctor.sh** runs every check above at once. Save it to Downl
 ```bash
 bash ~/Downloads/doctor.sh
 ```
-It must end with **"🎉 Ready to build."** (⚠️ = review; ❌ = must fix). Run it before starting and again after installing anything. Phase 0 copies it into the project as `scripts/doctor.sh`.
+It gives two answers (D-147). ⚠️ = review; ❌ = must fix.
+- **"✅ Ready to RUN the app."** This needs only Git, uv, Python 3.13 (via uv) and a free port 8000. Anything missing here is ❌, and the script exits with an error.
+- **"✅ Ready to BUILD with Claude Code."** This needs Claude Code (with `ANTHROPIC_API_KEY` **not** set), your Git name and email, a home folder that isn't a Git repository, and on a Mac the Xcode Command Line Tools, Homebrew and Antigravity. These are only needed to change the app, so missing ones are ⚠️ warnings, never failures.
 
-What it checks: macOS 13+, Apple Silicon, RAM, disk space, Xcode tools, Homebrew, Git, home-folder repository, Git identity, uv, Python 3.12+, SQLite, Claude Code, that `ANTHROPIC_API_KEY` is **not** set, Antigravity, and that port 8000 is free.
+It also shows information about the computer: macOS version, chip, RAM and free disk; the SQLite CLI is optional. On Linux the macOS-only checks are skipped. Run it before starting and again after installing anything. Phase 0 copies it into the project as `scripts/doctor.sh`.
 
 ---
 
@@ -205,7 +209,7 @@ DEMO_PASSWORD=choose-a-strong-demo-password
 
 | Layer | Choice | What it does for us |
 |---|---|---|
-| Language | **Python 3.13** (3.12+ OK), managed by **uv** | One language for the whole app |
+| Language | **Python 3.13** (pinned in `.python-version` and `pyproject.toml`), managed by **uv** | One language for the whole app |
 | Framework | **Django 5.2 LTS** | Pages, URLs, forms, server logic; long-term support |
 | Databases | **Two SQLite files:** `db.sqlite3` (main app) and `payroll.sqlite3` (payroll) | No server to install; each backed up by copying one file |
 | Database tools | **Django ORM + migrations** + a **database router** | Tables defined in Python; the router sends payroll tables to the payroll database |
@@ -697,6 +701,7 @@ tests/
     test_accounts.py       # UserManager, createsuperuser, directory → account sync (D-02, D-13, D-20)
     test_audit.py          # exactly one of actor / system_actor (D-14)
     test_validation.py
+    test_first_run_checks.py # example secret key and demo password refused, doctor.sh parses (T-225, T-226)
     test_payroll_split.py
     test_metrics.py        # dashboard helpers (range, rate, totals)
     test_team_metrics.py   # team helpers (utilization, sorting, one-query tree)
@@ -960,10 +965,12 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 | T-222 | Payroll | The register waits for everyone | After the deadline with 9 of 10 approved: OPEN (Overdue), the page shows the pending list (Sara Ng) and no register, week records or downloads; Finalize refused; after the last approval (Sara, locked, 0.00) READY and finalized with only APPROVED lines; a register saved under Change 8 with a "Missed – not submitted" line is unchanged (D-142) |
 | T-223 | Payroll | Pending approvals by manager | Default period Sep 27 – Oct 10; "Managers done 2 of 6", "people approved 5 of 10"; Priya Shah 2 of 2 (John Submitted, Sara Locked – not submitted, both Overdue), Omar Diaz (Reopened until …), Fay Moss (Change request open), HR / admins (Asha Rao); CSV `payroll-pending_2026-09-27_to_2026-10-10.csv`; links from Payroll and the Admin header; payroll and HR 200, others 403; nothing Overdue before Monday 12:00 (D-143) |
 | T-224 | E2E | Manager edits and approves a locked employee | Payroll sees Open with Sara "Locked – not submitted"; her manager opens Edit week 1, adds PRJ-001 Monday 09:00–17:00, saves, approves through the dialog ("…approved with 8.00 hours", "Week 2 has 0.00 hours.") — the last approval; payroll reloads: Ready → Finalize & export (EXP-0001), Sara's line pays 8.00 (D-139–D-142) |
+| T-225 | Setup | The secret key isn't the example | `DJANGO_SECRET_KEY` equal to the `.env.example` value → warning `directory.W001` with DEBUG on and error `directory.E001` with DEBUG off ("…is still the example value from .env.example.", hint "Generate a secret key: …"); a 49-character key → "…is only 49 characters (use 50 or more)."; the key is never in the message; a 50-character random key → nothing; the example value matches `.env.example` (D-145) |
+| T-226 | Setup | seed_demo refuses the example demo password | `DEMO_PASSWORD` equal to the `.env.example` value → "DEMO_PASSWORD is still the example value from .env.example — choose your own password (12+ characters) in .env.", nothing written; the example value matches `.env.example` (D-146) |
 
 ### Status of every test (Phase 12, updated for Changes 1–9)
 
-Result of `bash scripts/test_all.sh` on October 26, 2026 (after Change 9) (fixed clocks, test databases only): **302 test cases, all passed** (284 unit + integration, 18 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216 and Change 9 T-217–T-224, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.19 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `bash scripts/test_all.sh` on October 28, 2026 (after the first-run checks) (fixed clocks, test databases only): **305 test cases, all passed** (287 unit + integration, 18 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216, Change 9 T-217–T-224 and the first-run checks T-225–T-226, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.20 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
@@ -1191,6 +1198,8 @@ Result of `bash scripts/test_all.sh` on October 26, 2026 (after Change 9) (fixed
 | T-222 | Payroll | `integration/test_manager_decisions.py::test_register_waits_for_everyone` | ✅ Pass |
 | T-223 | Payroll | `integration/test_manager_decisions.py::test_pending_by_manager` | ✅ Pass |
 | T-224 | E2E | `e2e/test_e2e_flows.py::test_manager_edits_and_approves_a_locked_employee` | ✅ Pass |
+| T-225 | Setup | `unit/test_first_run_checks.py::test_secret_key_must_not_be_the_example` | ✅ Pass |
+| T-226 | Setup | `unit/test_first_run_checks.py::test_seed_refuses_the_example_demo_password` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
@@ -1442,6 +1451,9 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-142 | Payroll | **The register waits for everyone** (supersedes the deadline part of D-133 and the 0.00 lines of D-134). READY only when the period has ended, **every person who must be approved is APPROVED**, no change request is open on its weeks, and every approved week has its payroll record. The approval deadline is only the "Approve by …" reminder and the Overdue badge. Finalize & export is refused on the server until READY, so there are no 0.00 lines; "Missed – not submitted" / "Waiting for manager approval" remain only on registers saved before. While OPEN the period page shows only progress, the deadline and who is pending — no register table, week records, Finalize or downloads (week records still show for periods exported before registers). Carry-forward is unchanged: corrections after finalizing (D-136) and anything that becomes approvable afterwards (e.g. a new hire back-dated into the period). Before finalizing, a re-approved week simply replaces the old one in the register. Saved registers never change; `build_registers` / `sync_payroll` still only build registers for earlier exports. | B.4 FR-11 |
 | D-143 | Payroll | **Pending approvals by manager** (`/payroll/pending/`, payroll staff and admins; read only — nobody approves there): for a period (default the most recent ended one) one row per approver who still has people to approve — manager and team ("HR / admins" for no-manager staff), pending x of y, each person with their state (Submitted, Locked – not submitted, Reopened until …, Change request open, Not submitted yet) and Overdue after the deadline; totals managers done x of y and people approved x of y; CSV `payroll-pending_<start>_to_<end>.csv` (formula-safe). Linked from the Payroll list ("Who's pending" on OPEN periods), the register page and the Admin header. Built from `company_period_rows` + `decision_blockers` (one rule). | B.4 FR-11, D-12 |
 | D-144 | Data | **Seed (Change 9):** after the history is built, each manager also approves the people older periods left pending — locked weeks with what was entered, and weeks with no timesheet (sign-up candidates) at 0.00 — through `approve_period`, so every older period is fully approved and its register can be finalized; those weeks keep no submission time (still missed). The most recent completed period stays pending (B.7). Updates D-137. | B.7 |
+| D-145 | Setup | **The secret key can't stay the example.** A system check (`directory/checks.py`, run before runserver, migrate, seed_demo and every command) flags a `SECRET_KEY` equal to the `.env.example` value or shorter than 50 characters (Django's own deploy-check length): a **warning** (`directory.W001`) while `DEBUG` is on, an **error** (`directory.E001`) with `DEBUG` off, which stops the app. The message says which problem it is and how to generate a key; it never shows the key. | B.10, D-96 |
+| D-146 | Setup | **`seed_demo` refuses the example `DEMO_PASSWORD`** (`choose-a-strong-demo-password` from `.env.example`) with a clear message, before anything is written — in addition to the empty and weak-password checks. | B.7 |
+| D-147 | Setup | **`doctor.sh` gives two answers.** "Ready to RUN the app" needs Git, uv, Python 3.13 via uv (as `.python-version` / `pyproject.toml`) and a free port 8000: missing ones are ❌ and the script exits with an error. "Ready to BUILD with Claude Code" (Claude Code, no `ANTHROPIC_API_KEY`, Git identity, home folder not a repository; on macOS Xcode tools, Homebrew, Antigravity) only gives ⚠️ warnings. Computer information (macOS version, chip, RAM, disk) is a warning only; macOS-only checks are skipped on Linux. | A.3, A.4 |
 
 ---
 
@@ -1544,7 +1556,7 @@ git commit -m "Initial docs"
 Read CLAUDE.md and docs/BUILD_GUIDE.md Part A. Make scripts/doctor.sh executable, run it, and explain
 any ❌ or ⚠️ items and how to fix them. Do not create the Django project yet.
 ```
-✅ Verify: ends with "🎉 Ready to build."
+✅ Verify: ends with "✅ Ready to RUN the app." and "✅ Ready to BUILD with Claude Code."
 
 ### Phase 1 — Project scaffold + test setup
 ```
@@ -1834,7 +1846,7 @@ To let others on a trusted office network use it: add your Mac's IP to `ALLOWED_
 
 ## Quick start summary
 
-1. **Part A:** run `doctor.sh` until it says "🎉 Ready to build."
+1. **Part A:** run `doctor.sh` until it says "✅ Ready to RUN the app." and "✅ Ready to BUILD with Claude Code."
 2. **Part B:** review B.1 — especially the overtime rule (row 16).
 3. **Part C:** create `~/Documents/timesheet-app`, add `docs/BUILD_GUIDE.md`, `scripts/doctor.sh` and `CLAUDE.md`, open it in Antigravity, then run Phases 0 → 12 — test with `scripts/test_all.sh` and commit after each.
 4. **Part D:** walk through the acceptance checklist with the demo logins, and back up both databases regularly.
