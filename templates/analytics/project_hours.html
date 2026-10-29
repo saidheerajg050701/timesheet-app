@@ -41,6 +41,8 @@
       </select>
     </div>
     {% if not report.own %}
+      {# Only the choices that change the result are offered (D-165). #}
+      {% if f.scopes %}
       <div class="col-sm-6 col-lg-3">
         <label for="id_scope" class="form-label small">People</label>
         <select name="scope" id="id_scope" class="form-select form-select-sm" data-role="scope">
@@ -53,12 +55,16 @@
           {% for m in report.manager_choices %}<option value="{{ m.employee_code }}"{% if m == f.manager %} selected{% endif %}>{{ m.first_name }} {{ m.last_name }}{% if m == report.viewer %} (you){% endif %}</option>{% endfor %}
         </select>
       </div>
+      {% endif %}
+      {% if f.groups|length > 1 %}
       <div class="col-sm-6 col-lg-2">
         <label for="id_group" class="form-label small">Group by</label>
         <select name="group" id="id_group" class="form-select form-select-sm">
-          {% for value, label in groups.items %}<option value="{{ value }}"{% if value == f.group %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          {% for value, label in groups.items %}{% if value in f.groups %}<option value="{{ value }}"{% if value == f.group %} selected{% endif %}>{{ label }}</option>{% endif %}{% endfor %}
         </select>
       </div>
+      {% elif f.group %}<input type="hidden" name="group" value="{{ f.group }}">
+      {% endif %}
       <div class="col-sm-6 col-lg-3">
         <input type="hidden" name="empty" value="0">
         <div class="form-check mb-1">
@@ -170,7 +176,7 @@
       <tfoot><tr><th scope="row">Total</th><td class="text-end">{{ report.people|length }}</td><td class="text-end fw-semibold">{{ report.project_total|hours2 }}</td><td class="text-end fw-semibold">{{ report.total|hours2 }}</td><td colspan="2"></td></tr></tfoot>
     </table></div>
   </div></div>
-  {% else %}
+  {% elif f.group == "team" %}
   <div class="card shadow-sm mb-4" id="by-team"><div class="card-body">
     <h2 class="h6 text-body-secondary">By team</h2>
     <div class="table-responsive"><table class="table table-sm small mb-0" id="by-team-table">

@@ -81,9 +81,11 @@ class Filters:
     projects: list  # Project objects; empty = all projects
     scope: str = "tree"
     manager: Employee | None = None  # scope "manager"
-    group: str = "team"
+    group: str = "team"  # "" when no grouping would change anything (D-165)
     show_empty: bool = True
     messages: list = field(default_factory=list)
+    scopes: list = field(default_factory=list)  # People choices that change the result
+    groups: list = field(default_factory=list)  # Group by choices that change the result
 
     @property
     def starts(self):
@@ -107,9 +109,12 @@ class Filters:
             params.update({"from": self.start.isoformat(), "to": self.end.isoformat()})
         params["project"] = [p.code for p in self.projects]
         if managing:
-            params.update({"scope": self.scope, "group": self.group})
+            if self.scopes:
+                params["scope"] = self.scope
             if self.manager is not None:
                 params["manager"] = self.manager.employee_code
+            if self.group:
+                params["group"] = self.group
             if not self.show_empty:
                 params["empty"] = "0"
         return params
@@ -121,11 +126,13 @@ class Filters:
             ("Projects", ", ".join(f"{p.code} {p.name}" for p in self.projects) or "All projects"),
             ("Hours", HOURS[self.hours][0]),
         ]
-        if managing:
+        if managing and self.scopes:
             scope = SCOPES[self.scope]
             if self.manager is not None:
                 scope = f"{scope}: {self.manager.first_name} {self.manager.last_name}"
-            rows += [("Scope", scope), ("Group by", GROUPS[self.group])]
+            rows.append(("Scope", scope))
+        if managing and self.group:
+            rows.append(("Group by", GROUPS[self.group]))
         return rows
 
 
@@ -151,7 +158,7 @@ def period_range(period, now, start=None, end=None):
     return first, period_end_for(first)
 
 
-def read_filters(params, viewer, now, managing):
+def read_filters(params, viewer, now, managing, scopes=()):
     """The filters from the URL. Bad values fall back to the defaults with a message; for
     someone who manages nobody, any scope, group or manager parameter is refused (403)."""
     if not managing and any(params.get(name) for name in ("scope", "group", "manager")):
@@ -185,7 +192,10 @@ def read_filters(params, viewer, now, managing):
         messages=notes,
     )
     if managing:
-        filters.scope = params.get("scope") if params.get("scope") in SCOPES else "tree"
+        # A People choice that wouldn't change anything is not offered; asked for anyway, it
+        # quietly falls back to the whole tree (D-165) — never more than the viewer may see.
+        filters.scopes = list(scopes)
+        filters.scope = params.get("scope") if params.get("scope") in scopes else "tree"
         filters.group = params.get("group") if params.get("group") in GROUPS else "team"
         filters.show_empty = params.get("empty") != "0"
         if filters.scope == "manager":
@@ -197,6 +207,21 @@ def read_filters(params, viewer, now, managing):
 
 
 # --- who is in the report (D-160) ------------------------------------------------------------
+
+
+def scope_options(viewer, managers):
+    """The People choices that change the result (D-165): whole tree / direct reports / one
+    manager's group only when someone under the viewer manages people of their own (always
+    for an admin with managers); otherwise none — the whole tree is the only answer."""
+    leads = {m for m in managers.values() if m is not None}
+    under = set(managers) if viewer.is_admin else reporting_tree_ids(viewer, managers)
+    return list(SCOPES) if (under - {viewer.pk}) & leads else []
+
+
+def group_options(by_team, by_manager):
+    """The Group by choices that change the result (D-165): Team when the people are in more
+    than one team, Manager when By manager would have more than one row."""
+    return [g for g, rows in (("team", by_team), ("manager", by_manager)) if len(rows) > 1]
 
 
 def manages_anyone(viewer, managers):
@@ -387,7 +412,8 @@ def project_report(viewer, params, now):
     """The report for `viewer` from URL parameters (D-160–D-164)."""
     managers = manager_map()
     managing = manages_anyone(viewer, managers)
-    filters = read_filters(params, viewer, now, managing)
+    scopes = scope_options(viewer, managers) if managing else []
+    filters = read_filters(params, viewer, now, managing, scopes)
     ids = report_people(viewer, filters, managers)
     candidates = list(
         Employee.objects.filter(pk__in=ids)
@@ -427,6 +453,9 @@ def project_report(viewer, params, now):
     )
     if managing:
         report.manager_choices = manager_choices(viewer, managers)
+        filters.groups = group_options(report.by_team, report.by_manager)
+        if filters.group not in filters.groups:  # not offered: the one that applies, or none
+            filters.group = filters.groups[0] if filters.groups else ""
     return report
 
 

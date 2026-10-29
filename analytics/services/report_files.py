@@ -53,6 +53,13 @@ MANAGING_TABS = (
 OWN_TABS = ("Summary", "By project", "By task", "Project × task", "By week", "Detail")
 
 
+def managing_tabs(report):
+    """A manager's tabs: By team / By manager only where they change something, as on the
+    page (D-165) — never a one-row repeat."""
+    skip = {"By team": "team", "By manager": "manager"}
+    return [t for t in MANAGING_TABS if t not in skip or skip[t] in report.filters.groups]
+
+
 def _task_name(row):
     if row.task is not None:
         return row.task.name
@@ -285,7 +292,7 @@ def _detail(report):
 def workbook(report):
     """The .xlsx bytes: the tabs that fit the viewer's report (D-163)."""
     book = Workbook(write_only=True)
-    tabs = OWN_TABS if report.own else MANAGING_TABS
+    tabs = OWN_TABS if report.own else managing_tabs(report)
     for title in tabs:
         if title == "Summary":
             _sheet(book, title, *_summary(report), ("Value",))

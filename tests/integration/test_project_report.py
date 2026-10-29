@@ -164,8 +164,10 @@ def test_who_managers_directors_and_admins_see(org, booked, login_as, fixed_now)
     ):
         for name in (PAGE, "project_hours_xlsx", "project_hours_csv"):
             assert client.get(reverse(name), params).status_code == 403, (name, params)
-    up = {"scope": "manager", "manager": "DIRECTOR"}
-    assert login_as(org.manager).get(reverse(PAGE), up).status_code == 403
+    up = {"scope": "manager", "manager": "DIRECTOR"}  # Priya is offered no People choice:
+    fallback = login_as(org.manager).get(reverse(PAGE), up)  # … her whole tree (D-165)
+    assert fallback.status_code == 200
+    assert set(codes(fallback.context["report"])) == {"MANAGER", "DEV1", "DEV2", "OLD"}
     assert (
         login_as(org.hr).get(reverse(PAGE), {"scope": "manager", "manager": "OPSMGR"}).status_code
         == 200
@@ -404,3 +406,95 @@ def test_query_count_is_fixed(project, fixed_now):
     out = StringIO()
     call_command("time_project_report", ceo.account.email, "--runs", "1", stdout=out)
     assert ", 0 writes" in out.getvalue() and f"{total} people" in out.getvalue()
+
+
+def tabs(client, **params):
+    return load_workbook(
+        io.BytesIO(client.get(reverse("project_hours_xlsx"), params).content)
+    ).sheetnames
+
+
+SIMPLE_TABS = ["Summary", "By project", "By employee", "By task", "Project × task", "Detail"]
+
+
+def test_a_manager_without_sub_managers_sees_no_extra_controls(org, project, login_as, fixed_now):
+    """T-254: Priya manages nobody who manages, and her people are all in one team: no People
+    and no Group by controls, no By team or By manager table or tab (D-165)."""
+    entry(sheet(org.dev1), MON, project=project)
+    client = login_as(org.manager)
+    response = client.get(reverse(PAGE))
+    report, html = response.context["report"], response.content.decode()
+    assert (report.filters.scopes, report.filters.groups, report.filters.group) == ([], [], "")
+    assert (
+        'name="scope"' not in html and 'name="group"' not in html and 'name="manager"' not in html
+    )
+    assert 'id="by-manager"' not in html and 'id="by-team"' not in html
+    assert 'id="by-employee"' in html and "Show people with no hours" in html
+    assert [label for label, _ in response.context["described"]] == ["Period", "Projects", "Hours"]
+    assert set(codes(report)) == {"MANAGER", "DEV1", "DEV2"}
+    assert tabs(client) == SIMPLE_TABS
+
+
+def test_two_teams_show_the_team_table(org, project, login_as, fixed_now):
+    """T-255: with someone in another team under Priya, Team is the only grouping that
+    changes anything: no Group by control, the By team table and tab, no By manager (D-165)."""
+    other = EmployeeFactory(employee_code="NEW", last_name="Newer", manager=org.manager)
+    entry(sheet(other), MON, project=project)
+    client = login_as(org.manager)
+    response = client.get(reverse(PAGE))
+    report, html = response.context["report"], response.content.decode()
+    assert (report.filters.groups, report.filters.group) == (["team"], "team")
+    assert 'id="id_group"' not in html and 'name="group" value="team"' in html  # kept in links
+    assert 'id="by-team"' in html and 'id="by-manager"' not in html
+    other_team = f"{other.team.name} ({other.team.department})"
+    assert sorted(g.label for g in report.by_team) == sorted([other_team, "Platform (Technology)"])
+    assert tabs(client) == ["Summary", "By project", "By team", *SIMPLE_TABS[2:]]
+
+
+def test_directors_and_admins_keep_every_option(org, booked, login_as, fixed_now):
+    """T-256: Mark (a director) and HR see every People and Group by choice, both group tables
+    in turn and every Excel tab, as before (D-165)."""
+    for person in (org.director, org.hr):
+        client = login_as(person)
+        report = client.get(reverse(PAGE)).context["report"]
+        assert report.filters.scopes == ["tree", "direct", "manager"]
+        assert report.filters.groups == ["team", "manager"] and report.filters.group == "team"
+        html = client.get(reverse(PAGE), {"group": "manager"}).content.decode()
+        assert 'id="id_scope"' in html and 'id="id_group"' in html and 'id="by-manager"' in html
+        assert html.count('<option value="manager"') == 2  # People and Group by
+        assert tabs(client) == list(MANAGING_TABS)
+
+
+def test_hidden_options_fall_back_safely(org, booked, project, login_as, fixed_now):
+    """T-257: an address with an option that isn't offered still works: the default instead,
+    no error and nobody extra — page and downloads alike; a director inside a manager's group
+    sees only the groupings that change something there (D-165)."""
+    client = login_as(org.manager)
+    plain = client.get(reverse(PAGE)).context["report"]
+    for params in (
+        {"scope": "direct"},
+        {"scope": "manager", "manager": "OPS1"},  # outside her tree: not an error, not shown
+        {"scope": "manager", "manager": "NOBODY"},
+        {"group": "manager"},
+    ):
+        response = client.get(reverse(PAGE), params)
+        report = response.context["report"]
+        assert response.status_code == 200, params
+        assert codes(report) == codes(plain) and report.total == plain.total, params
+        assert report.filters.scope == "tree" and report.filters.manager is None, params
+        assert report.filters.group == plain.filters.group, params
+        for name in ("project_hours_xlsx", "project_hours_csv"):
+            assert client.get(reverse(name), params).status_code == 200, (name, params)
+        assert tabs(client, **params) == tabs(client)
+    assert (
+        "OPS1"
+        not in client.get(
+            reverse("project_hours_csv"), {"scope": "manager", "manager": "OPS1"}
+        ).content.decode()
+    )
+    drilled = login_as(org.director).get(
+        reverse(PAGE), {"scope": "manager", "manager": "MANAGER", "group": "manager"}
+    )
+    report = drilled.context["report"]
+    assert report.filters.groups == ["team"]  # OLD is in another team; By manager: one row
+    assert 'id="by-manager"' not in drilled.content.decode() and report.filters.group == "team"

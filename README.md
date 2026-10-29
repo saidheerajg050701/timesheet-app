@@ -208,12 +208,18 @@ Everyone has **Reports** in the menu (`/reports/project-hours/`).
 - **Who sees what:** employees (payroll staff too) see only their own hours. Managers see
   themselves and everyone below them; directors therefore see all their managers' groups;
   HR admins see everyone. Asking for anyone else's hours gives "Not allowed" (403).
+- **Only the choices that change something are shown.** **People** (whole tree, direct
+  reports, one manager's group) appears only when someone under you manages people too.
+  **Group by** appears only when both Team (your people are in more than one team) and
+  Manager (there is more than one manager group) would make a difference; otherwise the one
+  that applies is used, and with neither there is no group table. The Excel leaves out the
+  same tabs. A shared link with an option you don't have simply shows your default report.
 - **Filters** (they stay in the address, so you can share the link): **Period** (this or last
   pay period, last 4 or 12 weeks, or your own dates — always whole Sunday–Saturday weeks, at
   most 53), **Projects** (type an I-code or name and pick one or more; none = all projects),
-  **Hours** (Approved, Approved + Submitted, or Everything entered). Managers also choose
-  **People** (whole tree, direct reports only, or one manager's group), **Group by** (team or
-  manager) and **Show people with no hours**.
+  **Hours** (Approved, Approved + Submitted, or Everything entered). Managers also have
+  **Show people with no hours**, and, where they change something, **People** (whole tree,
+  direct reports only, or one manager's group) and **Group by** (team or manager).
 - **What it shows:** project hours, non-project time (Meetings, Training, Other — never
   filtered by project) and total time; by project (with a chart), by task (including "Task
   not recorded"), project × task and by week. Managers also get by team or **by manager**
