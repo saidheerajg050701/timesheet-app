@@ -2,5 +2,7 @@
 {% block object-tools-items %}
   <li><a href="{% url 'admin:directory_employee_import' %}" id="import-csv">Import CSV</a></li>
   <li><a href="{{ export_url }}" id="export-csv">Export CSV</a></li>
+  <li><a href="{% url 'admin:directory_employee_pay_import' %}" id="pay-import-csv">Import pay CSV</a></li>
+  <li><a href="{% url 'admin:directory_employee_pay_export' %}" id="pay-export-csv">Export pay CSV</a></li>
   {{ block.super }}
 {% endblock %}

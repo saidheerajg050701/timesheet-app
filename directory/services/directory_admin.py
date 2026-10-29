@@ -7,6 +7,8 @@ admin in the same transaction. Admin classes only call them.
 
 import csv
 import io
+from datetime import date
+from decimal import Decimal
 
 from axes.utils import reset as reset_lockout
 from django.contrib.auth.password_validation import validate_password
@@ -237,12 +239,21 @@ def reset_password(actor, employee, password):
 # --- teams and projects -------------------------------------------------------------------
 
 
+def _plain(value):
+    """Audit rows are JSON: amounts and dates are kept as exact text (D-168)."""
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    return value
+
+
 def _save_simple(actor, obj, entity_type, key, fields):
     with transaction.atomic():
         old = type(obj).objects.filter(pk=obj.pk).first() if obj.pk else None
-        before = {f: getattr(old, f) for f in fields} if old else None
+        before = {f: _plain(getattr(old, f)) for f in fields} if old else None
         obj.save()
-        after = {f: getattr(obj, f) for f in fields}
+        after = {f: _plain(getattr(obj, f)) for f in fields}
         if before is None:
             record(AuditLog.Action.CREATE, entity_type, key(obj), actor=actor, after=after)
             return obj
@@ -270,9 +281,8 @@ def save_project(actor, project):
     with transaction.atomic():
         if project.pk is None:
             assign_code(project)
-        return _save_simple(
-            actor, project, "Project", lambda p: p.code, ("code", "name", "active")
-        )
+        fields = ("code", "name", "active", "budget", "costs_from")  # budget: D-168
+        return _save_simple(actor, project, "Project", lambda p: p.code, fields)
 
 
 # --- CSV export ---------------------------------------------------------------------------

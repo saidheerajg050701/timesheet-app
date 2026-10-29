@@ -8,6 +8,7 @@ audit row with the filters and the row count, never the data.
 
 import csv
 import io
+from decimal import Decimal
 
 from django.utils import timezone
 from openpyxl import Workbook
@@ -40,6 +41,7 @@ DETAIL_COLUMNS = (  # (heading, value, numeric) — one row per counted entry, n
     ("hours", lambda r: hours(r.minutes), True),
     ("week_status", lambda r: r.status, False),
 )
+MONEY_FORMAT = '"$"#,##0.00'
 MANAGING_TABS = (
     "Summary",
     "By project",
@@ -108,34 +110,38 @@ def _cell(value):
     return safe_cell(value) if isinstance(value, str) else value
 
 
-def _sheet(book, title, header, rows, hour_columns=()):
+def sheet(book, title, header, rows, hour_columns=()):
     """A tab: bold frozen header, hours as 0.00 numbers, columns sized to their content.
     Written row by row (write-only workbook), so a year of detail stays quick (D-164)."""
-    sheet = book.create_sheet(title)
-    sheet.freeze_panes = "A2"
+    tab = book.create_sheet(title)
+    tab.freeze_panes = "A2"
     for index, heading in enumerate(header, start=1):  # widths go before the first row
         values = [heading, *(row[index - 1] for row in rows[:2000])]  # enough to size it
-        width = max(len(f"{v:.2f}" if isinstance(v, float) else str(v)) for v in values)
-        sheet.column_dimensions[get_column_letter(index)].width = min(max(width + 2, 8), 60)
+        width = max(len(f"${v:,.2f}" if isinstance(v, float | Decimal) else str(v)) for v in values)
+        tab.column_dimensions[get_column_letter(index)].width = min(max(width + 2, 8), 60)
     bold = Font(bold=True)
     head = []
     for heading in header:
-        cell = WriteOnlyCell(sheet, value=heading)
+        cell = WriteOnlyCell(tab, value=heading)
         cell.font = bold
         head.append(cell)
-    sheet.append(head)
+    tab.append(head)
     hourly = {i for i, heading in enumerate(header) if heading in hour_columns}
     for row in rows:
         cells = []
         for i, value in enumerate(row):
             if i in hourly and isinstance(value, float):  # hours; counts stay whole
-                cell = WriteOnlyCell(sheet, value=value)
+                cell = WriteOnlyCell(tab, value=value)
                 cell.number_format = "0.00"
+                cells.append(cell)
+            elif isinstance(value, Decimal):  # money: exact cents, shown as USD (D-171)
+                cell = WriteOnlyCell(tab, value=value)
+                cell.number_format = MONEY_FORMAT
                 cells.append(cell)
             else:
                 cells.append(_cell(value))
-        sheet.append(cells)
-    return sheet
+        tab.append(cells)
+    return tab
 
 
 def _summary(report):
@@ -295,23 +301,23 @@ def workbook(report):
     tabs = OWN_TABS if report.own else managing_tabs(report)
     for title in tabs:
         if title == "Summary":
-            _sheet(book, title, *_summary(report), ("Value",))
+            sheet(book, title, *_summary(report), ("Value",))
         elif title == "By project":
-            _sheet(book, title, *_by_project(report), HOUR_HEADINGS)
+            sheet(book, title, *_by_project(report), HOUR_HEADINGS)
         elif title == "By team":
-            _sheet(book, title, GROUP_HEADER, _groups(report.by_team), HOUR_HEADINGS)
+            sheet(book, title, GROUP_HEADER, _groups(report.by_team), HOUR_HEADINGS)
         elif title == "By manager":
-            _sheet(book, title, *_by_manager(report), HOUR_HEADINGS)
+            sheet(book, title, *_by_manager(report), HOUR_HEADINGS)
         elif title == "By employee":
-            _sheet(book, title, *_by_employee(report))
+            sheet(book, title, *_by_employee(report))
         elif title == "By task":
-            _sheet(book, title, *_by_task(report), HOUR_HEADINGS)
+            sheet(book, title, *_by_task(report), HOUR_HEADINGS)
         elif title == "Project × task":
-            _sheet(book, title, *_matrix(report))
+            sheet(book, title, *_matrix(report))
         elif title == "By week":
-            _sheet(book, title, *_by_week(report), HOUR_HEADINGS)
+            sheet(book, title, *_by_week(report), HOUR_HEADINGS)
         else:
-            _sheet(book, title, *_detail(report), HOUR_HEADINGS)
+            sheet(book, title, *_detail(report), HOUR_HEADINGS)
     out = io.BytesIO()
     book.save(out)
     return out.getvalue()

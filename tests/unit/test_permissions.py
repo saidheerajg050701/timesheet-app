@@ -97,6 +97,7 @@ def test_roles_and_menu(org):
         "payroll": False,
         "admin": False,
         "reports": True,  # everyone: their own hours at least (D-160)
+        "costs": False,  # nobody under them, not payroll (D-170),
     }
     assert menu_for(org.payroll) == {
         "team": False,
@@ -104,6 +105,7 @@ def test_roles_and_menu(org):
         "payroll": True,
         "admin": False,
         "reports": True,  # everyone: their own hours at least (D-160)
+        "costs": True,  # payroll staff: everyone,
     }
     assert menu_for(org.manager) == {
         "team": True,
@@ -111,6 +113,7 @@ def test_roles_and_menu(org):
         "payroll": False,
         "admin": False,
         "reports": True,  # everyone: their own hours at least (D-160)
+        "costs": True,  # their tree,
     }
 
 

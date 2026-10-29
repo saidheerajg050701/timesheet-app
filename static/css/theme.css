@@ -691,3 +691,9 @@ a:focus-visible, summary:focus-visible { border-radius: 4px; }
 .report-chip .btn-close { width: 0.5rem; height: 0.5rem; padding: 0.25rem; }
 .report-projects .project-combo { margin-bottom: 0.5rem; }
 .report-people tr.is-zero > * { background: #fffbeb; } /* 0.00 rows, after people with hours */
+
+/* Reports → Project budget (Change 12, D-170): the % used bar follows the status badge */
+.budget-bar.tone-bar-approved { background: var(--ts-success); }
+.budget-bar.tone-bar-warning { background: #d97706; }
+.budget-bar.tone-bar-danger { background: var(--ts-danger); }
+.budget-bar.tone-bar-neutral { background: var(--ts-text-subtle); }

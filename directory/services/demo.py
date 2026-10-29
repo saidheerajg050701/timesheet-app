@@ -12,6 +12,7 @@ import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.conf import settings
@@ -20,8 +21,10 @@ from faker import Faker
 
 from audit.models import AuditLog
 from audit.services.log import backdate, build, bulk_record
-from directory.models import Employee, Team, User
+from directory.models import Employee, PayRecord, Team, User
 from directory.services.importer import REQUIRED_COLUMNS, import_employees
+from directory.services.pay import labour_cost, rate_index, record_on, suggested_hourly
+from directory.services.pay import snapshot as pay_snapshot
 from timesheets.models import ChangeRequest, PeriodApproval, Project, Task, TimeEntry, Timesheet
 from timesheets.services.calendar import (
     deadline_for,
@@ -115,6 +118,25 @@ STAFF = (
     ("Leadership", "Executive", CEO, ("Executive Assistant",), 1),
 )
 LOCATIONS = ("Dallas", "Frisco", "Remote", "Austin")
+# Change 12 (D-172): realistic pay. Salaried: annual salary by job title (± a little), hourly
+# rate = salary ÷ 2,080. Hourly: these titles, at an hourly rate.
+SALARIES = {
+    "CEO": 240000, "Engineering Director": 185000, "Engineering Manager": 155000,
+    "Finance Manager": 135000, "HR Manager": 120000, "Operations Manager": 112000,
+    "Payroll Specialist": 68000, "QA Engineer": 98000, "Software Engineer": 125000,
+    "Sales Manager": 130000, "Data Engineering Lead": 160000, "Support Lead": 85000,
+    "Solutions Architect": 165000, "Program Manager": 135000, "Data Engineer": 132000,
+    "Data Analyst": 98000, "HR Generalist": 72000, "Recruiter": 70000, "Accountant": 78000,
+    "Account Executive": 90000,
+}  # fmt: skip
+HOURLY_RATES = {"Operations Analyst": 30, "Support Specialist": 26, "Executive Assistant": 32}
+RAISE = (DEV1, 6)  # DEV1 gets a 6 % raise four periods before the end of the history
+NO_PAY_TEAM = "Data"  # its first staff member gets no pay record: "Rate missing"
+BUDGET_USE = {  # project code → share of its budget already used: statuses for the demo
+    "I-001": Decimal("0.62"), "I-002": Decimal("1.15"), "I-003": Decimal("0.90"),
+    "I-004": Decimal("0.55"), "I-005": Decimal("0.48"), "I-006": Decimal("0.70"),
+    "I-007": Decimal("0.40"),
+}  # fmt: skip
 REJECT_COMMENT = "Please split Wednesday's hours between Customer Portal and Mobile App."
 REASONS = {  # the demo gives every row a reason (optional since D-128)
     TimeEntry.Category.PROJECT: (
@@ -221,7 +243,9 @@ def seed_payroll(now):
             mark_paid(period, actor=clerk, at=exported_at + timedelta(days=7))
     if correction:
         fixed_at = datetime.combine(
-            correction.period_start + timedelta(days=29), time(10), tzinfo=tz  # a Monday
+            correction.period_start + timedelta(days=29),
+            time(10),
+            tzinfo=tz,  # a Monday
         )
         publish_period(correction, system_actor=SYSTEM_ACTOR, at=min(fixed_at, now))
     return {
@@ -307,6 +331,8 @@ class _Seeder:
         weeks = self._history(with_account, projects)
         approvals = self._approvals(employees, weeks)
         self._write(employees, weeks, approvals)
+        self._pay(employees)
+        self._budgets()
         summary = self._summary()
         bulk_record(
             self.audit
@@ -483,6 +509,81 @@ class _Seeder:
         if roll < LATE_RATE + MISSED_RATE:
             return "missed"
         return "on_time"
+
+    # --- pay and budgets (Change 12, D-172) ---------------------------------------------
+
+    def _pay(self, employees):
+        """Everyone's pay from the start of the history (or their hire date), one raise, and
+        one person with no pay record ("Rate missing")."""
+        start = self.week_starts[0]
+        no_pay = next(
+            (e for e in sorted(employees.values(), key=lambda e: e.employee_code)
+             if e.team and e.team.name == NO_PAY_TEAM and not e.reports.exists()),
+            None,
+        )  # fmt: skip
+        records = []
+        for employee in sorted(employees.values(), key=lambda e: e.employee_code):
+            if employee == no_pay:
+                continue
+            effective = max(start, employee.hire_date or start)
+            if employee.job_title in HOURLY_RATES:
+                cents = self.rng.choice((-200, -100, 0, 50, 100, 150))
+                rate = Decimal(HOURLY_RATES[employee.job_title]) + Decimal(cents) / 100
+                pay = PayRecord(employee=employee, pay_type="HOURLY", hourly_rate=rate)
+            else:
+                base = SALARIES.get(employee.job_title, 90000)
+                salary = Decimal(base + self.rng.randrange(-6, 7) * 500)
+                pay = PayRecord(
+                    employee=employee,
+                    pay_type="SALARIED",
+                    annual_salary=salary,
+                    hourly_rate=suggested_hourly(salary),
+                )
+            pay.effective_from, pay.system_actor = effective, SYSTEM_ACTOR
+            records.append(pay)
+            if employee.employee_code == RAISE[0]:
+                salary = (pay.annual_salary * (100 + RAISE[1]) / 100).quantize(Decimal("1"))
+                records.append(
+                    PayRecord(
+                        employee=employee,
+                        pay_type="SALARIED",
+                        annual_salary=salary,
+                        hourly_rate=suggested_hourly(salary),
+                        effective_from=self.periods[-4],
+                        system_actor=SYSTEM_ACTOR,
+                    )
+                )
+        PayRecord.objects.bulk_create(records)
+        for pay in records:
+            self.audit.append(
+                build(
+                    AuditLog.Action.CREATE,
+                    "Pay",
+                    pay.employee.employee_code,
+                    system_actor=SYSTEM_ACTOR,
+                    after=pay_snapshot(pay),
+                )
+            )
+
+    def _budgets(self):
+        """Budgets on I-001 … I-007 from their approved cost so far, so the demo shows On
+        track, At risk and Over budget; I-008 (closed) has none."""
+        costs = {}
+        pay = rate_index(list(Employee.objects.values_list("pk", flat=True)))
+        entries = TimeEntry.objects.filter(
+            category=TimeEntry.Category.PROJECT, timesheet__status=Timesheet.Status.APPROVED
+        ).values_list("project__code", "timesheet__employee_id", "work_date", "minutes")
+        for code, employee, day, minutes in entries:
+            found = record_on(pay.get(employee, []), day)
+            if found is not None:
+                costs[code] = costs.get(code, Decimal(0)) + labour_cost(minutes, found.hourly_rate)
+        for project in Project.objects.filter(code__in=BUDGET_USE):
+            cost = costs.get(project.code, Decimal(0))
+            budget = (cost / BUDGET_USE[project.code]).quantize(Decimal("1")) or Decimal(50000)
+            Project.objects.filter(pk=project.pk).update(budget=budget)
+            for row in self.audit:  # the project's CREATE row (written at the end) has it too
+                if row.entity_type == "Project" and row.entity_id == project.code:
+                    row.after = {**row.after, "budget": str(budget)}
 
     def _employed(self, employee, day):
         if employee.hire_date and day < employee.hire_date:

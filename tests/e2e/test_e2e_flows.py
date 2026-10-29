@@ -928,3 +928,75 @@ def test_director_project_hours_report(e2e_org, make_week, open_as):
     expect(page.locator("#by-employee-table tr.is-zero")).to_contain_text(["No time entered"] * 2)
     downloads(page, "project-hours_")
     assert AuditLog.objects.filter(action="EXPORT", actor=director).count() == 2
+
+
+def test_pay_and_project_budget_in_a_real_browser(e2e_org, make_week, open_as):
+    """T-270: E2E HR adds a pay change; a director opens Reports → Project budget, sees an Over
+    budget project, drills into a manager's group, downloads the costs Excel and the hours CSV;
+    HR sees By employee and the Rate missing list (D-166–D-171)."""
+    import io
+    from decimal import Decimal
+
+    from openpyxl import load_workbook
+
+    from directory.models import PayRecord
+
+    director = EmployeeFactory(
+        employee_code="DIR", first_name="Dina", last_name="Ross", manager=e2e_org.ceo,
+        email="dir@yourcompany.com",
+    )  # fmt: skip
+    UserFactory(employee=director)
+    for manager in (e2e_org.manager, e2e_org.ops_manager):
+        manager.manager = director
+        manager.save()
+    mobile = ProjectFactory(number=2, name="Mobile App", budget=Decimal("100000"))
+    portal = e2e_org.project
+    portal.budget = Decimal("2000")
+    portal.save()
+    make_week(e2e_org.dev1, PERIOD, status="APPROVED")
+    make_week(e2e_org.dev2, PERIOD, status="APPROVED")
+    make_week(e2e_org.ops1, PERIOD, status="APPROVED").entries.update(project=mobile)
+    PayRecord.objects.create(
+        employee=e2e_org.dev2, pay_type="HOURLY", hourly_rate=Decimal("40"),
+        effective_from=PERIOD, system_actor="test",
+    )  # fmt: skip
+
+    hr = open_as(e2e_org.hr)
+    hr.goto(reverse("admin:directory_employee_pay", args=[e2e_org.dev1.pk]))
+    hr.get_by_label("Salaried").check()
+    hr.get_by_label("Annual salary (USD)").fill("104,000")
+    expect(hr.locator("#pay-suggestion")).to_contain_text("Suggested: $50.00 an hour")
+    hr.locator("#pay-suggestion").get_by_role("button", name="Use it").click()
+    expect(hr.get_by_label("Hourly rate (USD)")).to_have_value("50.00")
+    hr.get_by_label("Effective from").fill(PERIOD.isoformat())
+    hr.get_by_role("button", name="Save pay change").click()
+    expect(hr.locator("#pay-current")).to_contain_text("$50.00 an hour")
+    assert AuditLog.objects.filter(entity_type="Pay", actor=e2e_org.hr).count() == 1
+
+    page = open_as(director)
+    page.get_by_role("button", name="Reports").click()
+    page.get_by_role("link", name="Project budget").click()
+    portal_row = page.locator('#by-project-table tr[data-project="I-001"]')
+    expect(portal_row).to_contain_text("Over budget")  # 80 h: $2,000 + $1,600 > $2,000
+    expect(portal_row).to_contain_text("$3,600.00")
+    page.get_by_label("Group by").select_option(label="Manager")
+    page.get_by_role("button", name="Apply").click()
+    page.locator("#by-manager-table").get_by_role("link", name="Priya Shah").click()
+    expect(page).to_have_url(re.compile(r"scope=manager.*manager=MANAGER"))
+    expect(page.locator("#by-employee-table")).to_contain_text("John Kim")
+    expect(page.locator("#by-employee-table")).not_to_contain_text("Lena Park")
+    with page.expect_download() as costs:
+        page.get_by_role("link", name="Costs Excel").click()
+    assert costs.value.suggested_filename == f"project-costs_{REPORT_FILES}.xlsx"
+    with page.expect_download() as hours:
+        page.get_by_role("link", name="Hours CSV").click()
+    assert hours.value.suggested_filename == f"project-hours_{REPORT_FILES}.csv"
+
+    hr.goto(reverse("project_budget"))
+    expect(hr.locator("#by-employee-table")).to_contain_text("Lena Park")
+    expect(hr.locator("#rate-missing")).to_contain_text("Lena Park")
+    expect(hr.locator("#rate-missing-warning")).to_contain_text("40.00 h have no pay rate")
+    with hr.expect_download() as download:
+        hr.get_by_role("link", name="Costs Excel").click()
+    book = load_workbook(io.BytesIO(Path(download.value.path()).read_bytes()))
+    assert "By employee" in book.sheetnames and "Rate missing" in book.sheetnames

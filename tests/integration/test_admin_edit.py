@@ -139,7 +139,11 @@ def test_add_and_edit_teams_projects_and_employees(org, login_as):
     project.refresh_from_db()
     assert (project.code, project.name, project.active) == ("I-001", "Pilot 2", False)
     assert [(r.action, r.before, r.after) for r in rows("Project")] == [
-        ("CREATE", None, {"code": "I-001", "name": "Pilot", "active": True}),
+        (
+            "CREATE",
+            None,
+            {"code": "I-001", "name": "Pilot", "active": True, "budget": None, "costs_from": None},
+        ),
         ("UPDATE", {"name": "Pilot", "active": True}, {"name": "Pilot 2", "active": False}),
     ]
 

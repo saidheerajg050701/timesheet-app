@@ -54,7 +54,8 @@ class ProjectAdmin(AuditedAdmin):
 
     def get_fields(self, request, obj=None):
         """The I-code is assigned when a project is added and never edited (D-155)."""
-        return ("code", "name", "active", "tasks") if obj else ("name", "active", "tasks")
+        fields = ("name", "active", "budget", "costs_from", "tasks")  # budget: D-168
+        return ("code", *fields) if obj else fields
 
     def get_readonly_fields(self, request, obj=None):
         return ("code",) if obj else ()  # entries and audit rows refer to the code

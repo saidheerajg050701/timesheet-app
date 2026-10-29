@@ -48,6 +48,12 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   report_people; which People / Group by choices are offered only from scope_options /
   group_options, D-165); report_files.py only lays out files, with safe_cell text, no reasons,
   and one EXPORT audit row per download.
+- Pay (D-166, D-167): only through directory/services/pay.py (rate in force by date, suggested
+  salary ÷ 2,080, labour_cost) and pay_import.py; PayRecord is append-only history (a change or
+  correction is a new record); Decimal cents, never float; only admins see salaries or pay
+  history (can_manage_pay); never log an amount. Costs (D-169–D-171): only from
+  analytics/services/project_costs.py, APPROVED hours only, rounded per entry; managers see
+  their tree, payroll and admins everyone (can_see_costs / can_see_everyones_costs).
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).

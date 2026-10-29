@@ -4,12 +4,15 @@ checked there on every request (page, filters and downloads): 403 for anything e
 
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
+from analytics.services import cost_files
+from analytics.services.project_costs import NOTES, project_costs
 from analytics.services.project_report import (
     FOOTNOTE,
     GROUPS,
@@ -97,3 +100,90 @@ def report_projects(request):
         "timesheets/_project_options.html",
         {"groups": [(h, p) for h, p in groups if p], "show_inactive": True},
     )
+
+
+# --- Reports → Project budget (Change 12, D-169–D-171) -------------------------------------
+
+
+def _costs(request):
+    """The cost report; 403 for anyone who isn't a manager, payroll or an admin (D-170)."""
+    return project_costs(request.user.employee, request.GET, timezone.now())
+
+
+def _budget_url(name, report, **changes):
+    query = report.filters.query(True)
+    query.pop("hours", None)  # money is always approved hours: no Hours filter here
+    query.update(changes)
+    params = [
+        (k, v)
+        for k, value in query.items()
+        for v in (value if isinstance(value, list) else [value])
+    ]
+    return f"{reverse(name)}?{urlencode(params)}"
+
+
+@require_GET
+def project_budget(request):
+    report = _costs(request)
+    for row in report.by_manager:  # each manager drills into their own group (D-162)
+        if row.employee is not None:
+            code = row.employee.employee_code
+            row.drill_url = _budget_url("project_budget", report, scope="manager", manager=code)
+    hours_report = report.hours
+    # The hours report covers the same people for managers and admins; payroll staff who
+    # manage nobody see only their own hours there (D-160), so they get no hours link.
+    same_people = hours_report.viewer.is_admin or any(
+        m == hours_report.viewer.pk for m in hours_report.managers.values()
+    )
+    return render(
+        request,
+        "analytics/project_budget.html",
+        {
+            "report": report,
+            "f": report.filters,
+            "periods": PERIODS,
+            "scopes": SCOPES,
+            "groups": GROUPS,
+            "notes": NOTES,
+            "described": [(k, v) for k, v in report.filters.described(True) if k != "Hours"],
+            "xlsx_url": _budget_url("project_budget_xlsx", report),
+            "csv_url": _budget_url("project_budget_csv", report),
+            "hours_xlsx_url": _url("project_hours_xlsx", hours_report) if same_people else "",
+            "hours_csv_url": _url("project_hours_csv", hours_report) if same_people else "",
+            "hours_page_url": _url("project_hours", hours_report) if same_people else "",
+            "chart": report.chart_data,
+            "breakdowns": [
+                ("By task", "by-task", report.by_task),
+                ("By pay type", "by-pay-type", report.by_pay_type),
+                ("By pay period", "by-pay-period", report.by_pay_period),
+            ],
+            "employees": [
+                (p, *report.pay_used.get(p.employee.pk, ([], []))) for p in report.people
+            ],
+            "at_risk": settings.BUDGET_AT_RISK_PERCENT,
+            "over": settings.BUDGET_OVER_PERCENT,
+        },
+    )
+
+
+@require_GET
+def project_budget_xlsx(request):
+    report = _costs(request)
+    response = HttpResponse(cost_files.workbook(report), content_type=XLSX)
+    response["Content-Disposition"] = (
+        f'attachment; filename="{cost_files.file_name(report, "xlsx")}"'
+    )
+    cost_files.audit_download(report, "xlsx", len(report.rows))
+    return response
+
+
+@require_GET
+def project_budget_csv(request):
+    report = _costs(request)
+    text = "\ufeff" + cost_files.detail_csv(report)
+    response = HttpResponse(text, content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = (
+        f'attachment; filename="{cost_files.file_name(report, "csv")}"'
+    )
+    cost_files.audit_download(report, "csv", len(report.rows))
+    return response

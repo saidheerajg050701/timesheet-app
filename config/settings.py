@@ -26,6 +26,10 @@ PAY_PERIOD_ANCHOR = date.fromisoformat(env("PAY_PERIOD_ANCHOR", default="2026-01
 # company time: Monday 12:00 by default (D-133).
 APPROVAL_DEADLINE_DAYS = env.int("APPROVAL_DEADLINE_DAYS", default=2)
 APPROVAL_DEADLINE_TIME = time.fromisoformat(env("APPROVAL_DEADLINE_TIME", default="12:00"))
+# Project budget status (Change 12, D-169): At risk from this % of the budget used, Over budget
+# above the second one
+BUDGET_AT_RISK_PERCENT = env.int("BUDGET_AT_RISK_PERCENT", default=80)
+BUDGET_OVER_PERCENT = env.int("BUDGET_OVER_PERCENT", default=100)
 DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 
 INSTALLED_APPS = [

@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}Project budget — Reports — Timesheets{% endblock %}
+
+{% block main_class %}app-main-wide{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <p class="small text-body-secondary mb-1">Reports</p>
+    <h1 class="h3 mb-0">Project budget</h1>
+    <p class="page-subtitle">{% if report.hours.filters.scopes and not report.viewer.is_admin and not report.viewer.is_payroll %}Labour cost of your people's approved project hours, against each project's budget.{% else %}Labour cost of approved project hours, against each project's budget.{% endif %}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2 justify-content-end" id="budget-downloads">
+    <a class="btn btn-sm btn-outline-primary" href="{{ xlsx_url }}" download>Costs Excel</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ csv_url }}" download>Costs CSV</a>
+    {% if hours_xlsx_url %}
+      <a class="btn btn-sm btn-outline-secondary" href="{{ hours_xlsx_url }}" download>Hours Excel</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ hours_csv_url }}" download>Hours CSV</a>
+    {% endif %}
+  </div>
+</header>
+
+<form method="get" class="card card-body mb-4" id="report-filters" data-projects-url="{% url 'report_projects' %}">
+  <div class="row g-3 align-items-end">
+    <div class="col-sm-6 col-lg-3">
+      <label for="id_period" class="form-label small">Period</label>
+      <select name="period" id="id_period" class="form-select form-select-sm" data-role="period">
+        {% for value, label in periods.items %}<option value="{{ value }}"{% if value == f.period %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-lg-2" data-role="custom-dates"{% if f.period != "custom" %} hidden{% endif %}>
+      <label for="id_from" class="form-label small">From</label>
+      <input type="date" name="from" id="id_from" class="form-control form-control-sm" value="{{ f.start|date:'Y-m-d' }}">
+    </div>
+    <div class="col-6 col-lg-2" data-role="custom-dates"{% if f.period != "custom" %} hidden{% endif %}>
+      <label for="id_to" class="form-label small">To</label>
+      <input type="date" name="to" id="id_to" class="form-control form-control-sm" value="{{ f.end|date:'Y-m-d' }}">
+    </div>
+    {# Only the choices that change the result are offered (D-165); no Hours filter: approved only. #}
+    {% if f.scopes %}
+      <div class="col-sm-6 col-lg-3">
+        <label for="id_scope" class="form-label small">People</label>
+        <select name="scope" id="id_scope" class="form-select form-select-sm" data-role="scope">
+          {% for value, label in scopes.items %}<option value="{{ value }}"{% if value == f.scope %} selected{% endif %}>{% if value == "tree" and report.viewer.is_admin or value == "tree" and report.viewer.is_payroll %}Everyone{% else %}{{ label }}{% endif %}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-sm-6 col-lg-3" data-role="manager-field"{% if f.scope != "manager" %} hidden{% endif %}>
+        <label for="id_manager" class="form-label small">Manager</label>
+        <select name="manager" id="id_manager" class="form-select form-select-sm"{% if f.scope != "manager" %} disabled{% endif %}>
+          {% for m in report.hours.manager_choices %}<option value="{{ m.employee_code }}"{% if m == f.manager %} selected{% endif %}>{{ m.first_name }} {{ m.last_name }}{% if m == report.viewer %} (you){% endif %}</option>{% endfor %}
+        </select>
+      </div>
+    {% endif %}
+    {% if f.groups|length > 1 %}
+      <div class="col-sm-6 col-lg-2">
+        <label for="id_group" class="form-label small">Group by</label>
+        <select name="group" id="id_group" class="form-select form-select-sm">
+          {% for value, label in groups.items %}{% if value in f.groups %}<option value="{{ value }}"{% if value == f.group %} selected{% endif %}>{{ label }}</option>{% endif %}{% endfor %}
+        </select>
+      </div>
+    {% elif f.group %}<input type="hidden" name="group" value="{{ f.group }}">{% endif %}
+  </div>
+  <div class="row g-3 align-items-end mt-0">
+    <div class="col-lg-6 report-projects">
+      {% include "timesheets/_project_combo.html" with combo_id="report-project" value="" label="" hidden=False only %}
+      <div class="d-flex flex-wrap gap-2" data-role="project-chips" aria-label="Chosen projects">
+        {% for p in f.projects %}<span class="report-chip">{{ p.code }} {{ p.name }}<input type="hidden" name="project" value="{{ p.code }}"><button type="button" class="btn-close btn-close-sm" data-role="remove-project" aria-label="Remove {{ p.code }} {{ p.name }}"></button></span>{% empty %}<span class="small text-body-secondary" data-role="all-projects">All projects</span>{% endfor %}
+      </div>
+    </div>
+    <div class="col-lg-2 ms-auto"><button type="submit" class="btn btn-sm btn-primary w-100">Apply</button></div>
+  </div>
+</form>
+
+{% for message in f.messages %}<div class="alert alert-warning py-2" role="alert">{{ message }}</div>{% endfor %}
+{% if report.unpriced %}
+  <div class="alert alert-warning py-2" role="alert" id="rate-missing-warning">{{ report.unpriced|hours2 }} h have no pay rate — costs are incomplete. They are not counted as $0; see "Rate missing" below.</div>
+{% endif %}
+<p class="small text-body-secondary" id="budget-notes">{{ notes|join:" · " }}</p>
+
+<section class="row g-3 mb-4" id="budget-summary" aria-label="Summary">
+  <div class="col-sm-6 col-lg-3"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h2 class="h6 text-body-secondary">Labour cost this period</h2><p class="h3 mb-0" id="summary-cost">{{ report.cost|usd }}</p>
+  </div></div></div>
+  <div class="col-sm-6 col-lg-3"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h2 class="h6 text-body-secondary">Project hours this period</h2><p class="h3 mb-0" id="summary-hours">{{ report.minutes|hours2 }}</p>
+    <p class="small text-body-secondary mb-0">Approved hours only</p>
+  </div></div></div>
+  <div class="col-sm-6 col-lg-3"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h2 class="h6 text-body-secondary">Projects</h2><p class="h3 mb-0" id="summary-projects">{{ report.by_project|length }}</p>
+  </div></div></div>
+  <div class="col-sm-6 col-lg-3"><div class="card h-100 shadow-sm"><div class="card-body">
+    <h2 class="h6 text-body-secondary">Without a pay rate</h2><p class="h3 mb-0" id="summary-unpriced">{{ report.unpriced|hours2 }} h</p>
+    <p class="small text-body-secondary mb-0">Not costed</p>
+  </div></div></div>
+  <p class="small text-body-secondary mb-0" id="summary-filters">{% for label, value in described %}<strong>{{ label }}:</strong> {{ value }}{% if not forloop.last %} · {% endif %}{% endfor %} · <strong>Hours:</strong> Approved{% if hours_page_url %} · <a href="{{ hours_page_url }}">Open these hours in Project hours</a>{% endif %}</p>
+</section>
+
+<div class="card shadow-sm mb-4" id="by-project"><div class="card-body">
+  <h2 class="h6 text-body-secondary">Budget by project</h2>
+  <p class="small text-body-secondary">Total cost to date is the whole project's approved labour cost since its "costs count from" date — everyone's, whatever the period. Cost and hours this period are {% if report.viewer.is_admin or report.viewer.is_payroll %}for the people in this report{% else %}your people's{% endif %}.</p>
+  {% if report.by_project %}
+    <div style="height: {{ report.by_project|length|add:2 }}0px; min-height: 160px; max-height: 420px"><canvas id="budget-chart" role="img" aria-label="Bar chart of each project's total cost to date and budget; the same numbers are in the table below"></canvas></div>
+    <div class="table-responsive"><table class="table table-sm small mb-0 mt-2" id="by-project-table">
+      <thead><tr><th scope="col">Project</th><th scope="col" class="text-end">Budget</th><th scope="col" class="text-end">Total cost to date</th><th scope="col" class="text-end">Remaining</th><th scope="col" style="min-width: 8rem">% used</th><th scope="col">Status</th><th scope="col" class="text-end">Cost this period</th><th scope="col" class="text-end">Hours this period</th></tr></thead>
+      <tbody>{% for p in report.by_project %}<tr data-project="{{ p.project.code }}"><th scope="row" class="fw-normal text-nowrap"><span class="grid-code">{{ p.project.code }}</span> {{ p.project.name }}{% if p.total_unpriced %}<div class="small text-warning-emphasis">{{ p.total_unpriced|hours2 }} h without a pay rate not included</div>{% endif %}</th><td class="text-end">{% if p.budget is None %}<span class="text-body-secondary">No budget set</span>{% else %}{{ p.budget|usd }}{% endif %}</td><td class="text-end">{{ p.total_cost|usd }}</td><td class="text-end{% if p.remaining is not None and p.remaining < 0 %} text-danger{% endif %}">{{ p.remaining|usd }}</td><td>{% if p.used is not None %}<div class="d-flex align-items-center gap-2"><div class="progress flex-grow-1" style="height: 6px" role="progressbar" aria-label="{{ p.project.code }} budget used" aria-valuenow="{{ p.used }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar budget-bar tone-bar-{{ p.status|budget_tone }}" style="width: {% if p.used > 100 %}100{% else %}{{ p.used }}{% endif %}%"></div></div><span class="text-nowrap">{{ p.used }} %</span></div>{% else %}—{% endif %}</td><td><span class="badge tone-{{ p.status|budget_tone }}">{{ p.status }}</span></td><td class="text-end">{{ p.cost|usd }}</td><td class="text-end">{{ p.minutes|hours2 }}</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><th scope="row">This period</th><td colspan="5"></td><td class="text-end fw-semibold">{{ report.cost|usd }}</td><td class="text-end fw-semibold">{{ report.minutes|hours2 }}</td></tr></tfoot>
+    </table></div>
+  {% else %}<p class="text-body-secondary mb-0">No approved project hours for these filters.</p>{% endif %}
+</div></div>
+
+<div class="row g-3 mb-4">
+  {% if f.group == "manager" %}
+  <div class="col-12"><div class="card shadow-sm h-100" id="by-manager"><div class="card-body">
+    <h2 class="h6 text-body-secondary">By manager</h2>
+    <p class="small text-body-secondary">Own group = the manager and their direct reports who manage nobody (adds up to the total). Including everyone below = the whole group. Click a manager to look at their group only.</p>
+    <div class="table-responsive"><table class="table table-sm small mb-0" id="by-manager-table">
+      <thead><tr><th scope="col">Manager</th><th scope="col" class="text-end">People</th><th scope="col" class="text-end">Own group: hours</th><th scope="col" class="text-end">Own group: cost</th><th scope="col" class="text-end">Incl. everyone below: hours</th><th scope="col" class="text-end">Incl. everyone below: cost</th></tr></thead>
+      <tbody>{% for g in report.by_manager %}<tr data-manager="{{ g.employee.employee_code|default:'' }}"><th scope="row" class="fw-normal" style="padding-left: {{ g.depth|add:1 }}rem">{% if g.employee %}<a href="{{ g.drill_url }}">{{ g.label }}</a>{% else %}<span class="fst-italic">{{ g.label }}</span>{% endif %}</th><td class="text-end">{{ g.people }}</td><td class="text-end">{{ g.project|hours2 }}</td><td class="text-end">{{ g.cost|usd }}</td><td class="text-end">{{ g.rollup_project|hours2 }}</td><td class="text-end">{{ g.rollup_cost|usd }}</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><th scope="row">Total</th><td></td><td class="text-end fw-semibold">{{ report.minutes|hours2 }}</td><td class="text-end fw-semibold">{{ report.cost|usd }}</td><td colspan="2"></td></tr></tfoot>
+    </table></div>
+  </div></div></div>
+  {% elif f.group == "team" %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100" id="by-team"><div class="card-body">
+    <h2 class="h6 text-body-secondary">By team</h2>
+    <table class="table table-sm small mb-0" id="by-team-table">
+      <thead><tr><th scope="col">Team</th><th scope="col" class="text-end">Hours</th><th scope="col" class="text-end">Cost</th></tr></thead>
+      <tbody>{% for g in report.by_team %}<tr><th scope="row" class="fw-normal">{{ g.label }}</th><td class="text-end">{{ g.project|hours2 }}</td><td class="text-end">{{ g.cost|usd }}</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><th scope="row">Total</th><td class="text-end fw-semibold">{{ report.minutes|hours2 }}</td><td class="text-end fw-semibold">{{ report.cost|usd }}</td></tr></tfoot>
+    </table>
+  </div></div></div>
+  {% endif %}
+  {% for title, id, lines in breakdowns %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100" id="{{ id }}"><div class="card-body">
+    <h2 class="h6 text-body-secondary">{{ title }}</h2>
+    <table class="table table-sm small mb-0" id="{{ id }}-table">
+      <thead><tr><th scope="col">{{ title|slice:"3:"|capfirst }}</th><th scope="col" class="text-end">Hours</th><th scope="col" class="text-end">Cost</th></tr></thead>
+      <tbody>{% for line in lines %}<tr><th scope="row" class="fw-normal{% if line.label == 'Rate missing' or line.label == 'Task not recorded' %} fst-italic{% endif %}">{{ line.label }}{% if line.unpriced and line.label != 'Rate missing' %} <span class="small text-warning-emphasis">({{ line.unpriced|hours2 }} h without a rate)</span>{% endif %}</th><td class="text-end">{{ line.minutes|hours2 }}</td><td class="text-end">{% if line.label == 'Rate missing' %}—{% else %}{{ line.cost|usd }}{% endif %}</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><th scope="row">Total</th><td class="text-end fw-semibold">{{ report.minutes|hours2 }}</td><td class="text-end fw-semibold">{{ report.cost|usd }}</td></tr></tfoot>
+    </table>
+  </div></div></div>
+  {% endfor %}
+</div>
+
+<div class="card shadow-sm mb-4" id="by-employee"><div class="card-body">
+  <h2 class="h6 text-body-secondary">By employee</h2>
+  <p class="small text-body-secondary">People with approved project hours in this period. The hourly rate is the pay rate HR set for that date; annual salaries are never shown here.</p>
+  <div class="table-responsive"><table class="table table-sm small mb-0" id="by-employee-table">
+    <thead><tr><th scope="col">Employee</th><th scope="col">Team</th><th scope="col">Manager</th><th scope="col">Pay type</th><th scope="col" class="text-end">Hourly rate</th><th scope="col" class="text-end">Hours</th><th scope="col" class="text-end">Cost</th></tr></thead>
+    <tbody>{% for p, types, rates in employees %}<tr data-employee="{{ p.employee.employee_code }}"><th scope="row" class="fw-normal text-nowrap"><a href="{% url 'team_member' p.employee.employee_code %}">{{ p.name }}</a>{% if p.inactive %} <span class="text-body-secondary">(inactive)</span>{% endif %}<div class="text-body-secondary">{{ p.employee.employee_code }}</div></th><td>{{ p.team }}</td><td>{{ p.manager|default:"—" }}</td><td>{{ types|join:" / "|default:"Rate missing" }}</td><td class="text-end text-nowrap">{% for r in rates %}{{ r|usd }}{% if not forloop.last %} / {% endif %}{% empty %}—{% endfor %}</td><td class="text-end">{{ p.project|hours2 }}{% if p.unpriced %}<div class="small text-warning-emphasis">{{ p.unpriced|hours2 }} h without a rate</div>{% endif %}</td><td class="text-end fw-semibold">{{ p.cost|usd }}</td></tr>{% empty %}<tr><td colspan="7" class="text-body-secondary">Nobody to show.</td></tr>{% endfor %}</tbody>
+  </table></div>
+</div></div>
+
+{% if report.missing %}
+<div class="card shadow-sm mb-4 border-warning" id="rate-missing"><div class="card-body">
+  <h2 class="h6 text-body-secondary">Rate missing</h2>
+  <p class="small text-body-secondary">These approved project hours have no pay record for their date, so they are not costed. {% if report.viewer.is_admin %}Add pay in Admin → Employees.{% else %}Ask HR to add their pay.{% endif %}</p>
+  <table class="table table-sm small mb-0" id="rate-missing-table">
+    <thead><tr><th scope="col">Employee</th><th scope="col" class="text-end">Hours</th><th scope="col">Dates</th></tr></thead>
+    <tbody>{% for m in report.missing %}<tr><th scope="row" class="fw-normal">{{ m.person.name }} <span class="text-body-secondary">{{ m.person.employee.employee_code }}</span></th><td class="text-end">{{ m.minutes|hours2 }}</td><td>{% for d in m.dates %}{{ d|date:"M j" }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>{% endfor %}</tbody>
+  </table>
+</div></div>
+{% endif %}
+
+<p class="small text-body-secondary" id="budget-footnote">Teams and managers are as they are today (moves are not tracked). Budget status: On track below {{ at_risk }} % used, At risk from {{ at_risk }} % to {{ over }} %, Over budget above {{ over }} %.</p>
+{{ chart|json_script:"budget-chart-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/project_search.js' %}"></script>
+<script src="{% static 'js/report.js' %}"></script>
+<script src="{% static 'js/budget.js' %}"></script>
+{% endblock %}

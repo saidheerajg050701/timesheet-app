@@ -16,6 +16,7 @@ Loading is a fixed number of database reads, whatever the number of people or we
 
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 
 from django.core.exceptions import PermissionDenied
@@ -209,12 +210,12 @@ def read_filters(params, viewer, now, managing, scopes=()):
 # --- who is in the report (D-160) ------------------------------------------------------------
 
 
-def scope_options(viewer, managers):
+def scope_options(viewer, managers, everyone):
     """The People choices that change the result (D-165): whole tree / direct reports / one
     manager's group only when someone under the viewer manages people of their own (always
     for an admin with managers); otherwise none — the whole tree is the only answer."""
     leads = {m for m in managers.values() if m is not None}
-    under = set(managers) if viewer.is_admin else reporting_tree_ids(viewer, managers)
+    under = set(managers) if everyone else reporting_tree_ids(viewer, managers)
     return list(SCOPES) if (under - {viewer.pk}) & leads else []
 
 
@@ -224,17 +225,17 @@ def group_options(by_team, by_manager):
     return [g for g, rows in (("team", by_team), ("manager", by_manager)) if len(rows) > 1]
 
 
-def manages_anyone(viewer, managers):
-    return viewer.is_admin or any(m == viewer.pk for m in managers.values())
+def manages_anyone(viewer, managers, everyone):
+    return everyone or any(m == viewer.pk for m in managers.values())
 
 
-def report_people(viewer, filters, managers):
+def report_people(viewer, filters, managers, everyone):
     """Ids of the people in the report: the viewer only (someone who manages nobody), or the
     viewer plus their tree / direct reports / one manager's group (everyone for an admin).
     A manager outside what the viewer may see is refused (403)."""
-    if not manages_anyone(viewer, managers):
+    if not manages_anyone(viewer, managers, everyone):
         return {viewer.pk}
-    tree = set(managers) if viewer.is_admin else reporting_tree_ids(viewer, managers)
+    tree = set(managers) if everyone else reporting_tree_ids(viewer, managers)
     if filters.scope == "direct":
         return {viewer.pk} | {pk for pk, m in managers.items() if m == viewer.pk}
     if filters.scope == "manager":
@@ -245,11 +246,11 @@ def report_people(viewer, filters, managers):
     return {viewer.pk} | tree
 
 
-def manager_choices(viewer, managers):
+def manager_choices(viewer, managers, everyone):
     """The managers whose group the viewer may choose: everyone who manages someone in the
     viewer's tree (anyone for an admin), the viewer included. Sorted by name."""
     leads = {m for m in managers.values() if m is not None}
-    visible = set(managers) if viewer.is_admin else reporting_tree_ids(viewer, managers)
+    visible = set(managers) if everyone else reporting_tree_ids(viewer, managers)
     ids = leads & (visible | {viewer.pk})
     return list(Employee.objects.filter(pk__in=ids).order_by("last_name", "first_name"))
 
@@ -268,6 +269,8 @@ class PersonRow:
     non_project: dict = field(default_factory=dict)  # {category: minutes}
     leave: int = 0
     note: str = ""
+    cost: Decimal = Decimal("0.00")  # Project budget only: labour cost (D-169)
+    unpriced: int = 0  # Project budget only: project minutes without a pay rate
 
     @property
     def name(self):
@@ -300,6 +303,8 @@ class GroupRow:
     depth: int = 0
     rollup_project: int = 0  # "Including everyone below" (managers only)
     rollup_non_project: int = 0
+    cost: Decimal = Decimal("0.00")  # Project budget only (D-169)
+    rollup_cost: Decimal = Decimal("0.00")
 
     @property
     def total(self):
@@ -343,6 +348,7 @@ class ProjectReport:
     by_manager: list  # GroupRow, depth-first; "No manager in this report" last
     detail: list  # DetailRow
     manager_choices: list = field(default_factory=list)  # managers the viewer may pick (D-160)
+    managers: dict = field(default_factory=dict)  # {employee id: manager id}, for regrouping
 
     @property
     def project_total(self):
@@ -408,13 +414,16 @@ def _status_of(sheets, sheet_id, status, week_start, reopen_until, now):
     return sheets[sheet_id]
 
 
-def project_report(viewer, params, now):
-    """The report for `viewer` from URL parameters (D-160–D-164)."""
+def project_report(viewer, params, now, *, everyone=None):
+    """The report for `viewer` from URL parameters (D-160–D-164). `everyone` (default: the
+    viewer is an admin) makes the viewer see everyone, as payroll staff do on Project budget."""
     managers = manager_map()
-    managing = manages_anyone(viewer, managers)
-    scopes = scope_options(viewer, managers) if managing else []
+    # Who counts as seeing everyone: admins; for Project budget also payroll staff (D-170).
+    everyone = viewer.is_admin if everyone is None else everyone
+    managing = manages_anyone(viewer, managers, everyone)
+    scopes = scope_options(viewer, managers, everyone) if managing else []
     filters = read_filters(params, viewer, now, managing, scopes)
-    ids = report_people(viewer, filters, managers)
+    ids = report_people(viewer, filters, managers, everyone)
     candidates = list(
         Employee.objects.filter(pk__in=ids)
         .select_related("team", "manager")
@@ -451,8 +460,9 @@ def project_report(viewer, params, now):
     report = build_report(
         viewer, filters, managing, managers, candidates, entries, projects, tasks, now
     )
+    report.managers = managers
     if managing:
-        report.manager_choices = manager_choices(viewer, managers)
+        report.manager_choices = manager_choices(viewer, managers, everyone)
         filters.groups = group_options(report.by_team, report.by_manager)
         if filters.group not in filters.groups:  # not offered: the one that applies, or none
             filters.group = filters.groups[0] if filters.groups else ""
@@ -578,8 +588,8 @@ def build_report(viewer, filters, managing, managers, candidates, entries, proje
         matrix=matrix,
         by_week=by_week,
         non_project=non_project,
-        by_team=_by_team(listed) if managing else [],
-        by_manager=_by_manager(listed, managers) if managing else [],
+        by_team=by_team(listed) if managing else [],
+        by_manager=by_manager(listed, managers) if managing else [],
         detail=detail,
     )
 
@@ -588,9 +598,10 @@ def _add(group, person):
     group.people += 1
     group.project += person.project
     group.non_project += person.non_project_total
+    group.cost += person.cost
 
 
-def _by_team(people):
+def by_team(people):
     """[GroupRow] per directory team (as it is today), by name; "No team" last."""
     groups = {}
     for person in people:
@@ -601,7 +612,7 @@ def _by_team(people):
     return [groups[key] for key in sorted(groups)]
 
 
-def _by_manager(people, managers):
+def by_manager(people, managers):
     """[GroupRow] per manager in the report, depth-first by name (D-162).
 
     "Own group" = the manager plus direct reports who manage nobody, so every person is
@@ -638,10 +649,12 @@ def _by_manager(people, managers):
         row.depth = depth
         ordered.append(row)
         row.rollup_project, row.rollup_non_project = row.project, row.non_project
+        row.rollup_cost = row.cost
         for child in sorted(set(children.get(pk, [])) - seen, key=by_name):
             below = visit(child, depth + 1)
             row.rollup_project += below.rollup_project
             row.rollup_non_project += below.rollup_non_project
+            row.rollup_cost += below.rollup_cost
         return row
 
     for root in sorted(children.get(None, []), key=by_name):
@@ -651,5 +664,6 @@ def _by_manager(people, managers):
             visit(pk, 0)
     if orphans.people:
         orphans.rollup_project, orphans.rollup_non_project = orphans.project, orphans.non_project
+        orphans.rollup_cost = orphans.cost
         ordered.append(orphans)
     return ordered

@@ -85,7 +85,13 @@ def test_admin_assigns_the_code(org, login_as):
     assert (pilot.code, pilot.name, pilot.active) == ("I-005", "Pilot 2", True)
     rows = AuditLog.objects.filter(entity_type="Project").order_by("pk")
     assert [(r.action, r.entity_id) for r in rows][:1] == [("CREATE", "I-005")]
-    assert rows[0].after == {"code": "I-005", "name": "Pilot", "active": True}
+    assert rows[0].after == {
+        "code": "I-005",
+        "name": "Pilot",
+        "active": True,
+        "budget": None,
+        "costs_from": None,
+    }
     listing = client.get(url(Project, "changelist")).context["cl"].result_list
     assert codes(listing) == ["I-004", "I-005"]  # by number
     assert login_as(org.manager).post(url(Project, "add"), data).status_code == 403

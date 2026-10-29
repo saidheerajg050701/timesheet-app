@@ -101,6 +101,22 @@ def can_access_payroll(employee):
     return employee.is_payroll or employee.is_admin
 
 
+def can_see_costs(employee):
+    """Reports → Project budget (D-170): managers (their tree), payroll staff and admins
+    (everyone). Someone who manages nobody and isn't payroll or admin: 403."""
+    return employee.is_admin or employee.is_payroll or is_manager(employee)
+
+
+def can_see_everyones_costs(employee):
+    """Costs of every person (hours, rate used, cost): admins and payroll staff (D-170)."""
+    return employee.is_admin or employee.is_payroll
+
+
+def can_manage_pay(employee):
+    """Pay records — salaries, pay types, history, the Pay CSV: admins only (D-167)."""
+    return employee.is_admin
+
+
 def can_access_team(employee):
     """Team analytics: managers (own tree) and admins (everyone) (D-31)."""
     return employee.is_admin or is_manager(employee)
@@ -119,6 +135,7 @@ def menu_for(employee):
         "payroll": can_access_payroll(employee),
         "admin": employee.is_admin,
         "reports": True,  # everyone: one's own hours at least (D-160)
+        "costs": employee.is_admin or employee.is_payroll or manager,  # D-170
     }
 
 

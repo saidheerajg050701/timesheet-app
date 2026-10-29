@@ -82,8 +82,7 @@ def test_delete_a_row_with_slots(dev1, project):
     assert [m for _, m, _ in grid.footer] == [0, 60, 0, 0, 0, 0, 0] and grid.worked == 60
     assert 'data-role="week-total">1.00<' in html and 'data-role="row-total">1.00<' in html
     assert notice(html) == (
-        "Deleted I-001 Customer Portal · DEV Development (3 time slots). "
-        "Save to keep this change."
+        "Deleted I-001 Customer Portal · DEV Development (3 time slots). Save to keep this change."
     )
     assert not TimeEntry.objects.exists()  # nothing saved by the row action itself
 

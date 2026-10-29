@@ -136,7 +136,12 @@ def test_allowed_tasks_per_project(org, login_as):
     assert TimeEntry.objects.get().task == tst  # history is never rewritten
     client.post(url(Project, "change", pilot.pk), {**data, "tasks": [dev.pk]})  # no change
     assert audit("Project") == [
-        ("CREATE", "I-001", None, {"code": "I-001", "name": "Pilot", "active": True}),
+        (
+            "CREATE",
+            "I-001",
+            None,
+            {"code": "I-001", "name": "Pilot", "active": True, "budget": None, "costs_from": None},
+        ),
         ("UPDATE", "I-001", {"tasks": []}, {"tasks": ["DEV", "TST"]}),
         ("UPDATE", "I-001", {"tasks": ["DEV", "TST"]}, {"tasks": ["DEV"]}),
     ]
@@ -393,9 +398,7 @@ def test_analytics_by_task_and_charge_code(org, booked, login_as, fixed_now):
     ]
     html = login_as(org.dev1).get(reverse("home")).content.decode()
     assert 'id="by-task"' in html and 'id="tasks-chart"' in html
-    assert (
-        'id="charge-codes-table"' in html and '<span class="grid-code">I-001-TST</span>' in html
-    )
+    assert 'id="charge-codes-table"' in html and '<span class="grid-code">I-001-TST</span>' in html
 
     response = login_as(org.manager).get(reverse("team"))
     board, html = response.context["board"], response.content.decode()

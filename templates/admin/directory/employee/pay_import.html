@@ -1,0 +1,42 @@
+{% extends "admin/directory/employee/_page.html" %}
+{% block content %}
+{% if errors %}
+  <div class="errornote" id="import-errors">
+    <p>Nothing was imported. Fix {{ errors|length }} problem{{ errors|length|pluralize }} and upload the file again:</p>
+    <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+{% if preview %}
+  <div id="import-preview">
+    <p><strong>Nothing has changed yet.</strong> This file will add {{ preview.added }} pay record{{ preview.added|pluralize }} ({{ preview.corrections }} correction{{ preview.corrections|pluralize }} of a record with the same date) and leave {{ preview.unchanged }} unchanged. Existing pay records are never changed.</p>
+    {% if preview.changes %}
+      <table>
+        <thead><tr><th scope="col">Employee</th><th scope="col">Effective from</th><th scope="col">Change</th></tr></thead>
+        <tbody>{% for code, effective, kind in preview.changes %}<tr><td>{{ code }}</td><td>{{ effective|date:"Y-m-d" }}</td><td>{% if kind == "correction" %}Correction (newer wins){% else %}New pay record{% endif %}</td></tr>{% endfor %}</tbody>
+      </table>
+    {% endif %}
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="payload" value="{{ payload }}">
+      <div class="submit-row">
+        <input type="submit" name="confirm" value="Confirm import" class="default"{% if not preview.changes %} disabled{% endif %}>
+        <a href="{% url 'admin:directory_employee_pay_import' %}" class="button cancel-link">Cancel</a>
+      </div>
+    </form>
+  </div>
+{% else %}
+  <p>Upload a CSV with the columns of <strong>Export pay CSV</strong> ({{ columns|join:", " }}). pay_type is SALARIED or HOURLY; salaried rows need annual_salary (hourly_rate empty = salary ÷ 2,080); hourly rows need hourly_rate and no annual_salary; effective_from like 2026-10-01. Importing only adds pay records — rows identical to an existing record are skipped. The whole file is checked first and you see a summary before anything changes; any error means nothing is imported.</p>
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <fieldset class="module aligned">
+      <div class="form-row">
+        {{ form.file.errors }}
+        <label for="{{ form.file.id_for_label }}" class="required">{{ form.file.label }}:</label>
+        {{ form.file }}
+        <div class="help">{{ form.file.help_text }}</div>
+      </div>
+    </fieldset>
+    <div class="submit-row"><input type="submit" value="Check file" class="default"></div>
+  </form>
+{% endif %}
+{% endblock %}

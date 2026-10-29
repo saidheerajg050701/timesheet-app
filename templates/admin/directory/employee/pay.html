@@ -1,0 +1,67 @@
+{% extends "admin/directory/employee/_page.html" %}
+{% load timesheet_tags %}
+{% block content %}
+<p><a href="{% url 'admin:directory_employee_change' employee.pk %}">← Back to {{ employee }}</a></p>
+<div class="module" id="pay-current">
+  <h2>Current pay</h2>
+  {% if current %}
+    <p><strong>{{ current.get_pay_type_display }}</strong>: {{ current.hourly_rate|usd }} an hour{% if current.annual_salary is not None %}, {{ current.annual_salary|usd }} a year{% endif %} — since {{ current.effective_from|date:"M j, Y" }}.</p>
+  {% else %}
+    <p>No pay record in force today. Approved project hours without pay are listed as "Rate missing" on Reports → Project budget and are not costed.</p>
+  {% endif %}
+</div>
+
+<div class="module" id="pay-history-table">
+  <h2>History (read-only — a pay change is always a new record)</h2>
+  <table>
+    <thead><tr><th scope="col">Effective from</th><th scope="col">Pay type</th><th scope="col">Annual salary</th><th scope="col">Hourly rate</th><th scope="col">Entered</th><th scope="col">By</th><th scope="col"></th></tr></thead>
+    <tbody>
+      {% for pay, replaced in history %}
+        <tr{% if replaced %} style="opacity: .6"{% endif %}><td>{{ pay.effective_from|date:"Y-m-d" }}</td><td>{{ pay.get_pay_type_display }}</td><td>{{ pay.annual_salary|usd }}</td><td>{{ pay.hourly_rate|usd }}</td><td>{{ pay.created_at|date:"Y-m-d H:i" }}</td><td>{% if pay.created_by %}{{ pay.created_by.first_name }} {{ pay.created_by.last_name }}{% else %}{{ pay.system_actor|default:"—" }}{% endif %}</td><td>{% if replaced %}Replaced by a correction for the same date{% endif %}</td></tr>
+      {% empty %}
+        <tr><td colspan="7">No pay recorded yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<form method="post" id="add-pay-change">
+  {% csrf_token %}
+  <fieldset class="module aligned">
+    <h2>Add pay change</h2>
+    {% if form.non_field_errors %}<div class="errornote">{{ form.non_field_errors }}</div>{% endif %}
+    {% for field in form %}
+      <div class="form-row">
+        {{ field.errors }}
+        <label for="{{ field.id_for_label }}"{% if field.field.required %} class="required"{% endif %}>{{ field.label }}:</label>
+        {{ field }}
+        {% if field.name == "hourly_rate" %}<p class="help" id="pay-suggestion" aria-live="polite"></p>{% endif %}
+        {% if field.help_text %}<div class="help">{{ field.help_text }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  </fieldset>
+  <div class="submit-row"><input type="submit" value="Save pay change" class="default"></div>
+</form>
+<script>
+  // Suggest salary ÷ 2,080 as the hourly rate (D-166); HR may use it or type another rate.
+  (function () {
+    var salary = document.getElementById("id_annual_salary");
+    var rate = document.getElementById("id_hourly_rate");
+    var note = document.getElementById("pay-suggestion");
+    function show() {
+      var amount = Number((salary.value || "").replace(/[$,\s]/g, ""));
+      note.textContent = "";
+      if (!amount || amount <= 0) return;
+      var suggested = (Math.round(amount / {{ year_hours }} * 100) / 100).toFixed(2);
+      note.textContent = "Suggested: $" + suggested + " an hour (salary ÷ {{ year_hours }}). ";
+      var use = document.createElement("button");
+      use.type = "button";
+      use.textContent = "Use it";
+      use.addEventListener("click", function () { rate.value = suggested; rate.focus(); });
+      note.append(use);
+    }
+    salary.addEventListener("input", show);
+    show();
+  })();
+</script>
+{% endblock %}

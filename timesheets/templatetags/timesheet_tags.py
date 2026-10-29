@@ -148,6 +148,24 @@ def signed_hours(minutes):
 
 
 @register.filter
+def usd(amount):
+    """Exact money as US dollars: Decimal("1234.5") → "$1,234.50"; None → "—" (D-171)."""
+    if amount is None or amount == "":
+        return "—"
+    sign = "−" if amount < 0 else ""
+    return f"{sign}${abs(amount):,.2f}"
+
+
+BUDGET_TONES = {"On track": "approved", "At risk": "warning", "Over budget": "danger"}
+
+
+@register.filter
+def budget_tone(status):
+    """The badge tone of a budget status (D-169): green, amber, red; grey for no budget."""
+    return BUDGET_TONES.get(status, "neutral")
+
+
+@register.filter
 def hours2(minutes):
     """Minutes as hours with 2 decimals: 450 → "7.50" (payroll, D-64)."""
     return f"{int(minutes or 0) / 60:.2f}"

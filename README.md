@@ -91,9 +91,9 @@ Log out (top right) and in again as each of these. They all use your `DEMO_PASSW
 | Log in as | What to look at |
 |---|---|
 | `dev2@yourcompany.com` (employee) | **Timesheets** → this week: the weekly grid. **+ Add row** (Project work asks for a project, then one of its tasks), click a day to enter times, the ⋮ menu on a row, **Save draft** / **Submit**. **Dashboard**: hours by task and by charge code. **Reports → Project hours**: your own hours; download Excel or CSV. |
-| `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. **Reports → Project hours** with Group by **Manager**. |
-| `payroll@yourcompany.com` (payroll) | **Payroll**: one register per pay period (Open → Ready → Finalize & export → Paid), **Pending approvals** (who still has to approve) and **Corrections**. |
-| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects (with their **Allowed tasks**), **Tasks**, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. **Reports → Project hours**: everyone. Also try `eng.director@yourcompany.com` (director): all their managers' groups. |
+| `eng.manager@yourcompany.com` (manager) | **Approvals**: the last finished pay period. Open a person: approve, reject, or for a **Locked** (never submitted) person **Edit** their week and then approve it. **Change requests**, **Team**. **Reports → Project hours** with Group by **Manager**; **Reports → Project budget**: what your people's approved hours cost against each project's budget. |
+| `payroll@yourcompany.com` (payroll) | **Payroll**: one register per pay period (Open → Ready → Finalize & export → Paid), **Pending approvals** (who still has to approve) and **Corrections**. **Reports → Project budget**: everyone's labour cost (view only). |
+| `hr@yourcompany.com` (HR admin) | **Admin**: employees, teams, projects (with their **Allowed tasks**), **Tasks**, deactivate, reset passwords, CSV import/export; **Pending approvals** in the Admin header. **Reports → Project hours**: everyone. **Admin → Employees → an employee → Pay**: pay history and **Add pay change**; **Import / Export pay CSV**; a project's **Budget**. **Reports → Project budget**: every project's budget vs cost, By employee and Rate missing. Also try `eng.director@yourcompany.com` (director): all their managers' groups. |
 | `ceo@yourcompany.com` (top manager) | **Team**: the whole company. |
 
 ## Updating an existing copy
@@ -124,6 +124,10 @@ uv run python manage.py migrate
 uv run python manage.py migrate --database=payroll
 uv run python manage.py seed_demo
 ```
+
+Since Change 12, `migrate` also adds employee pay and project budgets (both empty on an
+existing database: HR enters pay in Admin, or rebuild the demo data as above to get demo pay
+and budgets).
 
 **Only once**, if you used a version from before the pay period registers (Change 8) and had
 already exported payroll, also run this (it is safe to repeat):
@@ -235,6 +239,26 @@ Everyone has **Reports** in the menu (`/reports/project-hours/`).
   uv run python manage.py time_project_report hr@yourcompany.com --period 12w
   ```
 
+## Reports — Project budget
+Managers (their own people), payroll staff and HR (everyone) have **Reports → Project budget**
+(`/reports/project-budget/`); for everyone else it isn't there.
+- **What a project costs:** each approved project hour × the person's hourly pay rate on that
+  day (set by HR), rounded to cents per entry. Only project work counts — never Break, leave,
+  Meetings, Training or Other. Overtime uses the same rate (no premium). **Approved hours only.**
+- **Budget:** per project the budget, the **total cost to date** (the whole project's approved
+  cost since its "costs count from" date, whatever period you look at), what's **remaining**,
+  **% used** and the status: **On track** (below 80 %), **At risk** (80–100 %), **Over budget**
+  (above 100 %) or **No budget set**. The thresholds are the `BUDGET_AT_RISK_PERCENT` and
+  `BUDGET_OVER_PERCENT` settings in `.env`.
+- **This period:** cost and hours of the people in the report, by team or manager, task, pay
+  type and pay period, and **By employee** (hourly rate used and cost). Annual salaries are
+  never shown here.
+- **Rate missing:** hours of someone with no pay record for that day are not costed (never $0);
+  they are listed so HR can add the pay.
+- **Downloads:** **Costs Excel / Costs CSV** (`project-costs_<from>_to_<to>`) and, separately,
+  **Hours Excel / Hours CSV** (the Project hours report with Approved). Each download is
+  written to the audit log.
+
 ## Timesheets
 `/timesheets/` lists your recent weeks. A week is a **grid**: one row per category, or per
 project **and task** for Project work, a column per day (a week runs **Sunday to Saturday**) and a
@@ -337,6 +361,17 @@ Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every chang
 - **Employees, teams, projects:** add and edit. Nothing can be deleted: deactivate employees and clear *Active* on projects instead.
 - **Project codes** are assigned by the app: a new project gets the next I-code (I-001, I-002, …, I-1000 after I-999) when you save. You only type the name; the code is shown after saving and can never be edited or reused.
 - **Tasks** (what project work is spent on: code, name, description, active, sort order): add and edit; the code can't change once added. Clear *Active* instead of deleting. The page shows how many saved entries use the task.
+- **Employee pay** (admins only): on an employee's page, **Pay** shows the current pay and the
+  history. **Add pay change**: Salaried (annual salary; the hourly rate is suggested as salary
+  ÷ 2,080 — use it or type your own) or Hourly (hourly rate), from an **effective date**. A
+  change is always a new record, so earlier project costs keep their rate; a date in the past
+  re-prices work from that day; the same date again corrects the earlier record. Nothing is
+  deleted; every change is audited. **Import pay CSV / Export pay CSV** on the employee list
+  (employee_code, pay_type, annual_salary, hourly_rate, effective_from): checked first with a
+  summary, any error means nothing is imported, and it only ever adds records. Pay is not in
+  the normal employee CSV or anyone's Profile.
+- **Project budget:** on a project's page, **Budget** (USD; empty = No budget set) and **Costs
+  count from** (empty = all time). Changes are audited.
 - **Allowed tasks** on a project: tick the tasks people may book to it (a new project starts with every active task ticked). Removing a task, or deactivating one, that saved entries use is allowed: those entries keep it, you get a note saying how many, and open weeks must choose another task when they are saved again.
 - **Deactivate / Reactivate:** select employees in the list and choose the action. Deactivate asks for the end date (today by default) and logs the person out; their history stays and their submitted weeks can still be approved and paid.
 - **Reset password:** on an employee's page. HR types a temporary password; the person must choose a new one at their next login. Any login lockout is cleared.
