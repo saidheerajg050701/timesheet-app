@@ -438,7 +438,8 @@ uv run playwright install chromium
 
 **Tests**
 ```bash
-uv run pytest -m "not e2e"                 # fast unit + integration tests (~1 minute)
+uv run pytest -m "not e2e"                 # fast unit + integration tests (~1 minute); make test-fast
+uv run pytest tests/timesheets             # only one app's tests
 uv run pytest -m e2e                       # end-to-end tests in a real browser
 bash scripts/test_all.sh                   # everything: ruff, migrations, Django check, coverage ≥ 80 %, e2e
 bash scripts/test_all.sh --browser-channel chrome   # the same, using your installed Google Chrome
@@ -462,9 +463,39 @@ SCREENSHOTS_DIR=~/Desktop/timesheet-screenshots uv run pytest scripts/visual_rev
 - You review what changed and commit it yourself. `.env`, `db.sqlite3` and `payroll.sqlite3`
   are never committed.
 
+**Everyday commands** (`make help` lists them; none deletes or reseeds data)
+```bash
+make run          # start the app (http://127.0.0.1:8000)
+make test         # everything, like bash scripts/test_all.sh
+make test-fast    # unit + integration tests
+make e2e          # browser tests
+make lint         # ruff
+make check        # Django check + no forgotten migrations
+make backup       # back up both databases
+make migrate      # migrate both databases (main and payroll)
+```
+
 **Layout**
-- `config/`: settings (read from `.env`), URLs
-- `directory/`, `timesheets/`, `audit/`, `payroll/`, `analytics/`: Django apps. Business rules live in each app's `services/` package
-- `payroll/routers.py`: sends the payroll app to `payroll.sqlite3` and keeps every other app out of it
-- `templates/`, `static/vendor/`: Bootstrap 5, HTMX and Chart.js, saved locally (no JS build step)
-- `tests/`: pytest suite (see B.11 in the guide); `scripts/visual_review/`: the screenshot tool; `scripts/doctor.sh`: the environment check
+```
+config/
+  settings/       base.py (shared, reads .env) · local.py (the default) · test.py (pytest)
+                  · production.py (a skeleton for a future server, not used yet)
+  urls.py  wsgi.py  asgi.py
+directory/  timesheets/  audit/  payroll/  analytics/     Django apps; business rules live in
+                                                          each app's services/ package
+  timesheets/views/   weeks.py · approvals.py · requests.py
+  analytics/views/    dashboard.py · team.py · reports.py
+  directory/services/demo/            the demo company (seed_demo), one file per part
+  analytics/services/project_report/  Reports → Project hours: filters, scope, rows, numbers
+  payroll/services/register/          pay period registers: state, table/CSV, actions, backfill
+payroll/routers.py    sends the payroll app to payroll.sqlite3 and keeps every other app out
+templates/  static/   pages; Bootstrap 5, HTMX and Chart.js saved locally (no JS build step)
+tests/
+  conftest.py  factories.py  forms.py          shared fixtures and helpers
+  <app>/unit/  <app>/integration/              tests by app (directory, timesheets, payroll,
+                                               analytics, audit)
+  site/                                        whole-site checks (menus, errors, theme, first run)
+  e2e/        helpers.py · test_<area>.py      real-browser tests (see B.11 in the guide)
+scripts/      test_all.sh · doctor.sh · visual_review/ (screenshots)
+Makefile      everyday commands
+```

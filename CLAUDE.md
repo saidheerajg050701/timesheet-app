@@ -54,6 +54,14 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   history (can_manage_pay); never log an amount. Costs (D-169–D-171): only from
   analytics/services/project_costs.py, APPROVED hours only, rounded per entry; managers see
   their tree, payroll and admins everyone (can_see_costs / can_see_everyones_costs).
+- Layout (D-173): settings are config/settings/{base,local,test,production}.py (local is the
+  default, pytest uses test, production is a skeleton not used yet). An app with several view
+  files has a views/ package (timesheets/views/{weeks,approvals,requests}.py,
+  analytics/views/{dashboard,team,reports}.py). A big service may be a package whose
+  __init__.py re-exports its public names (directory/services/demo/,
+  analytics/services/project_report/, payroll/services/register/). Tests live in
+  tests/<app>/unit/ and tests/<app>/integration/, whole-site checks in tests/site/, browser tests
+  in tests/e2e/test_<area>.py with shared helpers in tests/e2e/helpers.py.
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
@@ -63,7 +71,8 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Always run Python through uv (`uv run ...`); add packages with `uv add`, never pip.
 
 ## Commands
-- uv run python manage.py runserver                       # http://127.0.0.1:8000
+- make help                                                # lists the everyday commands below
+- uv run python manage.py runserver                       # http://127.0.0.1:8000 (make run)
 - uv run python manage.py migrate && uv run python manage.py migrate --database=payroll
 - uv run python manage.py seed_demo
 - uv run pytest -m "not e2e"                              # fast tests

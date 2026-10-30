@@ -1,11 +1,13 @@
-"""Django settings for the timesheet app. Values come from .env (see .env.example)."""
+"""Django settings shared by every environment (D-173). Values come from .env (see
+.env.example). local.py (your Mac, the default), test.py (pytest) and production.py (a skeleton,
+not used yet) start from these."""
 
 from datetime import date, time, timedelta
 from pathlib import Path
 
 import environ
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent  # the project folder
 
 env = environ.Env(
     DJANGO_DEBUG=(bool, False),

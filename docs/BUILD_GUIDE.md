@@ -9,6 +9,7 @@
 
 | Version | Change | Details |
 |---|---|---|
+| 3.9 | **Refactor R1 – Reorganized for long-term maintenance (no change in behaviour)** | Same pages, URLs, permissions, rules, tables, migrations, numbers and files. Settings are a package (`config/settings/`: base, local — the default — test for pytest, and a production skeleton that is not used yet); `timesheets/views/` and `analytics/views/` packages replace the `*_views.py` files; the largest services are packages that re-export their public names (`directory/services/demo/`, `analytics/services/project_report/`, `payroll/services/register/`; "who still has to approve" moved to `timesheets/services/pending.py`); tests are grouped by app in `tests/<app>/unit` and `tests/<app>/integration`, with `tests/site/` for whole-site checks and one browser-test file per area; a `Makefile` with everyday commands. Before and after: the same 350 tests (270 catalogued IDs); coverage 98.24 % before, 98.25 % after (D-173) |
 | 3.8 | **Change 12 – Employee pay, project budgets and labour cost** | HR records each person's **pay** in Admin (admins only): **Salaried** (annual salary + the hourly rate HR fixes, suggested as salary ÷ 2,080) or **Hourly**, each with an "effective from" date. Pay is **history**: a change — or a correction for the same date — is a new record, never an edit; back-dated changes are allowed (not before the hire date) and re-price work from that date; every change is audited. An admin-only **Pay CSV** exports the history and imports new records (preview, line-numbered errors, all-or-nothing). Projects get an optional **budget** (USD) and "costs count from" date. New **Reports → Project budget** for managers (their tree), payroll and HR (everyone): per project the budget, total cost to date (the whole project's approved labour cost), remaining, % used, status (On track / At risk / Over budget / No budget set), cost and hours this period; cost by team or manager, task, pay type and pay period; **By employee** with hourly rate and cost; the **Rate missing** list (hours with no pay record, never costed at $0). Approved hours only; overtime at the same rate (no premium). Two separate downloads: the **costs** file (Excel / CSV) and the Change 11 **hours** file. Migrations `directory/0003_payrecord`, `timesheets/0009_project_budget`; payroll unchanged (D-166–D-172, T-258–T-270) |
 | 3.7 | **Change 11b – Only the report filters that make a difference** | On Reports → Project hours a manager now sees only the choices that change the result: **People** (whole tree / direct reports / one manager's group) only when someone under them manages people too; **Group by** only when both Team (people in more than one team) and Manager (more than one manager row) apply — otherwise the one that applies is used and its table shown, and no group table at all when neither does. The Excel skips the same one-row tabs. An address with an option that isn't offered falls back to the default (no error, nobody extra). Directors and admins see what they saw before. No migration (D-165, T-254–T-257) |
 | 3.6 | **Change 11 – Reports → Project hours** | A new **Reports** menu item for everyone opens **Project hours** (`/reports/project-hours/`). Filters (kept in the address, so a link can be shared): **Period** (this / last pay period, last 4 or 12 weeks, custom dates widened to whole Sunday–Saturday weeks), **Projects** (the 10b search box; several; inactive projects too), **Hours** (Approved / Approved + Submitted / Everything entered). Employees — payroll-only users too — see only their own hours; managers their tree, directors all their managers' groups, admins everyone, with **People** (whole tree / direct reports / one manager's group) and **Group by** (team or manager). It shows a Summary (project hours, non-project time "not filtered by project", total time, "X with hours of Y people"), By project (with a bar chart), By task, Project × task, By week, Non-project time, and for managers By team or **By manager** (own group + "including everyone below", click to drill in) and **By employee** (everyone in scope, 0.00 rows with a note, leave for context). **Excel** (tabs by role) and **CSV** (one row per counted entry, no reasons) downloads, formula-safe, each written to the audit log. Same numbers everywhere from one service; 9 database reads whatever the size. New package `openpyxl`. No migration (D-160–D-164, T-244–T-253) |
@@ -65,7 +66,8 @@
 | Change 10b | Project I-codes and project search (post-release) | `8c00c54` | Done |
 | Change 11 | Reports → Project hours with Excel and CSV downloads (post-release) | `23fcc6b` | Done |
 | Change 11b | Only the report filters that make a difference (post-release) | `4dd8155` | Done |
-| Change 12 | Employee pay, project budgets, labour cost and budget vs cost (post-release) | (commit pending) | Done — ready to commit |
+| Change 12 | Employee pay, project budgets, labour cost and budget vs cost (post-release) | `062a78f` | Done |
+| Refactor R1 | Reorganized code and tests; settings package; Makefile — no behaviour change | (commit pending) | Done — ready to commit |
 
 ---
 
@@ -712,12 +714,12 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 | 13 | `publish_period(approval, …)` (idempotent, D-66; settles corrected versions of once-exported weeks and creates their adjustments, D-118–D-121), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` (also creates missing adjustments, D-125) | `payroll/services/publish.py`, `payroll/services/adjustments.py`, `payroll/services/sync.py` |
 | 14 | `export_period(...)` (whole period: CURRENT weeks + CURRENT adjustments, batch `EXP-0001`…, D-68, D-123), `batch_csv(...)` (WEEK and ADJUSTMENT rows; text cells spreadsheet-safe), `mark_paid(...)` (per batch, both kinds, D-69), `corrections()` (with adjustments, D-124), `carry_period(...)` (D-121) | `payroll/services/export.py`, `payroll/services/adjustments.py` |
 | 17 | `approval_deadline_for(period_start)` → `APPROVAL_DEADLINE_DAYS` after the period's last day at `APPROVAL_DEADLINE_TIME`, company time (default Monday 12:00, D-133); `must_be_approved(employees, period_start)` → the one "who must be approved" rule, used per manager by `period_rows` and company-wide by `company_period_rows` (D-54, D-134) | `timesheets/services/calendar.py`, `timesheets/services/approvals.py` |
-| 18 | `period_state(period_start, now)` → OPEN / READY (live) or FINALIZED / PAID (saved), approved x of y, why it isn't ready (D-132, D-133); `period_items` + `build_lines` → the register's lines from the PayrollWeek and PayrollAdjustment records only — the same code for the preview and for finalizing (D-134, D-136); `finalize(...)` (one batch, frozen lines, audit, D-135); `mark_paid(...)`; `register_csv(...)`; `build_registers(...)` for earlier exports (D-137); `closed_periods()` / `carry_period(...)` (D-136) | `payroll/services/register.py`, `payroll/services/adjustments.py` |
-| 19 | `decision_blockers(row)` → the one rule for Approve / Reject (required weeks SUBMITTED or LOCKED; a REOPENED week waits; open change request blocks, D-139); `edit_blockers`, `unsubmitted_notes`, `pending_by_manager(period_start, now)` (D-143) in `timesheets/services/approvals.py`; `edit_for_approval(viewer, employee, week_start, entries, now)` — the approver's edit from Approvals, status and submission time untouched (D-140) | `timesheets/services/approvals.py`, `timesheets/services/changes.py` |
+| 18 | `period_state(period_start, now)` → OPEN / READY (live) or FINALIZED / PAID (saved), approved x of y, why it isn't ready (D-132, D-133); `period_items` + `build_lines` → the register's lines from the PayrollWeek and PayrollAdjustment records only — the same code for the preview and for finalizing (D-134, D-136); `finalize(...)` (one batch, frozen lines, audit, D-135); `mark_paid(...)`; `register_csv(...)`; `build_registers(...)` for earlier exports (D-137); `closed_periods()` / `carry_period(...)` (D-136) | `payroll/services/register/` (state, table, actions, backfill), `payroll/services/adjustments.py` |
+| 19 | `decision_blockers(row)` → the one rule for Approve / Reject (required weeks SUBMITTED or LOCKED; a REOPENED week waits; open change request blocks, D-139); `edit_blockers`, `unsubmitted_notes`, `pending_by_manager(period_start, now)` (D-143) in `timesheets/services/approvals.py`; `edit_for_approval(viewer, employee, week_start, entries, now)` — the approver's edit from Approvals, status and submission time untouched (D-140) | `timesheets/services/approvals.py` (`pending_by_manager`: `timesheets/services/pending.py`), `timesheets/services/changes.py` |
 | 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks): `dashboard_for`, `punctuality`, `overtime`, `hours_by_project`, `hours_by_task`, `hours_by_charge_code` ("Task not recorded" as its own line, D-153), `hours_by_category`, `approval_outcomes` — built on `week_state`, `summarize` and `split_hours` (D-74–D-79) | `analytics/services/metrics.py` |
 | 20 | `charge_code(project, task)` → "I-001-DEV" (project code alone without a task, D-150); `task_label`, `TASK_NOT_RECORDED`; `task_problem(project, task)` → the one task rule used by `validate_entries` and "+ Add row" / ⋮ (D-151); `task_choices()` → each active project's allowed active tasks for the grid dialogs (D-152). Admin: `save_task` and `set_project_tasks` (audited, D-148, D-149) | `timesheets/services/tasks.py`, `directory/services/directory_admin.py` |
 | 21 | `format_code(number)` → "I-007"; `next_number()` (1 + the highest number ever used); `assign_code(project)` — the only place a project gets its code, called by `directory_admin.save_project` and `seed_demo` (D-155); `search_projects(text)` — the one project-search rule (I-code or name, partial, any case, active only, by I-code); `recent_projects(employee, week_start)` and `project_options(text, employee, week_start)` — what the search box lists (D-157, D-158) | `timesheets/services/projects.py` |
-| 22 | `project_report(viewer, params, now)` → the one ProjectReport the page, the Excel and the CSV use (D-160–D-164): `read_filters` (period → whole Sunday–Saturday weeks with calendar.py, projects, Hours, scope, group), `report_people` (own hours, or the viewer + tree / direct reports / one manager's group via `manager_map` / `reporting_tree_ids`; 403 outside), `build_report` (project hours, non-project time, total time, by project / task / project × task / week / team / manager with roll-up, By employee with 0.00 notes, the Detail); `report_files.workbook` / `detail_csv` / `file_name` / `audit_download` (layout only; `safe_cell`) | `analytics/services/project_report.py`, `analytics/services/report_files.py` |
+| 22 | `project_report(viewer, params, now)` → the one ProjectReport the page, the Excel and the CSV use (D-160–D-164): `read_filters` (period → whole Sunday–Saturday weeks with calendar.py, projects, Hours, scope, group), `report_people` (own hours, or the viewer + tree / direct reports / one manager's group via `manager_map` / `reporting_tree_ids`; 403 outside), `build_report` (project hours, non-project time, total time, by project / task / project × task / week / team / manager with roll-up, By employee with 0.00 notes, the Detail); `report_files.workbook` / `detail_csv` / `file_name` / `audit_download` (layout only; `safe_cell`) | `analytics/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `analytics/services/report_files.py` |
 | 23 | `suggested_hourly(salary)` (÷ 2,080, half-up to cents), `labour_cost(minutes, rate)` (hours × rate, cents), `rate_index(ids)` / `record_on(records, day)` (the pay in force: latest effective_from ≤ day, newest for a tie), `check_pay`, `add_pay` (audited) — the only pay rules (D-166); `pay_import.export_pay` / `import_pay` (D-167) | `directory/services/pay.py`, `directory/services/pay_import.py` |
 | 24 | `project_costs(viewer, params, now)` → the one CostReport the Project budget page, the costs Excel and CSV use: the Project hours report with Approved only (`everyone` for payroll and admins), each Project-work entry priced, per-project budget figures from the whole project's approved cost since costs_from, breakdowns, Rate missing; `budget_status(budget, cost)` with BUDGET_AT_RISK_PERCENT / BUDGET_OVER_PERCENT; `cost_files.workbook` / `detail_csv` (layout only) | `analytics/services/project_costs.py`, `analytics/services/cost_files.py` |
 | 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
@@ -751,51 +753,73 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 tests/
   conftest.py              # shared fixtures: company, users, logged-in clients, fixed clock
   factories.py             # factory_boy factories: Employee, User, Timesheet, TimeEntry, ...
-  unit/
-    test_calendar.py       # weeks, deadlines, pay periods, daylight saving
-    test_permissions.py
-    test_signup.py
-    test_passwords.py
-    test_accounts.py       # UserManager, createsuperuser, directory → account sync (D-02, D-13, D-20)
-    test_audit.py          # exactly one of actor / system_actor (D-14)
-    test_validation.py
+  forms.py                 # the weekly grid as the browser posts it
+  directory/
+    unit/
+      test_accounts.py    # UserManager, createsuperuser, directory → account sync (D-02, D-13, D-20)
+      test_directory_rules.py # reporting loops, company email domain (D-89)
+      test_passwords.py
+      test_permissions.py
+      test_signup.py
+    integration/
+      test_admin.py
+      test_admin_csv.py   # employee CSV import preview/confirm and export round-trip (T-142, T-143)
+      test_admin_edit.py  # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
+      test_auth_views.py
+      test_import_employees.py
+      test_pay.py         # pay records, the Admin pay page, the Pay CSV, project budgets in Admin (T-258–T-261)
+      test_seed_demo.py
+  timesheets/
+    unit/
+      test_calendar.py    # weeks, deadlines, pay periods, daylight saving
+      test_validation.py
+    integration/
+      test_approvals.py
+      test_change_requests.py
+      test_entry_form.py  # the grid on the week page and Edit directly: blank/partial entries, re-render, cell hours (T-89–T-91)
+      test_grid.py        # weekly grid: layout, totals, add row, slots, leave, errors on cells, read-only (T-160–T-166), several slots per cell (T-184–T-186), optional reasons (T-188)
+      test_manager_decisions.py # Change 9: edit / approve / reject locked people, register waits, pending by manager (T-217–T-223)
+      test_projects.py    # I-codes and the project search box: code generation, admin, migration, search, recent projects (T-238–T-242)
+      test_row_actions.py # change / delete a whole grid row: delete, merge, kinds, refusals, audit, markup (T-191–T-197, T-199)
+      test_sunday_week.py # Sunday-to-Saturday weeks: last-day deadline, redirects, daylight-saving week (T-169, T-171, T-172)
+      test_tasks.py       # tasks and charge codes: admin, allowed tasks, rules, grid, ⋮, history, analytics, payroll, seed, approve after a task is removed (T-227–T-235, T-237)
+      test_timesheet_flow.py
+  payroll/
+    unit/
+      test_payroll_split.py
+      test_routers.py
+    integration/
+      test_adjustments.py # automatic pay adjustments: settle, carry forward, CSV, sync, append-only, settled label (T-173–T-182)
+      test_payroll_pages.py # /payroll/, export CSV, corrections, 403s (T-37–T-39, T-110, T-111)
+      test_payroll_publish.py
+      test_payroll_register.py # pay period registers: deadline, who, READY, lines, finalize, carry-forward, CSV, pages, backfill, sync (T-203–T-215)
+  analytics/
+    unit/
+      test_metrics.py     # dashboard helpers (range, rate, totals)
+      test_team_metrics.py # team helpers (utilization, sorting, one-query tree)
+    integration/
+      test_analytics.py
+      test_home.py
+      test_project_costs.py # Reports → Project budget: cost rules, rate missing, budget, totals, who sees what, downloads, seed, query count (T-262–T-269)
+      test_project_report.py # Reports → Project hours: who sees what, numbers, filters, By employee, Excel, CSV + audit, query count (T-244–T-251), only the filters that matter (T-254–T-257)
+      test_team.py        # /team/, drill-down, week view, large-data query count (T-123–T-132)
+  audit/
+    unit/
+      test_audit.py       # exactly one of actor / system_actor (D-14)
+  site/                    # whole-site checks (D-173)
     test_first_run_checks.py # example secret key and demo password refused, doctor.sh parses (T-225, T-226)
-    test_payroll_split.py
-    test_metrics.py        # dashboard helpers (range, rate, totals)
-    test_team_metrics.py   # team helpers (utilization, sorting, one-query tree)
-    test_directory_rules.py # reporting loops, company email domain (D-89)
-  integration/
-    test_auth_views.py
-    test_timesheet_flow.py
-    test_row_actions.py    # change / delete a whole grid row: delete, merge, kinds, refusals, audit, markup (T-191–T-197, T-199)
-    test_project_report.py # Reports → Project hours: who sees what, numbers, filters, By employee, Excel, CSV + audit, query count (T-244–T-251), only the filters that matter (T-254–T-257)
-    test_pay.py            # pay records, the Admin pay page, the Pay CSV, project budgets in Admin (T-258–T-261)
-    test_project_costs.py  # Reports → Project budget: cost rules, rate missing, budget, totals, who sees what, downloads, seed, query count (T-262–T-269)
-    test_projects.py       # I-codes and the project search box: code generation, admin, migration, search, recent projects (T-238–T-242)
-    test_tasks.py          # tasks and charge codes: admin, allowed tasks, rules, grid, ⋮, history, analytics, payroll, seed, approve after a task is removed (T-227–T-235, T-237)
-    test_entry_form.py     # the grid on the week page and Edit directly: blank/partial entries, re-render, cell hours (T-89–T-91)
-    test_grid.py           # weekly grid: layout, totals, add row, slots, leave, errors on cells, read-only (T-160–T-166), several slots per cell (T-184–T-186), optional reasons (T-188)
-    test_sunday_week.py    # Sunday-to-Saturday weeks: last-day deadline, redirects, daylight-saving week (T-169, T-171, T-172)
-    test_change_requests.py
-    test_approvals.py
-    test_payroll_publish.py
-    test_payroll_pages.py  # /payroll/, export CSV, corrections, 403s (T-37–T-39, T-110, T-111)
-    test_manager_decisions.py # Change 9: edit / approve / reject locked people, register waits, pending by manager (T-217–T-223)
-    test_payroll_register.py # pay period registers: deadline, who, READY, lines, finalize, carry-forward, CSV, pages, backfill, sync (T-203–T-215)
-    test_adjustments.py    # automatic pay adjustments: settle, carry forward, CSV, sync, append-only, settled label (T-173–T-182)
-    test_analytics.py
-    test_team.py           # /team/, drill-down, week view, large-data query count (T-123–T-132)
-    test_admin.py
-    test_admin_edit.py     # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
-    test_hardening.py      # DEBUG off: static files, friendly 404/500 (T-156)
-    test_ui_theme.py       # theme stylesheet, one status badge component, WCAG AA contrast (T-157–T-159)
-    test_admin_csv.py      # employee CSV import preview/confirm and export round-trip (T-142, T-143)
-    test_import_employees.py
-    test_layout.py         # menus, header, placeholder pages, profile (FR-4, D-30)
-    test_seed_demo.py
-  e2e/
-    conftest.py            # live test server, fixed clock, a small company, one browser context per person (D-94)
-    test_e2e_flows.py      # marked @pytest.mark.e2e (T-146–T-155, T-167, T-183)
+    test_hardening.py     # DEBUG off: static files, friendly 404/500 (T-156)
+    test_layout.py        # menus, header, placeholder pages, profile (FR-4, D-30)
+    test_ui_theme.py      # theme stylesheet, one status badge component, WCAG AA contrast (T-157–T-159)
+  e2e/                     # real browser, marked @pytest.mark.e2e (D-94)
+    conftest.py            # live test server, fixed clock, a small company, one browser context per person
+    helpers.py             # shared helpers: addresses, grid cells and dialogs, project search, row menus, downloads
+    test_auth.py           # sign-up, pages people may not open (T-146, T-155)
+    test_admin.py          # HR: deactivate, password reset (T-153, T-154)
+    test_timesheets.py     # the weekly grid, rows, row menus, tasks, project search, deadlines
+    test_approvals.py      # change requests, Edit directly, approvals, manager decisions
+    test_payroll.py        # payroll records, export, registers
+    test_reports.py        # Project hours, Project budget, employee pay
 ```
 
 ### Test case catalogue (must all exist and pass)
@@ -1085,284 +1109,284 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 
 ### Status of every test (Phase 12, updated for Changes 1–12)
 
-Result of `bash scripts/test_all.sh` on October 28, 2026 (after Change 11) (fixed clocks, test databases only): **350 test cases, all passed** (326 unit + integration, 24 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216, Change 9 T-217–T-224, the first-run checks T-225–T-226 and Change 10 T-227–T-237 and Change 10b T-238–T-243 and Change 11 T-244–T-253 and Change 11b T-254–T-257 and Change 12 T-258–T-270, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.24 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `bash scripts/test_all.sh` on October 28, 2026 (after Change 11) (fixed clocks, test databases only): **350 test cases, all passed** (326 unit + integration, 24 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216, Change 9 T-217–T-224, the first-run checks T-225–T-226 and Change 10 T-227–T-237 and Change 10b T-238–T-243 and Change 11 T-244–T-253 and Change 11b T-254–T-257 and Change 12 T-258–T-270, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.25 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
-| T-01 | Sign-up | `unit/test_signup.py::test_wrong_domain_is_refused` | ✅ Pass |
-| T-02 | Sign-up | `unit/test_signup.py::test_email_not_in_directory_is_refused_with_contact_hr` | ✅ Pass |
-| T-03 | Sign-up | `unit/test_signup.py::test_inactive_employee_is_refused` | ✅ Pass |
-| T-04 | Sign-up | `unit/test_signup.py::test_existing_account_is_refused` | ✅ Pass |
-| T-05 | Sign-up | `integration/test_auth_views.py::test_signup_creates_account_with_lowercase_email` | ✅ Pass |
-| T-06 | Password | `unit/test_passwords.py::test_password_is_hashed_with_argon2_never_plain_text` | ✅ Pass |
-| T-07 | Password | `unit/test_passwords.py::test_same_password_gives_different_hashes` | ✅ Pass |
-| T-08 | Password | `unit/test_passwords.py::test_short_or_common_passwords_are_rejected` | ✅ Pass (3 cases) |
-| T-09 | Login | `integration/test_auth_views.py::test_correct_password_logs_in` | ✅ Pass |
-| T-10 | Login | `integration/test_auth_views.py::test_five_wrong_attempts_lock_the_account_for_15_minutes` | ✅ Pass |
-| T-11 | Login | `integration/test_auth_views.py::test_inactive_employee_cannot_log_in` | ✅ Pass |
-| T-12 | Calendar | `unit/test_calendar.py::test_week_start_for_every_day_is_sunday` | ✅ Pass |
-| T-13 | Calendar | `unit/test_calendar.py::test_week_still_open_at_1159` | ✅ Pass |
-| T-14 | Calendar | `unit/test_calendar.py::test_week_locked_at_noon` | ✅ Pass |
-| T-15 | Calendar | `unit/test_calendar.py::test_deadline_stays_noon_local_across_daylight_saving` | ✅ Pass |
-| T-16 | Calendar | `unit/test_calendar.py::test_pay_period_across_year_boundary` | ✅ Pass |
-| T-17 | Validation | `unit/test_validation.py::test_times_and_hours_must_use_15_minute_steps` | ✅ Pass |
-| T-18 | Validation | `unit/test_validation.py::test_day_total_over_24_hours_is_rejected` | ✅ Pass |
-| T-19 | Validation | `unit/test_validation.py::test_date_outside_week_or_inactive_project_is_rejected` | ✅ Pass |
-| T-20 | Timesheet | `integration/test_timesheet_flow.py::test_save_draft_then_submit_before_deadline` | ✅ Pass |
-| T-21 | Timesheet | `integration/test_timesheet_flow.py::test_employee_cannot_edit_after_submitting` | ✅ Pass |
-| T-22 | Timesheet | `integration/test_timesheet_flow.py::test_unsubmitted_week_locks_at_deadline_and_counts_as_missed` | ✅ Pass |
-| T-23 | Change request | `integration/test_change_requests.py::test_request_is_visible_to_own_manager_only` | ✅ Pass |
-| T-24 | Change request | `integration/test_change_requests.py::test_unlock_reopens_until_later_of_48h_and_deadline` | ✅ Pass |
-| T-25 | Change request | `integration/test_change_requests.py::test_edit_directly_writes_before_and_after` | ✅ Pass |
-| T-26 | Permissions | `integration/test_layout.py::test_employee_is_refused_manager_and_payroll_pages` | ✅ Pass |
-| T-27 | Permissions | `unit/test_permissions.py::test_director_sees_indirect_reports_manager_only_own_tree` | ✅ Pass |
-| T-28 | Permissions | `unit/test_permissions.py::test_reporting_tree_survives_a_cycle` | ✅ Pass |
-| T-29 | Approvals | `integration/test_approvals.py::test_approve_blocked_while_a_week_is_draft_or_locked` | ✅ Pass |
-| T-30 | Approvals | `integration/test_approvals.py::test_approving_both_weeks` | ✅ Pass |
-| T-31 | Approvals | `integration/test_approvals.py::test_reject_needs_a_comment_and_reopens_both_weeks` | ✅ Pass |
-| T-32 | Approvals | `integration/test_approvals.py::test_non_manager_cannot_approve` | ✅ Pass |
-| T-33 | Payroll | `integration/test_payroll_publish.py::test_approval_publishes_two_week_records` | ✅ Pass |
-| T-34 | Payroll | `integration/test_payroll_publish.py::test_overtime_and_pto_split` | ✅ Pass |
-| T-35 | Payroll | `integration/test_payroll_publish.py::test_publish_twice_creates_no_duplicates` | ✅ Pass |
-| T-36 | Payroll | `integration/test_payroll_publish.py::test_approved_week_edited_later_gets_a_new_version` | ✅ Pass |
-| T-37 | Payroll | `integration/test_payroll_pages.py::test_export_csv` | ✅ Pass |
-| T-38 | Payroll | `integration/test_payroll_pages.py::test_managers_and_employees_get_403` | ✅ Pass |
-| T-39 | Payroll | `integration/test_payroll_pages.py::test_superseded_after_export_is_listed_in_corrections` | ✅ Pass |
-| T-40 | Analytics | `integration/test_analytics.py::test_dashboard_numbers_for_known_data` | ✅ Pass |
-| T-41 | Seed | `integration/test_seed_demo.py::test_seed_builds_the_demo_company` | ✅ Pass |
-| T-42 | Seed | `integration/test_seed_demo.py::test_seed_refuses_to_run_twice` | ✅ Pass |
-| T-43 | Change request | `integration/test_change_requests.py::test_week_unlocked_on_wednesday_stays_open_until_saturday_noon` | ✅ Pass |
-| T-44 | Accounts | `unit/test_accounts.py::test_account_requires_an_employee` | ✅ Pass |
-| T-45 | Accounts | `unit/test_accounts.py::test_create_user_takes_email_and_flags_from_employee` | ✅ Pass |
-| T-46 | Accounts | `unit/test_accounts.py::test_createsuperuser_refuses_ineligible_employees` | ✅ Pass |
-| T-47 | Accounts | `unit/test_accounts.py::test_createsuperuser_creates_admin_account_for_active_admin_employee` | ✅ Pass |
-| T-48 | Accounts | `unit/test_accounts.py::test_admin_flag_controls_staff_and_superuser` | ✅ Pass |
-| T-49 | Accounts | `unit/test_accounts.py::test_employee_status_controls_is_active` | ✅ Pass |
-| T-50 | Accounts | `unit/test_accounts.py::test_email_change_in_directory_updates_account` | ✅ Pass |
-| T-51 | Accounts | `unit/test_accounts.py::test_emails_stay_unique_regardless_of_case` | ✅ Pass |
-| T-52 | Audit | `unit/test_audit.py::test_audit_row_needs_exactly_one_actor` | ✅ Pass |
-| T-53 | Import | `integration/test_import_employees.py::test_import_creates_people_teams_and_manager_links` | ✅ Pass |
-| T-54 | Import | `integration/test_import_employees.py::test_reimport_updates_in_place_and_syncs_account` | ✅ Pass |
-| T-55 | Import | `integration/test_import_employees.py::test_invalid_csv_imports_nothing_and_lists_every_error` | ✅ Pass |
-| T-56 | Seed | `integration/test_seed_demo.py::test_seed_approvals_follow_the_rules` | ✅ Pass |
-| T-57 | Seed | `integration/test_seed_demo.py::test_seed_audit_rows_name_the_right_actor` | ✅ Pass |
-| T-58 | Login | `integration/test_auth_views.py::test_every_page_requires_login_except_login_and_signup` | ✅ Pass |
-| T-59 | Databases | `integration/test_auth_views.py::test_axes_and_main_tables_stay_out_of_payroll_database` | ✅ Pass |
-| T-60 | Permissions | `unit/test_permissions.py::test_only_the_direct_manager_approves` | ✅ Pass |
-| T-61 | Permissions | `unit/test_permissions.py::test_admins_approve_only_employees_without_a_manager` | ✅ Pass |
-| T-62 | Permissions | `integration/test_layout.py::test_payroll_flag_adds_only_payroll_pages` | ✅ Pass |
-| T-63 | Permissions | `integration/test_layout.py::test_payroll_user_who_manages_gets_manager_rights_for_own_tree` | ✅ Pass |
-| T-64 | Layout | `integration/test_layout.py::test_menu_and_header_follow_roles` | ✅ Pass |
-| T-65 | Profile | `integration/test_layout.py::test_profile_shows_directory_details_read_only` | ✅ Pass |
-| T-66 | Profile | `integration/test_layout.py::test_password_change_keeps_session_and_audits_without_password_data` | ✅ Pass |
-| T-67 | Validation | `unit/test_validation.py::test_project_entries_need_a_project_and_others_must_not_have_one` | ✅ Pass |
-| T-68 | Validation | `unit/test_validation.py::test_entries_only_within_employment` | ✅ Pass |
-| T-69 | Calendar | `unit/test_calendar.py::test_expected_minutes_are_prorated_for_partial_weeks` | ✅ Pass |
-| T-70 | Timesheet | `unit/test_calendar.py::test_weeks_outside_employment_are_never_missed` | ✅ Pass |
-| T-71 | Timesheet | `integration/test_timesheet_flow.py::test_submit_writes_audit_row` | ✅ Pass |
-| T-72 | Validation | `unit/test_validation.py::test_end_must_be_after_start` | ✅ Pass |
-| T-73 | Validation | `unit/test_validation.py::test_timed_rows_on_one_day_must_not_overlap` | ✅ Pass |
-| T-74 | Validation | `unit/test_validation.py::test_reason_is_limited_to_255_characters` | ✅ Pass |
-| T-75 | Validation | `unit/test_validation.py::test_break_has_times_and_never_a_project` | ✅ Pass |
-| T-76 | Validation | `unit/test_validation.py::test_leave_is_hours_only_and_work_needs_times` | ✅ Pass |
-| T-77 | Timesheet | `integration/test_timesheet_flow.py::test_hours_worked_excludes_break_and_leave` | ✅ Pass |
-| T-78 | Timesheet | `integration/test_timesheet_flow.py::test_break_only_week_cannot_be_submitted` | ✅ Pass |
-| T-79 | Timesheet | `integration/test_timesheet_flow.py::test_many_rows_on_one_day` | ✅ Pass |
-| T-80 | Seed | `integration/test_seed_demo.py::test_seeded_entries_pass_the_entry_rules` | ✅ Pass |
-| T-81 | Change request | `integration/test_change_requests.py::test_requests_only_on_submitted_locked_or_approved_weeks` | ✅ Pass |
-| T-82 | Change request | `integration/test_change_requests.py::test_who_handles_a_request` | ✅ Pass |
-| T-83 | Change request | `integration/test_change_requests.py::test_each_step_is_audited` | ✅ Pass |
-| T-84 | Change request | `integration/test_change_requests.py::test_edit_directly_uses_the_same_rules` | ✅ Pass |
-| T-85 | Change request | `integration/test_change_requests.py::test_changing_an_approved_week_resets_the_period` | ✅ Pass (2 cases) |
-| T-86 | Timesheet | `integration/test_change_requests.py::test_reopened_past_week_is_editable_until_window_ends` | ✅ Pass |
-| T-87 | Timesheet | `integration/test_change_requests.py::test_late_flag_is_decided_by_the_first_submission` | ✅ Pass |
-| T-88 | Layout | `integration/test_change_requests.py::test_open_request_count_in_menu` | ✅ Pass |
-| T-89 | Timesheet | `integration/test_entry_form.py::test_completely_empty_rows_are_ignored` | ✅ Pass (2 cases) |
-| T-90 | Timesheet | `integration/test_entry_form.py::test_rerender_after_an_error_adds_no_rows` | ✅ Pass (2 cases) |
-| T-91 | Timesheet | `integration/test_entry_form.py::test_hours_are_shown_for_every_row` | ✅ Pass (2 cases) |
-| T-92 | Approvals | `integration/test_approvals.py::test_unlock_locked_week_from_approvals` | ✅ Pass |
-| T-93 | Approvals | `integration/test_approvals.py::test_rejected_period_comes_back_after_resubmission` | ✅ Pass |
-| T-94 | Approvals | `integration/test_approvals.py::test_approve_is_one_transaction_with_the_payroll_hook` | ✅ Pass |
-| T-95 | Approvals | `integration/test_approvals.py::test_who_sees_and_approves_which_rows` | ✅ Pass |
-| T-96 | Approvals | `integration/test_approvals.py::test_bulk_approve` | ✅ Pass |
-| T-97 | Approvals | `integration/test_approvals.py::test_pay_period_dates` | ✅ Pass |
-| T-98 | Approvals | `integration/test_approvals.py::test_flags` | ✅ Pass |
-| T-99 | Approvals | `integration/test_approvals.py::test_forbidden_cases` | ✅ Pass |
-| T-100 | Approvals | `integration/test_approvals.py::test_period_partly_outside_employment` | ✅ Pass |
-| T-101 | Approvals | `integration/test_approvals.py::test_open_change_request_blocks_approval` | ✅ Pass |
-| T-102 | Timesheet | `integration/test_approvals.py::test_week_page_shows_approval_status` | ✅ Pass |
-| T-103 | Payroll | `unit/test_payroll_split.py::test_overtime_rule` | ✅ Pass |
-| T-104 | Payroll | `integration/test_payroll_publish.py::test_payroll_records_are_append_only` | ✅ Pass |
-| T-105 | Payroll | `integration/test_payroll_publish.py::test_deactivated_employee_is_published_and_paid` | ✅ Pass |
-| T-106 | Payroll | `integration/test_payroll_publish.py::test_publish_and_sync_are_idempotent` | ✅ Pass |
-| T-107 | Payroll | `integration/test_payroll_publish.py::test_payroll_failure_after_commit_is_repaired_by_sync` | ✅ Pass |
-| T-108 | Payroll | `integration/test_payroll_publish.py::test_main_rollback_writes_nothing_to_payroll` | ✅ Pass |
-| T-109 | Payroll | `integration/test_payroll_publish.py::test_supersede_failure_is_repaired_by_sync` | ✅ Pass |
-| T-110 | Payroll | `integration/test_payroll_pages.py::test_csv_cells_are_spreadsheet_safe` | ✅ Pass |
-| T-111 | Payroll | `integration/test_payroll_pages.py::test_who_can_open_payroll_pages` | ✅ Pass |
-| T-112 | Payroll | `integration/test_payroll_publish.py::test_mark_paid_moves_only_exported_records` | ✅ Pass |
-| T-113 | Payroll | `integration/test_payroll_publish.py::test_backup_db_copies_both_databases` | ✅ Pass |
-| T-114 | Seed | `integration/test_seed_demo.py::test_seed_fills_the_payroll_database` | ✅ Pass |
-| T-115 | Analytics | `integration/test_analytics.py::test_range_filter` | ✅ Pass |
-| T-116 | Analytics | `integration/test_analytics.py::test_on_time_late_missed_edge_cases` | ✅ Pass |
-| T-117 | Analytics | `integration/test_analytics.py::test_new_hire_and_deactivated_employee` | ✅ Pass |
-| T-118 | Analytics | `integration/test_analytics.py::test_dashboard_overtime_matches_payroll` | ✅ Pass |
-| T-119 | Analytics | `integration/test_analytics.py::test_only_own_data` | ✅ Pass |
-| T-120 | Analytics | `integration/test_analytics.py::test_empty_state` | ✅ Pass |
-| T-121 | Analytics | `integration/test_analytics.py::test_viewing_writes_nothing_and_queries_are_bounded` | ✅ Pass |
-| T-122 | Analytics | `integration/test_analytics.py::test_categories_break_outcomes_and_current_week` | ✅ Pass |
-| T-123 | Team | `integration/test_team.py::test_team_metrics_for_known_data` | ✅ Pass |
-| T-124 | Team | `integration/test_team.py::test_utilization_rule` | ✅ Pass |
-| T-125 | Team | `integration/test_team.py::test_whole_tree_vs_direct_and_team_filter` | ✅ Pass |
-| T-126 | Team | `integration/test_team.py::test_access_rules` | ✅ Pass |
-| T-127 | Team | `integration/test_team.py::test_admin_sees_everyone` | ✅ Pass |
-| T-128 | Team | `integration/test_team.py::test_this_weeks_compliance` | ✅ Pass |
-| T-129 | Team | `integration/test_team.py::test_inactive_employees_only_with_timesheets` | ✅ Pass |
-| T-130 | Team | `integration/test_team.py::test_drill_down_is_read_only` | ✅ Pass |
-| T-131 | Team | `integration/test_team.py::test_viewing_writes_nothing` | ✅ Pass |
-| T-132 | Team | `integration/test_team.py::test_query_count_is_fixed_for_large_teams` | ✅ Pass |
-| T-133 | Admin | `integration/test_admin_edit.py::test_employee_edit_is_audited` | ✅ Pass |
-| T-134 | Admin | `integration/test_admin_edit.py::test_add_and_edit_teams_projects_and_employees` | ✅ Pass |
-| T-135 | Admin | `integration/test_admin_edit.py::test_workflow_records_are_read_only` | ✅ Pass |
-| T-136 | Admin | `integration/test_admin_edit.py::test_nothing_can_be_deleted` | ✅ Pass |
-| T-137 | Admin | `integration/test_admin_edit.py::test_deactivate` | ✅ Pass |
-| T-138 | Admin | `integration/test_admin_edit.py::test_deactivate_and_reactivate_rules` | ✅ Pass |
-| T-139 | Admin | `integration/test_admin_edit.py::test_email_and_flag_sync` | ✅ Pass |
-| T-140 | Admin | `integration/test_admin_edit.py::test_safety_rules` | ✅ Pass |
-| T-141 | Admin | `integration/test_admin_edit.py::test_password_reset` | ✅ Pass |
-| T-142 | Admin | `integration/test_admin_csv.py::test_csv_import_in_admin` | ✅ Pass |
-| T-143 | Admin | `integration/test_admin_csv.py::test_csv_export_round_trip` | ✅ Pass |
-| T-144 | Admin | `integration/test_admin_edit.py::test_only_directory_admins_reach_admin` | ✅ Pass |
-| T-145 | Admin | `integration/test_admin_edit.py::test_search_and_filters` | ✅ Pass |
-| T-146 | E2E | `e2e/test_e2e_flows.py::test_signup_refused_then_accepted` | ✅ Pass |
-| T-147 | E2E | `e2e/test_e2e_flows.py::test_save_draft_then_submit_before_the_deadline` | ✅ Pass |
-| T-148 | E2E | `e2e/test_e2e_flows.py::test_week_locks_after_the_deadline` | ✅ Pass |
-| T-149 | E2E | `e2e/test_e2e_flows.py::test_change_request_then_manager_edits_directly` | ✅ Pass |
-| T-150 | E2E | `e2e/test_e2e_flows.py::test_approve_then_payroll_sees_the_records` | ✅ Pass |
-| T-151 | E2E | `e2e/test_e2e_flows.py::test_reject_with_comment_then_resubmit` | ✅ Pass |
-| T-152 | E2E | `e2e/test_e2e_flows.py::test_payroll_export_and_mark_paid` | ✅ Pass |
-| T-153 | E2E | `e2e/test_e2e_flows.py::test_hr_deactivates_an_employee` | ✅ Pass |
-| T-154 | E2E | `e2e/test_e2e_flows.py::test_hr_password_reset_forces_a_change` | ✅ Pass |
-| T-155 | E2E | `e2e/test_e2e_flows.py::test_forbidden_pages` | ✅ Pass |
-| T-156 | Hardening | `integration/test_hardening.py::test_debug_off_serves_static_and_friendly_errors` | ✅ Pass |
-| T-157 | UI | `integration/test_ui_theme.py::test_theme_stylesheet_is_loaded_and_served` | ✅ Pass |
-| T-158 | UI | `integration/test_ui_theme.py::test_one_status_badge_component` | ✅ Pass |
-| T-159 | UI | `integration/test_ui_theme.py::test_theme_contrast_meets_wcag_aa` | ✅ Pass |
-| T-160 | Grid | `integration/test_grid.py::test_grid_layout_and_totals` | ✅ Pass |
-| T-161 | Grid | `integration/test_grid.py::test_add_row` | ✅ Pass |
-| T-162 | Grid | `integration/test_grid.py::test_multi_slot_cell` | ✅ Pass |
-| T-163 | Grid | `integration/test_grid.py::test_leave_cell` | ✅ Pass |
-| T-164 | Grid | `integration/test_grid.py::test_overlap_error_is_shown_on_the_right_cells` | ✅ Pass |
-| T-165 | Grid | `integration/test_grid.py::test_read_only_grids` | ✅ Pass |
-| T-166 | Grid | `integration/test_grid.py::test_existing_week_renders_the_same` | ✅ Pass |
-| T-167 | E2E | `e2e/test_e2e_flows.py::test_weekly_grid_in_the_browser` | ✅ Pass |
-| T-168 | Calendar | `unit/test_calendar.py::test_week_boundaries_saturday_night_and_sunday_midnight` | ✅ Pass |
-| T-169 | Timesheet | `integration/test_sunday_week.py::test_deadline_is_on_the_last_day` | ✅ Pass |
-| T-170 | Calendar | `unit/test_calendar.py::test_pay_period_anchor_must_be_a_sunday` | ✅ Pass |
-| T-171 | Timesheet | `integration/test_sunday_week.py::test_non_sunday_dates_redirect_to_their_week` | ✅ Pass |
-| T-172 | Calendar | `integration/test_sunday_week.py::test_daylight_saving_week` | ✅ Pass |
-| T-173 | Payroll | `integration/test_adjustments.py::test_positive_overtime_adjustment_after_payment` | ✅ Pass |
-| T-174 | Payroll | `integration/test_adjustments.py::test_negative_adjustment` | ✅ Pass |
-| T-175 | Payroll | `integration/test_adjustments.py::test_no_adjustment_when_the_old_version_was_never_exported` | ✅ Pass |
-| T-176 | Payroll | `integration/test_adjustments.py::test_several_corrections_of_the_same_week` | ✅ Pass |
-| T-177 | Payroll | `integration/test_adjustments.py::test_new_full_version_is_never_exported_twice` | ✅ Pass |
-| T-178 | Payroll | `integration/test_adjustments.py::test_carry_forward_period` | ✅ Pass |
-| T-179 | Payroll | `integration/test_adjustments.py::test_csv_totals_mark_paid_and_corrections` | ✅ Pass |
-| T-180 | Payroll | `integration/test_adjustments.py::test_sync_creates_missing_adjustments_idempotently` | ✅ Pass |
-| T-181 | Payroll | `integration/test_adjustments.py::test_adjustments_are_append_only_and_audited` | ✅ Pass |
-| T-182 | Payroll | `integration/test_adjustments.py::test_settled_week_links_to_the_period_that_paid_its_difference` | ✅ Pass |
-| T-183 | E2E | `e2e/test_e2e_flows.py::test_add_row_for_an_existing_row_points_at_it` | ✅ Pass |
-| T-184 | Grid | `integration/test_grid.py::test_two_slots_for_one_project_on_one_day` | ✅ Pass |
-| T-185 | Grid | `integration/test_grid.py::test_overlapping_third_slot_is_refused_on_its_cell` | ✅ Pass |
-| T-186 | Grid | `integration/test_grid.py::test_multi_slot_hint` | ✅ Pass |
-| T-187 | Validation | `unit/test_validation.py::test_empty_reasons_are_accepted` | ✅ Pass |
-| T-188 | Grid | `integration/test_grid.py::test_week_without_reasons` | ✅ Pass |
-| T-189 | Change request | `integration/test_change_requests.py::test_edit_directly_without_a_reason` | ✅ Pass |
-| T-190 | E2E | `e2e/test_e2e_flows.py::test_time_without_a_reason` | ✅ Pass |
-| T-191 | Grid rows | `integration/test_row_actions.py::test_delete_a_row_with_slots` | ✅ Pass |
-| T-192 | Grid rows | `integration/test_row_actions.py::test_delete_an_empty_row_and_a_break_row` | ✅ Pass |
-| T-193 | Grid rows | `integration/test_row_actions.py::test_change_project` | ✅ Pass |
-| T-194 | Grid rows | `integration/test_row_actions.py::test_change_into_an_existing_row_merges` | ✅ Pass |
-| T-195 | Grid rows | `integration/test_row_actions.py::test_allowed_changes` | ✅ Pass |
-| T-196 | Grid rows | `integration/test_row_actions.py::test_locked_and_other_peoples_weeks_are_refused` | ✅ Pass |
-| T-197 | Change request | `integration/test_row_actions.py::test_row_actions_in_edit_directly_are_audited` | ✅ Pass |
-| T-198 | Payroll | `integration/test_adjustments.py::test_paid_week_corrected_by_deleting_a_row` | ✅ Pass |
-| T-199 | Grid | `integration/test_row_actions.py::test_row_action_markup` | ✅ Pass |
-| T-200 | E2E | `e2e/test_e2e_flows.py::test_change_and_delete_rows` | ✅ Pass |
-| T-201 | Hardening | `integration/test_ui_theme.py::test_static_files_are_revalidated_on_every_page_load` | ✅ Pass (2 cases) |
-| T-202 | E2E | `e2e/test_e2e_flows.py::test_row_menus_in_a_real_browser` | ✅ Pass (2 cases) |
-| T-203 | Payroll | `integration/test_payroll_register.py::test_approval_deadline` | ✅ Pass |
-| T-204 | Payroll | `integration/test_payroll_register.py::test_who_must_be_approved_company_wide` | ✅ Pass |
-| T-205 | Payroll | `integration/test_payroll_register.py::test_open_becomes_ready` | ✅ Pass |
-| T-206 | Payroll | `integration/test_payroll_register.py::test_line_values_come_from_the_week_records` | ✅ Pass |
-| T-207 | Payroll | `integration/test_payroll_register.py::test_finalize_and_export` | ✅ Pass |
-| T-208 | Payroll | `integration/test_payroll_register.py::test_approvable_after_finalizing_is_carried_forward` | ✅ Pass |
-| T-209 | Payroll | `integration/test_payroll_register.py::test_corrections_carry_into_the_next_open_register` | ✅ Pass |
-| T-210 | Payroll | `integration/test_payroll_register.py::test_registers_are_append_only` | ✅ Pass |
-| T-211 | Payroll | `integration/test_payroll_register.py::test_mark_as_paid` | ✅ Pass |
-| T-212 | Payroll | `integration/test_payroll_register.py::test_register_csv_downloads` | ✅ Pass |
-| T-213 | Payroll | `integration/test_payroll_register.py::test_payroll_pages` | ✅ Pass |
-| T-214 | Payroll | `integration/test_payroll_register.py::test_build_registers_for_earlier_exports` | ✅ Pass |
-| T-215 | Payroll | `integration/test_payroll_register.py::test_sync_payroll_builds_missing_registers` | ✅ Pass |
-| T-216 | E2E | `e2e/test_e2e_flows.py::test_register_from_last_approval_to_paid` | ✅ Pass |
-| T-217 | Approvals | `integration/test_manager_decisions.py::test_manager_edits_a_locked_week` | ✅ Pass |
-| T-218 | Approvals | `integration/test_manager_decisions.py::test_approve_with_a_locked_week` | ✅ Pass |
-| T-219 | Approvals | `integration/test_manager_decisions.py::test_reject_a_locked_person` | ✅ Pass |
-| T-220 | Approvals | `integration/test_manager_decisions.py::test_refusals` | ✅ Pass |
-| T-221 | Approvals | `integration/test_manager_decisions.py::test_hr_decides_the_ceo` | ✅ Pass |
-| T-222 | Payroll | `integration/test_manager_decisions.py::test_register_waits_for_everyone` | ✅ Pass |
-| T-223 | Payroll | `integration/test_manager_decisions.py::test_pending_by_manager` | ✅ Pass |
-| T-224 | E2E | `e2e/test_e2e_flows.py::test_manager_edits_and_approves_a_locked_employee` | ✅ Pass |
-| T-225 | Setup | `unit/test_first_run_checks.py::test_secret_key_must_not_be_the_example` | ✅ Pass |
-| T-226 | Setup | `unit/test_first_run_checks.py::test_seed_refuses_the_example_demo_password` | ✅ Pass |
-| T-227 | Admin | `integration/test_tasks.py::test_task_admin` | ✅ Pass |
-| T-228 | Admin | `integration/test_tasks.py::test_allowed_tasks_per_project` | ✅ Pass |
-| T-229 | Rules | `integration/test_tasks.py::test_task_rules` | ✅ Pass |
-| T-230 | Grid | `integration/test_tasks.py::test_grid_rows_per_project_and_task` | ✅ Pass |
-| T-231 | Grid | `integration/test_tasks.py::test_row_menu_changes_the_task_in_every_editor` | ✅ Pass |
-| T-232 | History | `integration/test_tasks.py::test_history_without_a_task` | ✅ Pass |
-| T-233 | Analytics | `integration/test_tasks.py::test_analytics_by_task_and_charge_code` | ✅ Pass |
-| T-234 | Payroll | `integration/test_tasks.py::test_payroll_is_unchanged_by_tasks` | ✅ Pass |
-| T-235 | Data | `integration/test_tasks.py::test_seed_books_allowed_tasks` | ✅ Pass |
-| T-236 | E2E | `e2e/test_e2e_flows.py::test_tasks_and_charge_codes_in_a_real_browser` | ✅ Pass |
-| T-237 | Approvals | `integration/test_tasks.py::test_approve_after_a_task_is_removed` | ✅ Pass |
-| T-238 | Projects | `integration/test_projects.py::test_code_generation` | ✅ Pass |
-| T-239 | Admin | `integration/test_projects.py::test_admin_assigns_the_code` | ✅ Pass |
-| T-240 | Projects | `integration/test_projects.py::test_migration_renames_projects` | ✅ Pass |
-| T-241 | Projects | `integration/test_projects.py::test_project_search` | ✅ Pass |
-| T-242 | Projects | `integration/test_projects.py::test_recent_projects` | ✅ Pass |
-| T-243 | E2E | `e2e/test_e2e_flows.py::test_project_search_in_a_real_browser` | ✅ Pass |
-| T-244 | Reports | `integration/test_project_report.py::test_employees_see_only_their_own_hours` | ✅ Pass |
-| T-245 | Reports | `integration/test_project_report.py::test_who_managers_directors_and_admins_see` | ✅ Pass |
-| T-246 | Reports | `integration/test_project_report.py::test_numbers_add_up` | ✅ Pass |
-| T-247 | Reports | `integration/test_project_report.py::test_filters` | ✅ Pass |
-| T-248 | Reports | `integration/test_project_report.py::test_by_employee_lists_everyone` | ✅ Pass |
-| T-249 | Reports | `integration/test_project_report.py::test_excel` | ✅ Pass |
-| T-250 | Reports | `integration/test_project_report.py::test_csv_and_audit` | ✅ Pass |
-| T-251 | Reports | `integration/test_project_report.py::test_query_count_is_fixed` | ✅ Pass |
-| T-252 | E2E | `e2e/test_e2e_flows.py::test_employee_project_hours_report` | ✅ Pass |
-| T-253 | E2E | `e2e/test_e2e_flows.py::test_director_project_hours_report` | ✅ Pass |
-| T-254 | Reports | `integration/test_project_report.py::test_a_manager_without_sub_managers_sees_no_extra_controls` | ✅ Pass |
-| T-255 | Reports | `integration/test_project_report.py::test_two_teams_show_the_team_table` | ✅ Pass |
-| T-256 | Reports | `integration/test_project_report.py::test_directors_and_admins_keep_every_option` | ✅ Pass |
-| T-257 | Reports | `integration/test_project_report.py::test_hidden_options_fall_back_safely` | ✅ Pass |
-| T-258 | Pay | `integration/test_pay.py::test_pay_records` | ✅ Pass |
-| T-259 | Pay | `integration/test_pay.py::test_admin_pay_page` | ✅ Pass |
-| T-260 | Pay | `integration/test_pay.py::test_pay_csv` | ✅ Pass |
-| T-261 | Pay | `integration/test_pay.py::test_project_budgets_in_admin` | ✅ Pass |
-| T-262 | Costs | `integration/test_project_costs.py::test_cost_rules` | ✅ Pass |
-| T-263 | Costs | `integration/test_project_costs.py::test_rate_missing` | ✅ Pass |
-| T-264 | Costs | `integration/test_project_costs.py::test_budget` | ✅ Pass |
-| T-265 | Costs | `integration/test_project_costs.py::test_totals_add_up` | ✅ Pass |
-| T-266 | Costs | `integration/test_project_costs.py::test_who_sees_costs` | ✅ Pass |
-| T-267 | Costs | `integration/test_project_costs.py::test_costs_downloads` | ✅ Pass |
-| T-268 | Data | `integration/test_project_costs.py::test_seed_pay_and_budgets` | ✅ Pass |
-| T-269 | Costs | `integration/test_project_costs.py::test_cost_query_count_is_fixed` | ✅ Pass |
-| T-270 | E2E | `e2e/test_e2e_flows.py::test_pay_and_project_budget_in_a_real_browser` | ✅ Pass |
+| T-01 | Sign-up | `directory/unit/test_signup.py::test_wrong_domain_is_refused` | ✅ Pass |
+| T-02 | Sign-up | `directory/unit/test_signup.py::test_email_not_in_directory_is_refused_with_contact_hr` | ✅ Pass |
+| T-03 | Sign-up | `directory/unit/test_signup.py::test_inactive_employee_is_refused` | ✅ Pass |
+| T-04 | Sign-up | `directory/unit/test_signup.py::test_existing_account_is_refused` | ✅ Pass |
+| T-05 | Sign-up | `directory/integration/test_auth_views.py::test_signup_creates_account_with_lowercase_email` | ✅ Pass |
+| T-06 | Password | `directory/unit/test_passwords.py::test_password_is_hashed_with_argon2_never_plain_text` | ✅ Pass |
+| T-07 | Password | `directory/unit/test_passwords.py::test_same_password_gives_different_hashes` | ✅ Pass |
+| T-08 | Password | `directory/unit/test_passwords.py::test_short_or_common_passwords_are_rejected` | ✅ Pass (3 cases) |
+| T-09 | Login | `directory/integration/test_auth_views.py::test_correct_password_logs_in` | ✅ Pass |
+| T-10 | Login | `directory/integration/test_auth_views.py::test_five_wrong_attempts_lock_the_account_for_15_minutes` | ✅ Pass |
+| T-11 | Login | `directory/integration/test_auth_views.py::test_inactive_employee_cannot_log_in` | ✅ Pass |
+| T-12 | Calendar | `timesheets/unit/test_calendar.py::test_week_start_for_every_day_is_sunday` | ✅ Pass |
+| T-13 | Calendar | `timesheets/unit/test_calendar.py::test_week_still_open_at_1159` | ✅ Pass |
+| T-14 | Calendar | `timesheets/unit/test_calendar.py::test_week_locked_at_noon` | ✅ Pass |
+| T-15 | Calendar | `timesheets/unit/test_calendar.py::test_deadline_stays_noon_local_across_daylight_saving` | ✅ Pass |
+| T-16 | Calendar | `timesheets/unit/test_calendar.py::test_pay_period_across_year_boundary` | ✅ Pass |
+| T-17 | Validation | `timesheets/unit/test_validation.py::test_times_and_hours_must_use_15_minute_steps` | ✅ Pass |
+| T-18 | Validation | `timesheets/unit/test_validation.py::test_day_total_over_24_hours_is_rejected` | ✅ Pass |
+| T-19 | Validation | `timesheets/unit/test_validation.py::test_date_outside_week_or_inactive_project_is_rejected` | ✅ Pass |
+| T-20 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_save_draft_then_submit_before_deadline` | ✅ Pass |
+| T-21 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_employee_cannot_edit_after_submitting` | ✅ Pass |
+| T-22 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_unsubmitted_week_locks_at_deadline_and_counts_as_missed` | ✅ Pass |
+| T-23 | Change request | `timesheets/integration/test_change_requests.py::test_request_is_visible_to_own_manager_only` | ✅ Pass |
+| T-24 | Change request | `timesheets/integration/test_change_requests.py::test_unlock_reopens_until_later_of_48h_and_deadline` | ✅ Pass |
+| T-25 | Change request | `timesheets/integration/test_change_requests.py::test_edit_directly_writes_before_and_after` | ✅ Pass |
+| T-26 | Permissions | `site/test_layout.py::test_employee_is_refused_manager_and_payroll_pages` | ✅ Pass |
+| T-27 | Permissions | `directory/unit/test_permissions.py::test_director_sees_indirect_reports_manager_only_own_tree` | ✅ Pass |
+| T-28 | Permissions | `directory/unit/test_permissions.py::test_reporting_tree_survives_a_cycle` | ✅ Pass |
+| T-29 | Approvals | `timesheets/integration/test_approvals.py::test_approve_blocked_while_a_week_is_draft_or_locked` | ✅ Pass |
+| T-30 | Approvals | `timesheets/integration/test_approvals.py::test_approving_both_weeks` | ✅ Pass |
+| T-31 | Approvals | `timesheets/integration/test_approvals.py::test_reject_needs_a_comment_and_reopens_both_weeks` | ✅ Pass |
+| T-32 | Approvals | `timesheets/integration/test_approvals.py::test_non_manager_cannot_approve` | ✅ Pass |
+| T-33 | Payroll | `payroll/integration/test_payroll_publish.py::test_approval_publishes_two_week_records` | ✅ Pass |
+| T-34 | Payroll | `payroll/integration/test_payroll_publish.py::test_overtime_and_pto_split` | ✅ Pass |
+| T-35 | Payroll | `payroll/integration/test_payroll_publish.py::test_publish_twice_creates_no_duplicates` | ✅ Pass |
+| T-36 | Payroll | `payroll/integration/test_payroll_publish.py::test_approved_week_edited_later_gets_a_new_version` | ✅ Pass |
+| T-37 | Payroll | `payroll/integration/test_payroll_pages.py::test_export_csv` | ✅ Pass |
+| T-38 | Payroll | `payroll/integration/test_payroll_pages.py::test_managers_and_employees_get_403` | ✅ Pass |
+| T-39 | Payroll | `payroll/integration/test_payroll_pages.py::test_superseded_after_export_is_listed_in_corrections` | ✅ Pass |
+| T-40 | Analytics | `analytics/integration/test_analytics.py::test_dashboard_numbers_for_known_data` | ✅ Pass |
+| T-41 | Seed | `directory/integration/test_seed_demo.py::test_seed_builds_the_demo_company` | ✅ Pass |
+| T-42 | Seed | `directory/integration/test_seed_demo.py::test_seed_refuses_to_run_twice` | ✅ Pass |
+| T-43 | Change request | `timesheets/integration/test_change_requests.py::test_week_unlocked_on_wednesday_stays_open_until_saturday_noon` | ✅ Pass |
+| T-44 | Accounts | `directory/unit/test_accounts.py::test_account_requires_an_employee` | ✅ Pass |
+| T-45 | Accounts | `directory/unit/test_accounts.py::test_create_user_takes_email_and_flags_from_employee` | ✅ Pass |
+| T-46 | Accounts | `directory/unit/test_accounts.py::test_createsuperuser_refuses_ineligible_employees` | ✅ Pass |
+| T-47 | Accounts | `directory/unit/test_accounts.py::test_createsuperuser_creates_admin_account_for_active_admin_employee` | ✅ Pass |
+| T-48 | Accounts | `directory/unit/test_accounts.py::test_admin_flag_controls_staff_and_superuser` | ✅ Pass |
+| T-49 | Accounts | `directory/unit/test_accounts.py::test_employee_status_controls_is_active` | ✅ Pass |
+| T-50 | Accounts | `directory/unit/test_accounts.py::test_email_change_in_directory_updates_account` | ✅ Pass |
+| T-51 | Accounts | `directory/unit/test_accounts.py::test_emails_stay_unique_regardless_of_case` | ✅ Pass |
+| T-52 | Audit | `audit/unit/test_audit.py::test_audit_row_needs_exactly_one_actor` | ✅ Pass |
+| T-53 | Import | `directory/integration/test_import_employees.py::test_import_creates_people_teams_and_manager_links` | ✅ Pass |
+| T-54 | Import | `directory/integration/test_import_employees.py::test_reimport_updates_in_place_and_syncs_account` | ✅ Pass |
+| T-55 | Import | `directory/integration/test_import_employees.py::test_invalid_csv_imports_nothing_and_lists_every_error` | ✅ Pass |
+| T-56 | Seed | `directory/integration/test_seed_demo.py::test_seed_approvals_follow_the_rules` | ✅ Pass |
+| T-57 | Seed | `directory/integration/test_seed_demo.py::test_seed_audit_rows_name_the_right_actor` | ✅ Pass |
+| T-58 | Login | `directory/integration/test_auth_views.py::test_every_page_requires_login_except_login_and_signup` | ✅ Pass |
+| T-59 | Databases | `directory/integration/test_auth_views.py::test_axes_and_main_tables_stay_out_of_payroll_database` | ✅ Pass |
+| T-60 | Permissions | `directory/unit/test_permissions.py::test_only_the_direct_manager_approves` | ✅ Pass |
+| T-61 | Permissions | `directory/unit/test_permissions.py::test_admins_approve_only_employees_without_a_manager` | ✅ Pass |
+| T-62 | Permissions | `site/test_layout.py::test_payroll_flag_adds_only_payroll_pages` | ✅ Pass |
+| T-63 | Permissions | `site/test_layout.py::test_payroll_user_who_manages_gets_manager_rights_for_own_tree` | ✅ Pass |
+| T-64 | Layout | `site/test_layout.py::test_menu_and_header_follow_roles` | ✅ Pass |
+| T-65 | Profile | `site/test_layout.py::test_profile_shows_directory_details_read_only` | ✅ Pass |
+| T-66 | Profile | `site/test_layout.py::test_password_change_keeps_session_and_audits_without_password_data` | ✅ Pass |
+| T-67 | Validation | `timesheets/unit/test_validation.py::test_project_entries_need_a_project_and_others_must_not_have_one` | ✅ Pass |
+| T-68 | Validation | `timesheets/unit/test_validation.py::test_entries_only_within_employment` | ✅ Pass |
+| T-69 | Calendar | `timesheets/unit/test_calendar.py::test_expected_minutes_are_prorated_for_partial_weeks` | ✅ Pass |
+| T-70 | Timesheet | `timesheets/unit/test_calendar.py::test_weeks_outside_employment_are_never_missed` | ✅ Pass |
+| T-71 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_submit_writes_audit_row` | ✅ Pass |
+| T-72 | Validation | `timesheets/unit/test_validation.py::test_end_must_be_after_start` | ✅ Pass |
+| T-73 | Validation | `timesheets/unit/test_validation.py::test_timed_rows_on_one_day_must_not_overlap` | ✅ Pass |
+| T-74 | Validation | `timesheets/unit/test_validation.py::test_reason_is_limited_to_255_characters` | ✅ Pass |
+| T-75 | Validation | `timesheets/unit/test_validation.py::test_break_has_times_and_never_a_project` | ✅ Pass |
+| T-76 | Validation | `timesheets/unit/test_validation.py::test_leave_is_hours_only_and_work_needs_times` | ✅ Pass |
+| T-77 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_hours_worked_excludes_break_and_leave` | ✅ Pass |
+| T-78 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_break_only_week_cannot_be_submitted` | ✅ Pass |
+| T-79 | Timesheet | `timesheets/integration/test_timesheet_flow.py::test_many_rows_on_one_day` | ✅ Pass |
+| T-80 | Seed | `directory/integration/test_seed_demo.py::test_seeded_entries_pass_the_entry_rules` | ✅ Pass |
+| T-81 | Change request | `timesheets/integration/test_change_requests.py::test_requests_only_on_submitted_locked_or_approved_weeks` | ✅ Pass |
+| T-82 | Change request | `timesheets/integration/test_change_requests.py::test_who_handles_a_request` | ✅ Pass |
+| T-83 | Change request | `timesheets/integration/test_change_requests.py::test_each_step_is_audited` | ✅ Pass |
+| T-84 | Change request | `timesheets/integration/test_change_requests.py::test_edit_directly_uses_the_same_rules` | ✅ Pass |
+| T-85 | Change request | `timesheets/integration/test_change_requests.py::test_changing_an_approved_week_resets_the_period` | ✅ Pass (2 cases) |
+| T-86 | Timesheet | `timesheets/integration/test_change_requests.py::test_reopened_past_week_is_editable_until_window_ends` | ✅ Pass |
+| T-87 | Timesheet | `timesheets/integration/test_change_requests.py::test_late_flag_is_decided_by_the_first_submission` | ✅ Pass |
+| T-88 | Layout | `timesheets/integration/test_change_requests.py::test_open_request_count_in_menu` | ✅ Pass |
+| T-89 | Timesheet | `timesheets/integration/test_entry_form.py::test_completely_empty_rows_are_ignored` | ✅ Pass (2 cases) |
+| T-90 | Timesheet | `timesheets/integration/test_entry_form.py::test_rerender_after_an_error_adds_no_rows` | ✅ Pass (2 cases) |
+| T-91 | Timesheet | `timesheets/integration/test_entry_form.py::test_hours_are_shown_for_every_row` | ✅ Pass (2 cases) |
+| T-92 | Approvals | `timesheets/integration/test_approvals.py::test_unlock_locked_week_from_approvals` | ✅ Pass |
+| T-93 | Approvals | `timesheets/integration/test_approvals.py::test_rejected_period_comes_back_after_resubmission` | ✅ Pass |
+| T-94 | Approvals | `timesheets/integration/test_approvals.py::test_approve_is_one_transaction_with_the_payroll_hook` | ✅ Pass |
+| T-95 | Approvals | `timesheets/integration/test_approvals.py::test_who_sees_and_approves_which_rows` | ✅ Pass |
+| T-96 | Approvals | `timesheets/integration/test_approvals.py::test_bulk_approve` | ✅ Pass |
+| T-97 | Approvals | `timesheets/integration/test_approvals.py::test_pay_period_dates` | ✅ Pass |
+| T-98 | Approvals | `timesheets/integration/test_approvals.py::test_flags` | ✅ Pass |
+| T-99 | Approvals | `timesheets/integration/test_approvals.py::test_forbidden_cases` | ✅ Pass |
+| T-100 | Approvals | `timesheets/integration/test_approvals.py::test_period_partly_outside_employment` | ✅ Pass |
+| T-101 | Approvals | `timesheets/integration/test_approvals.py::test_open_change_request_blocks_approval` | ✅ Pass |
+| T-102 | Timesheet | `timesheets/integration/test_approvals.py::test_week_page_shows_approval_status` | ✅ Pass |
+| T-103 | Payroll | `payroll/unit/test_payroll_split.py::test_overtime_rule` | ✅ Pass |
+| T-104 | Payroll | `payroll/integration/test_payroll_publish.py::test_payroll_records_are_append_only` | ✅ Pass |
+| T-105 | Payroll | `payroll/integration/test_payroll_publish.py::test_deactivated_employee_is_published_and_paid` | ✅ Pass |
+| T-106 | Payroll | `payroll/integration/test_payroll_publish.py::test_publish_and_sync_are_idempotent` | ✅ Pass |
+| T-107 | Payroll | `payroll/integration/test_payroll_publish.py::test_payroll_failure_after_commit_is_repaired_by_sync` | ✅ Pass |
+| T-108 | Payroll | `payroll/integration/test_payroll_publish.py::test_main_rollback_writes_nothing_to_payroll` | ✅ Pass |
+| T-109 | Payroll | `payroll/integration/test_payroll_publish.py::test_supersede_failure_is_repaired_by_sync` | ✅ Pass |
+| T-110 | Payroll | `payroll/integration/test_payroll_pages.py::test_csv_cells_are_spreadsheet_safe` | ✅ Pass |
+| T-111 | Payroll | `payroll/integration/test_payroll_pages.py::test_who_can_open_payroll_pages` | ✅ Pass |
+| T-112 | Payroll | `payroll/integration/test_payroll_publish.py::test_mark_paid_moves_only_exported_records` | ✅ Pass |
+| T-113 | Payroll | `payroll/integration/test_payroll_publish.py::test_backup_db_copies_both_databases` | ✅ Pass |
+| T-114 | Seed | `directory/integration/test_seed_demo.py::test_seed_fills_the_payroll_database` | ✅ Pass |
+| T-115 | Analytics | `analytics/integration/test_analytics.py::test_range_filter` | ✅ Pass |
+| T-116 | Analytics | `analytics/integration/test_analytics.py::test_on_time_late_missed_edge_cases` | ✅ Pass |
+| T-117 | Analytics | `analytics/integration/test_analytics.py::test_new_hire_and_deactivated_employee` | ✅ Pass |
+| T-118 | Analytics | `analytics/integration/test_analytics.py::test_dashboard_overtime_matches_payroll` | ✅ Pass |
+| T-119 | Analytics | `analytics/integration/test_analytics.py::test_only_own_data` | ✅ Pass |
+| T-120 | Analytics | `analytics/integration/test_analytics.py::test_empty_state` | ✅ Pass |
+| T-121 | Analytics | `analytics/integration/test_analytics.py::test_viewing_writes_nothing_and_queries_are_bounded` | ✅ Pass |
+| T-122 | Analytics | `analytics/integration/test_analytics.py::test_categories_break_outcomes_and_current_week` | ✅ Pass |
+| T-123 | Team | `analytics/integration/test_team.py::test_team_metrics_for_known_data` | ✅ Pass |
+| T-124 | Team | `analytics/integration/test_team.py::test_utilization_rule` | ✅ Pass |
+| T-125 | Team | `analytics/integration/test_team.py::test_whole_tree_vs_direct_and_team_filter` | ✅ Pass |
+| T-126 | Team | `analytics/integration/test_team.py::test_access_rules` | ✅ Pass |
+| T-127 | Team | `analytics/integration/test_team.py::test_admin_sees_everyone` | ✅ Pass |
+| T-128 | Team | `analytics/integration/test_team.py::test_this_weeks_compliance` | ✅ Pass |
+| T-129 | Team | `analytics/integration/test_team.py::test_inactive_employees_only_with_timesheets` | ✅ Pass |
+| T-130 | Team | `analytics/integration/test_team.py::test_drill_down_is_read_only` | ✅ Pass |
+| T-131 | Team | `analytics/integration/test_team.py::test_viewing_writes_nothing` | ✅ Pass |
+| T-132 | Team | `analytics/integration/test_team.py::test_query_count_is_fixed_for_large_teams` | ✅ Pass |
+| T-133 | Admin | `directory/integration/test_admin_edit.py::test_employee_edit_is_audited` | ✅ Pass |
+| T-134 | Admin | `directory/integration/test_admin_edit.py::test_add_and_edit_teams_projects_and_employees` | ✅ Pass |
+| T-135 | Admin | `directory/integration/test_admin_edit.py::test_workflow_records_are_read_only` | ✅ Pass |
+| T-136 | Admin | `directory/integration/test_admin_edit.py::test_nothing_can_be_deleted` | ✅ Pass |
+| T-137 | Admin | `directory/integration/test_admin_edit.py::test_deactivate` | ✅ Pass |
+| T-138 | Admin | `directory/integration/test_admin_edit.py::test_deactivate_and_reactivate_rules` | ✅ Pass |
+| T-139 | Admin | `directory/integration/test_admin_edit.py::test_email_and_flag_sync` | ✅ Pass |
+| T-140 | Admin | `directory/integration/test_admin_edit.py::test_safety_rules` | ✅ Pass |
+| T-141 | Admin | `directory/integration/test_admin_edit.py::test_password_reset` | ✅ Pass |
+| T-142 | Admin | `directory/integration/test_admin_csv.py::test_csv_import_in_admin` | ✅ Pass |
+| T-143 | Admin | `directory/integration/test_admin_csv.py::test_csv_export_round_trip` | ✅ Pass |
+| T-144 | Admin | `directory/integration/test_admin_edit.py::test_only_directory_admins_reach_admin` | ✅ Pass |
+| T-145 | Admin | `directory/integration/test_admin_edit.py::test_search_and_filters` | ✅ Pass |
+| T-146 | E2E | `e2e/test_auth.py::test_signup_refused_then_accepted` | ✅ Pass |
+| T-147 | E2E | `e2e/test_timesheets.py::test_save_draft_then_submit_before_the_deadline` | ✅ Pass |
+| T-148 | E2E | `e2e/test_timesheets.py::test_week_locks_after_the_deadline` | ✅ Pass |
+| T-149 | E2E | `e2e/test_approvals.py::test_change_request_then_manager_edits_directly` | ✅ Pass |
+| T-150 | E2E | `e2e/test_payroll.py::test_approve_then_payroll_sees_the_records` | ✅ Pass |
+| T-151 | E2E | `e2e/test_approvals.py::test_reject_with_comment_then_resubmit` | ✅ Pass |
+| T-152 | E2E | `e2e/test_payroll.py::test_payroll_export_and_mark_paid` | ✅ Pass |
+| T-153 | E2E | `e2e/test_admin.py::test_hr_deactivates_an_employee` | ✅ Pass |
+| T-154 | E2E | `e2e/test_admin.py::test_hr_password_reset_forces_a_change` | ✅ Pass |
+| T-155 | E2E | `e2e/test_auth.py::test_forbidden_pages` | ✅ Pass |
+| T-156 | Hardening | `site/test_hardening.py::test_debug_off_serves_static_and_friendly_errors` | ✅ Pass |
+| T-157 | UI | `site/test_ui_theme.py::test_theme_stylesheet_is_loaded_and_served` | ✅ Pass |
+| T-158 | UI | `site/test_ui_theme.py::test_one_status_badge_component` | ✅ Pass |
+| T-159 | UI | `site/test_ui_theme.py::test_theme_contrast_meets_wcag_aa` | ✅ Pass |
+| T-160 | Grid | `timesheets/integration/test_grid.py::test_grid_layout_and_totals` | ✅ Pass |
+| T-161 | Grid | `timesheets/integration/test_grid.py::test_add_row` | ✅ Pass |
+| T-162 | Grid | `timesheets/integration/test_grid.py::test_multi_slot_cell` | ✅ Pass |
+| T-163 | Grid | `timesheets/integration/test_grid.py::test_leave_cell` | ✅ Pass |
+| T-164 | Grid | `timesheets/integration/test_grid.py::test_overlap_error_is_shown_on_the_right_cells` | ✅ Pass |
+| T-165 | Grid | `timesheets/integration/test_grid.py::test_read_only_grids` | ✅ Pass |
+| T-166 | Grid | `timesheets/integration/test_grid.py::test_existing_week_renders_the_same` | ✅ Pass |
+| T-167 | E2E | `e2e/test_timesheets.py::test_weekly_grid_in_the_browser` | ✅ Pass |
+| T-168 | Calendar | `timesheets/unit/test_calendar.py::test_week_boundaries_saturday_night_and_sunday_midnight` | ✅ Pass |
+| T-169 | Timesheet | `timesheets/integration/test_sunday_week.py::test_deadline_is_on_the_last_day` | ✅ Pass |
+| T-170 | Calendar | `timesheets/unit/test_calendar.py::test_pay_period_anchor_must_be_a_sunday` | ✅ Pass |
+| T-171 | Timesheet | `timesheets/integration/test_sunday_week.py::test_non_sunday_dates_redirect_to_their_week` | ✅ Pass |
+| T-172 | Calendar | `timesheets/integration/test_sunday_week.py::test_daylight_saving_week` | ✅ Pass |
+| T-173 | Payroll | `payroll/integration/test_adjustments.py::test_positive_overtime_adjustment_after_payment` | ✅ Pass |
+| T-174 | Payroll | `payroll/integration/test_adjustments.py::test_negative_adjustment` | ✅ Pass |
+| T-175 | Payroll | `payroll/integration/test_adjustments.py::test_no_adjustment_when_the_old_version_was_never_exported` | ✅ Pass |
+| T-176 | Payroll | `payroll/integration/test_adjustments.py::test_several_corrections_of_the_same_week` | ✅ Pass |
+| T-177 | Payroll | `payroll/integration/test_adjustments.py::test_new_full_version_is_never_exported_twice` | ✅ Pass |
+| T-178 | Payroll | `payroll/integration/test_adjustments.py::test_carry_forward_period` | ✅ Pass |
+| T-179 | Payroll | `payroll/integration/test_adjustments.py::test_csv_totals_mark_paid_and_corrections` | ✅ Pass |
+| T-180 | Payroll | `payroll/integration/test_adjustments.py::test_sync_creates_missing_adjustments_idempotently` | ✅ Pass |
+| T-181 | Payroll | `payroll/integration/test_adjustments.py::test_adjustments_are_append_only_and_audited` | ✅ Pass |
+| T-182 | Payroll | `payroll/integration/test_adjustments.py::test_settled_week_links_to_the_period_that_paid_its_difference` | ✅ Pass |
+| T-183 | E2E | `e2e/test_timesheets.py::test_add_row_for_an_existing_row_points_at_it` | ✅ Pass |
+| T-184 | Grid | `timesheets/integration/test_grid.py::test_two_slots_for_one_project_on_one_day` | ✅ Pass |
+| T-185 | Grid | `timesheets/integration/test_grid.py::test_overlapping_third_slot_is_refused_on_its_cell` | ✅ Pass |
+| T-186 | Grid | `timesheets/integration/test_grid.py::test_multi_slot_hint` | ✅ Pass |
+| T-187 | Validation | `timesheets/unit/test_validation.py::test_empty_reasons_are_accepted` | ✅ Pass |
+| T-188 | Grid | `timesheets/integration/test_grid.py::test_week_without_reasons` | ✅ Pass |
+| T-189 | Change request | `timesheets/integration/test_change_requests.py::test_edit_directly_without_a_reason` | ✅ Pass |
+| T-190 | E2E | `e2e/test_timesheets.py::test_time_without_a_reason` | ✅ Pass |
+| T-191 | Grid rows | `timesheets/integration/test_row_actions.py::test_delete_a_row_with_slots` | ✅ Pass |
+| T-192 | Grid rows | `timesheets/integration/test_row_actions.py::test_delete_an_empty_row_and_a_break_row` | ✅ Pass |
+| T-193 | Grid rows | `timesheets/integration/test_row_actions.py::test_change_project` | ✅ Pass |
+| T-194 | Grid rows | `timesheets/integration/test_row_actions.py::test_change_into_an_existing_row_merges` | ✅ Pass |
+| T-195 | Grid rows | `timesheets/integration/test_row_actions.py::test_allowed_changes` | ✅ Pass |
+| T-196 | Grid rows | `timesheets/integration/test_row_actions.py::test_locked_and_other_peoples_weeks_are_refused` | ✅ Pass |
+| T-197 | Change request | `timesheets/integration/test_row_actions.py::test_row_actions_in_edit_directly_are_audited` | ✅ Pass |
+| T-198 | Payroll | `payroll/integration/test_adjustments.py::test_paid_week_corrected_by_deleting_a_row` | ✅ Pass |
+| T-199 | Grid | `timesheets/integration/test_row_actions.py::test_row_action_markup` | ✅ Pass |
+| T-200 | E2E | `e2e/test_timesheets.py::test_change_and_delete_rows` | ✅ Pass |
+| T-201 | Hardening | `site/test_ui_theme.py::test_static_files_are_revalidated_on_every_page_load` | ✅ Pass (2 cases) |
+| T-202 | E2E | `e2e/test_timesheets.py::test_row_menus_in_a_real_browser` | ✅ Pass (2 cases) |
+| T-203 | Payroll | `payroll/integration/test_payroll_register.py::test_approval_deadline` | ✅ Pass |
+| T-204 | Payroll | `payroll/integration/test_payroll_register.py::test_who_must_be_approved_company_wide` | ✅ Pass |
+| T-205 | Payroll | `payroll/integration/test_payroll_register.py::test_open_becomes_ready` | ✅ Pass |
+| T-206 | Payroll | `payroll/integration/test_payroll_register.py::test_line_values_come_from_the_week_records` | ✅ Pass |
+| T-207 | Payroll | `payroll/integration/test_payroll_register.py::test_finalize_and_export` | ✅ Pass |
+| T-208 | Payroll | `payroll/integration/test_payroll_register.py::test_approvable_after_finalizing_is_carried_forward` | ✅ Pass |
+| T-209 | Payroll | `payroll/integration/test_payroll_register.py::test_corrections_carry_into_the_next_open_register` | ✅ Pass |
+| T-210 | Payroll | `payroll/integration/test_payroll_register.py::test_registers_are_append_only` | ✅ Pass |
+| T-211 | Payroll | `payroll/integration/test_payroll_register.py::test_mark_as_paid` | ✅ Pass |
+| T-212 | Payroll | `payroll/integration/test_payroll_register.py::test_register_csv_downloads` | ✅ Pass |
+| T-213 | Payroll | `payroll/integration/test_payroll_register.py::test_payroll_pages` | ✅ Pass |
+| T-214 | Payroll | `payroll/integration/test_payroll_register.py::test_build_registers_for_earlier_exports` | ✅ Pass |
+| T-215 | Payroll | `payroll/integration/test_payroll_register.py::test_sync_payroll_builds_missing_registers` | ✅ Pass |
+| T-216 | E2E | `e2e/test_payroll.py::test_register_from_last_approval_to_paid` | ✅ Pass |
+| T-217 | Approvals | `timesheets/integration/test_manager_decisions.py::test_manager_edits_a_locked_week` | ✅ Pass |
+| T-218 | Approvals | `timesheets/integration/test_manager_decisions.py::test_approve_with_a_locked_week` | ✅ Pass |
+| T-219 | Approvals | `timesheets/integration/test_manager_decisions.py::test_reject_a_locked_person` | ✅ Pass |
+| T-220 | Approvals | `timesheets/integration/test_manager_decisions.py::test_refusals` | ✅ Pass |
+| T-221 | Approvals | `timesheets/integration/test_manager_decisions.py::test_hr_decides_the_ceo` | ✅ Pass |
+| T-222 | Payroll | `timesheets/integration/test_manager_decisions.py::test_register_waits_for_everyone` | ✅ Pass |
+| T-223 | Payroll | `timesheets/integration/test_manager_decisions.py::test_pending_by_manager` | ✅ Pass |
+| T-224 | E2E | `e2e/test_approvals.py::test_manager_edits_and_approves_a_locked_employee` | ✅ Pass |
+| T-225 | Setup | `site/test_first_run_checks.py::test_secret_key_must_not_be_the_example` | ✅ Pass |
+| T-226 | Setup | `site/test_first_run_checks.py::test_seed_refuses_the_example_demo_password` | ✅ Pass |
+| T-227 | Admin | `timesheets/integration/test_tasks.py::test_task_admin` | ✅ Pass |
+| T-228 | Admin | `timesheets/integration/test_tasks.py::test_allowed_tasks_per_project` | ✅ Pass |
+| T-229 | Rules | `timesheets/integration/test_tasks.py::test_task_rules` | ✅ Pass |
+| T-230 | Grid | `timesheets/integration/test_tasks.py::test_grid_rows_per_project_and_task` | ✅ Pass |
+| T-231 | Grid | `timesheets/integration/test_tasks.py::test_row_menu_changes_the_task_in_every_editor` | ✅ Pass |
+| T-232 | History | `timesheets/integration/test_tasks.py::test_history_without_a_task` | ✅ Pass |
+| T-233 | Analytics | `timesheets/integration/test_tasks.py::test_analytics_by_task_and_charge_code` | ✅ Pass |
+| T-234 | Payroll | `timesheets/integration/test_tasks.py::test_payroll_is_unchanged_by_tasks` | ✅ Pass |
+| T-235 | Data | `timesheets/integration/test_tasks.py::test_seed_books_allowed_tasks` | ✅ Pass |
+| T-236 | E2E | `e2e/test_timesheets.py::test_tasks_and_charge_codes_in_a_real_browser` | ✅ Pass |
+| T-237 | Approvals | `timesheets/integration/test_tasks.py::test_approve_after_a_task_is_removed` | ✅ Pass |
+| T-238 | Projects | `timesheets/integration/test_projects.py::test_code_generation` | ✅ Pass |
+| T-239 | Admin | `timesheets/integration/test_projects.py::test_admin_assigns_the_code` | ✅ Pass |
+| T-240 | Projects | `timesheets/integration/test_projects.py::test_migration_renames_projects` | ✅ Pass |
+| T-241 | Projects | `timesheets/integration/test_projects.py::test_project_search` | ✅ Pass |
+| T-242 | Projects | `timesheets/integration/test_projects.py::test_recent_projects` | ✅ Pass |
+| T-243 | E2E | `e2e/test_timesheets.py::test_project_search_in_a_real_browser` | ✅ Pass |
+| T-244 | Reports | `analytics/integration/test_project_report.py::test_employees_see_only_their_own_hours` | ✅ Pass |
+| T-245 | Reports | `analytics/integration/test_project_report.py::test_who_managers_directors_and_admins_see` | ✅ Pass |
+| T-246 | Reports | `analytics/integration/test_project_report.py::test_numbers_add_up` | ✅ Pass |
+| T-247 | Reports | `analytics/integration/test_project_report.py::test_filters` | ✅ Pass |
+| T-248 | Reports | `analytics/integration/test_project_report.py::test_by_employee_lists_everyone` | ✅ Pass |
+| T-249 | Reports | `analytics/integration/test_project_report.py::test_excel` | ✅ Pass |
+| T-250 | Reports | `analytics/integration/test_project_report.py::test_csv_and_audit` | ✅ Pass |
+| T-251 | Reports | `analytics/integration/test_project_report.py::test_query_count_is_fixed` | ✅ Pass |
+| T-252 | E2E | `e2e/test_reports.py::test_employee_project_hours_report` | ✅ Pass |
+| T-253 | E2E | `e2e/test_reports.py::test_director_project_hours_report` | ✅ Pass |
+| T-254 | Reports | `analytics/integration/test_project_report.py::test_a_manager_without_sub_managers_sees_no_extra_controls` | ✅ Pass |
+| T-255 | Reports | `analytics/integration/test_project_report.py::test_two_teams_show_the_team_table` | ✅ Pass |
+| T-256 | Reports | `analytics/integration/test_project_report.py::test_directors_and_admins_keep_every_option` | ✅ Pass |
+| T-257 | Reports | `analytics/integration/test_project_report.py::test_hidden_options_fall_back_safely` | ✅ Pass |
+| T-258 | Pay | `directory/integration/test_pay.py::test_pay_records` | ✅ Pass |
+| T-259 | Pay | `directory/integration/test_pay.py::test_admin_pay_page` | ✅ Pass |
+| T-260 | Pay | `directory/integration/test_pay.py::test_pay_csv` | ✅ Pass |
+| T-261 | Pay | `directory/integration/test_pay.py::test_project_budgets_in_admin` | ✅ Pass |
+| T-262 | Costs | `analytics/integration/test_project_costs.py::test_cost_rules` | ✅ Pass |
+| T-263 | Costs | `analytics/integration/test_project_costs.py::test_rate_missing` | ✅ Pass |
+| T-264 | Costs | `analytics/integration/test_project_costs.py::test_budget` | ✅ Pass |
+| T-265 | Costs | `analytics/integration/test_project_costs.py::test_totals_add_up` | ✅ Pass |
+| T-266 | Costs | `analytics/integration/test_project_costs.py::test_who_sees_costs` | ✅ Pass |
+| T-267 | Costs | `analytics/integration/test_project_costs.py::test_costs_downloads` | ✅ Pass |
+| T-268 | Data | `analytics/integration/test_project_costs.py::test_seed_pay_and_budgets` | ✅ Pass |
+| T-269 | Costs | `analytics/integration/test_project_costs.py::test_cost_query_count_is_fixed` | ✅ Pass |
+| T-270 | E2E | `e2e/test_reports.py::test_pay_and_project_budget_in_a_real_browser` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
 ```python
-# tests/unit/test_calendar.py
+# tests/timesheets/unit/test_calendar.py
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 from timesheets.services.calendar import deadline_for, effective_status
@@ -1385,7 +1409,7 @@ def test_week_locked_at_noon(draft_sheet_week_of_oct_19):
 ```
 
 ```python
-# tests/unit/test_passwords.py
+# tests/directory/unit/test_passwords.py
 import pytest
 from tests.factories import UserFactory
 
@@ -1406,7 +1430,7 @@ def test_same_password_gives_different_hashes():
 ```
 
 ```python
-# tests/integration/test_payroll_publish.py
+# tests/payroll/integration/test_payroll_publish.py
 import pytest
 from payroll.models import PayrollWeek
 from payroll.services.publish import publish_period
@@ -1427,7 +1451,7 @@ def test_publish_twice_creates_no_duplicates(approved_period_45h_worked_8h_pto):
 ```
 
 ```python
-# tests/e2e/test_e2e_flows.py
+# tests/e2e/test_auth.py
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -1458,7 +1482,7 @@ Runs, in order, and stops at the first failure:
 ```bash
 bash scripts/test_all.sh
 ```
-Run it at the end of **every** phase, before committing.
+Run it at the end of **every** phase, before committing. `make test` runs the same script; `make help` lists the other everyday commands (D-173).
 
 ## B.12 Decisions log
 
@@ -1638,6 +1662,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-170 | Costs | **Reports → Project budget: who sees what** (`can_see_costs`, `can_see_everyones_costs`): managers and directors see **their own tree** — per-person hours, hourly rate used and cost, the Detail and their people's Rate missing — and project-wide budget totals; **payroll staff and admins see everyone** (payroll view only); anyone else gets **403** on the page and both downloads and has no menu item (Reports becomes a dropdown: Project hours, Project budget). Nobody here sees annual salaries, pay types' history or pay changes — those stay in Admin. People / Group by follow D-160 and D-165 (payroll counts as "everyone"). | B.3 |
 | D-171 | Costs | **Two separate downloads.** Costs: `project-costs_<from>_to_<to>.xlsx` with Summary (filters, generated at/by, the notes), By project, By team / By manager (as offered, D-165), By task, By pay type, By pay period, By employee, Detail (one row per entry with hourly rate and cost) and Rate missing (when there is any); money as exact numbers formatted "$"#,##0.00; and `….csv` = the Detail (date, week_start, employee_code, employee_name, team, manager, project_code, project_name, task_code, task_name, charge_code, hours, pay_type, hourly_rate, cost, rate_missing) — no salaries, no reasons; formula-safe text; one EXPORT "ProjectCosts" audit row per download (viewer, filters, rows). Hours: links to the Change 11 report files with these filters and Approved (`project-hours_…`); payroll staff who manage nobody get no hours link, because that report shows them only their own hours (D-160). Speed (`seed_demo --large`, HR): last pay period page 0.6 s, files 0.5 s; 12 weeks page 1.1 s, CSV 1.3 s, Excel 5 s; a whole year page 3.8 s, CSV 5.3 s, Excel ~25 s (millions of cells — use the CSV for that much). | D-68, D-163 |
 | D-172 | Data | **Demo pay and budgets** (`seed_demo`): everyone gets pay from the later of the history start and their hire date — salaried by job title (e.g. Software Engineer ~$125,000, rate = salary ÷ 2,080), hourly for Operations Analysts, Support Specialists and Executive Assistants ($24–$33.50) — DEV1 a 6 % raise four periods before the end, and the first Data staff member none (Rate missing). Budgets on I-001 … I-007 come from each project's approved cost so far, so the demo shows On track, At risk (I-003, ~90 %) and Over budget (I-002, ~115 %); I-008 (closed) has none. Pay rows are audited like any pay change; budgets are part of the projects' CREATE audit rows. | B.7 |
+| D-173 | Layout | **Refactor R1 – the code layout** (no behaviour change: same URLs, pages, permissions, rules, tables, migrations, numbers, files and the same 350 tests). **Settings** are a package: `config/settings/base.py` (everything shared, reads `.env`), `local.py` (the default for manage.py, wsgi and asgi), `test.py` (pytest, via pyproject) and `production.py` — a skeleton for later (PostgreSQL through `DATABASE_URL` / `PAYROLL_DATABASE_URL`, which will need `uv add "psycopg[binary]"`; HTTPS, secure cookies, HSTS; logging to stdout) that nothing uses yet; coverage leaves out the two entry-point settings files like wsgi/asgi. **Views**: an app with more than one view file has a `views/` package — `timesheets/views/{weeks,approvals,requests}.py`, `analytics/views/{dashboard,team,reports}.py`; single-file apps keep `views.py`. **Large services are packages** whose `__init__.py` re-exports every public name, so imports never change: `directory/services/demo/` (constants, people, projects, history, pay, approvals, writing — the seeder's parts as mixins — payroll, calendar, records), `analytics/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `payroll/services/register/` (constants, state, table, actions, backfill). `timesheets/services/approvals.py` is split only at its natural seam: "who still has to approve" (Change 9) is `timesheets/services/pending.py`, still importable from `approvals` (looked up on use, as pending builds on approvals); the approve / reject / unlock workflow and its payroll hooks stay together. **Tests** by app: `tests/<app>/unit/` (pure rules) and `tests/<app>/integration/` (pages, database); `tests/site/` for whole-site checks (menus and 403s across apps, DEBUG-off errors, theme, first-run checks); `tests/e2e/` has `helpers.py` and one file per area (auth, admin, timesheets, approvals, payroll, reports); shared `conftest.py`, `factories.py`, `forms.py` stay in `tests/`. **Makefile**: run, test, test-fast, e2e, lint, backup, migrate (both databases), check, help — none deletes or reseeds data. | D-04, B.11 |
 
 ---
 
@@ -1708,6 +1733,14 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   history (can_manage_pay); never log an amount. Costs (D-169–D-171): only from
   analytics/services/project_costs.py, APPROVED hours only, rounded per entry; managers see
   their tree, payroll and admins everyone (can_see_costs / can_see_everyones_costs).
+- Layout (D-173): settings are config/settings/{base,local,test,production}.py (local is the
+  default, pytest uses test, production is a skeleton not used yet). An app with several view
+  files has a views/ package (timesheets/views/{weeks,approvals,requests}.py,
+  analytics/views/{dashboard,team,reports}.py). A big service may be a package whose
+  __init__.py re-exports its public names (directory/services/demo/,
+  analytics/services/project_report/, payroll/services/register/). Tests live in
+  tests/<app>/unit/ and tests/<app>/integration/, whole-site checks in tests/site/, browser tests
+  in tests/e2e/test_<area>.py with shared helpers in tests/e2e/helpers.py.
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
   Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
   to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).

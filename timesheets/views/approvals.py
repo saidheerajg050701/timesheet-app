@@ -35,7 +35,7 @@ from timesheets.services.changes import (
     unlock_from_approvals,
 )
 from timesheets.services.summary import summarize
-from timesheets.views import (
+from timesheets.views.weeks import (
     SaveAttempt,
     editor_urls,
     grid_choices,

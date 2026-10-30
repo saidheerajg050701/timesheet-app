@@ -19,6 +19,7 @@ from analytics.services.project_report import project_report
 from analytics.services.report_files import MANAGING_TABS, OWN_TABS
 from audit.models import AuditLog
 from directory.models import Employee
+from tests.analytics.integration.test_team import build_large_company
 from tests.factories import (
     EmployeeFactory,
     ProjectFactory,
@@ -27,7 +28,6 @@ from tests.factories import (
     UserFactory,
     task,
 )
-from tests.integration.test_team import build_large_company
 from timesheets.models import TimeEntry
 
 TZ = ZoneInfo("America/Chicago")

@@ -31,13 +31,13 @@ from payroll.services.register import (
     table,
     unregistered_periods,
 )
-from timesheets.services.approvals import pending_by_manager
 from timesheets.services.calendar import (
     current_period,
     period_end_for,
     period_ended,
     period_start_for,
 )
+from timesheets.services.pending import pending_by_manager
 
 STATUS_CHOICES = [("", "All but superseded")] + list(PayrollWeek.Status.choices)
 

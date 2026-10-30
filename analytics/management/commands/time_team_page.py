@@ -10,7 +10,7 @@ from django.db import connections
 from django.test import RequestFactory
 from django.test.utils import CaptureQueriesContext
 
-from analytics.views import team
+from analytics.views.team import team
 from directory.models import User
 
 

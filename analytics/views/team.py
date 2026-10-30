@@ -1,3 +1,5 @@
+"""Team (FR-6, D-81–D-86): the people under the viewer and read-only drill-downs (D-85)."""
+
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -9,7 +11,7 @@ from directory.services.permissions import can_view, ensure, team_required
 from timesheets.services.calendar import company_tz, week_start_for, week_state
 from timesheets.services.summary import summarize
 from timesheets.services.weeks import load_sheet, my_weeks
-from timesheets.views import week_grid
+from timesheets.views.weeks import week_grid
 
 
 @team_required
@@ -94,10 +96,3 @@ def team_member_week(request, employee_code, week):
             "summary": summarize(list(sheet.entries.all()) if sheet else [], target, week),
         },
     )
-
-
-def dashboard(request):
-    """FR-5: the logged-in person's own dashboard. No parameter can pick another employee."""
-    weeks = range_weeks(request.GET.get("weeks"))
-    dash = dashboard_for(request.user.employee, weeks, timezone.now())
-    return render(request, "analytics/dashboard.html", {"dash": dash, "ranges": RANGES})

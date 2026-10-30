@@ -9,8 +9,8 @@ from django.db import connections
 from django.test import RequestFactory
 from django.test.utils import CaptureQueriesContext
 
-from analytics.report_views import project_hours
 from analytics.services.project_report import HOURS, PERIODS
+from analytics.views.reports import project_hours
 from directory.models import User
 
 

@@ -15,10 +15,8 @@ from openpyxl import load_workbook
 from analytics.services.project_costs import project_costs
 from audit.models import AuditLog
 from directory.models import Employee, PayRecord
-from tests.factories import ProjectFactory
-from tests.integration import test_project_report as hours_tests
-from tests.integration.test_pay import pay
-from tests.integration.test_project_report import (
+from tests.analytics.integration import test_project_report as hours_tests
+from tests.analytics.integration.test_project_report import (
     MON,
     NOW,
     PERIOD,
@@ -28,7 +26,9 @@ from tests.integration.test_project_report import (
     report_for,
     sheet,
 )
-from tests.integration.test_team import build_large_company
+from tests.analytics.integration.test_team import build_large_company
+from tests.directory.integration.test_pay import pay
+from tests.factories import ProjectFactory
 from timesheets.models import Timesheet
 
 PAGE = "project_budget"
