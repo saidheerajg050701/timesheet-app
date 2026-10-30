@@ -6,11 +6,11 @@ from django.db import connections
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from analytics.services.metrics import dashboard_for, outcome
-from payroll.models import PayrollWeek
+from apps.analytics.services.metrics import dashboard_for, outcome
+from apps.payroll.models import PayrollWeek
+from apps.timesheets.models import PeriodApproval
+from apps.timesheets.services.approvals import approve_period
 from tests.factories import EmployeeFactory, ProjectFactory, TimeEntryFactory, TimesheetFactory
-from timesheets.models import PeriodApproval
-from timesheets.services.approvals import approve_period
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed of the week of Sun Oct 18

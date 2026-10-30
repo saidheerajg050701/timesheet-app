@@ -8,7 +8,7 @@ import pytest
 import time_machine
 from django.conf import settings
 
-from directory.models import User
+from apps.directory.models import User
 from tests.factories import (
     EmployeeFactory,
     ProjectFactory,
@@ -173,9 +173,9 @@ def approve_everyone(django_capture_on_commit_callbacks):
     """Approve everyone still pending in a period, as their manager (an admin for no-manager
     staff), the Change 9 way: weeks they never submitted are approved with what is entered —
     usually nothing, 0.00. A register is READY only once everyone is approved (D-142)."""
-    from directory.models import Employee
-    from timesheets.models import PeriodApproval
-    from timesheets.services.approvals import approve_period, company_period_rows
+    from apps.directory.models import Employee
+    from apps.timesheets.models import PeriodApproval
+    from apps.timesheets.services.approvals import approve_period, company_period_rows
 
     def _approve(period_start, now):
         for row in company_period_rows(period_start, now):

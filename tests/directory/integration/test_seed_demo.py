@@ -6,15 +6,16 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from audit.models import AuditLog
-from directory.models import Employee, Team, User
-from directory.services.demo import us_holidays
-from payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
-from payroll.services.export import corrections
-from payroll.services.publish import out_of_sync
-from payroll.services.register import READY, period_state, preview, unregistered_periods
-from timesheets.models import ChangeRequest, PeriodApproval, Project, TimeEntry, Timesheet
-from timesheets.services.validation import validate_entries
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee, Team, User
+from apps.directory.services.demo import us_holidays
+from apps.payroll.models import PayrollAdjustment, PayrollRegister, PayrollWeek
+from apps.payroll.services.export import corrections
+from apps.payroll.services.publish import out_of_sync
+from apps.payroll.services.register import READY, period_state, preview, unregistered_periods
+from apps.projects.models import Project
+from apps.timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
+from apps.timesheets.services.validation import validate_entries
 
 # fixed_now = Wednesday 2026-10-21, in week 2 of the pay period that starts Sun 2026-10-11.
 CURRENT_PERIOD = date(2026, 10, 11)

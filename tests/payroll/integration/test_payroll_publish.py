@@ -10,16 +10,16 @@ import pytest
 from django.core.management import call_command
 from django.db import transaction
 
-from audit.models import AuditLog
-from payroll.models import AppendOnlyError, PayrollWeek
-from payroll.services.export import export_period, mark_paid
-from payroll.services.publish import out_of_sync, publish_period
-from payroll.services.sync import sync_payroll
+from apps.audit.models import AuditLog
+from apps.payroll.models import AppendOnlyError, PayrollWeek
+from apps.payroll.services.export import export_period, mark_paid
+from apps.payroll.services.publish import out_of_sync, publish_period
+from apps.payroll.services.sync import sync_payroll
+from apps.timesheets.models import ChangeRequest, PeriodApproval
+from apps.timesheets.services.approvals import approve_period
+from apps.timesheets.services.changes import edit_directly
+from apps.timesheets.services.validation import EntryData
 from tests.factories import EmployeeFactory, TimeEntryFactory, task
-from timesheets.models import ChangeRequest, PeriodApproval
-from timesheets.services.approvals import approve_period
-from timesheets.services.changes import edit_directly
-from timesheets.services.validation import EntryData
 
 pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 
@@ -221,7 +221,7 @@ def test_publish_and_sync_are_idempotent(
     for person in (org.dev1, org.dev2):
         make_week(person, WEEK1)
         make_week(person, WEEK2)
-    with mock.patch("payroll.services.publish.publish_after_commit"):  # payroll missed dev2
+    with mock.patch("apps.payroll.services.publish.publish_after_commit"):  # payroll missed dev2
         approve_period(org.manager, org.dev2, PERIOD, now=NOW)
     approve(org.manager, org.dev1)
     assert out_of_sync() == (2, 0)
@@ -235,8 +235,8 @@ def test_publish_and_sync_are_idempotent(
     assert syncs.first().after["approved_periods"] == 2
 
     # Stale: a week leaves APPROVED but the supersede never ran.
-    with mock.patch("payroll.services.publish.supersede_after_commit"):
-        from timesheets.services.approvals import reset_approval
+    with mock.patch("apps.payroll.services.publish.supersede_after_commit"):
+        from apps.timesheets.services.approvals import reset_approval
 
         reset_approval(org.dev2, PERIOD, actor=org.manager, at=NOW)
     assert out_of_sync() == (0, 2)
@@ -252,9 +252,9 @@ def test_payroll_failure_after_commit_is_repaired_by_sync(
     """T-107: payroll write fails after the approval commits → approval stays; sync repairs."""
     with (
         mock.patch(
-            "payroll.services.publish.next_version", side_effect=[1, RuntimeError("disk full")]
+            "apps.payroll.services.publish.next_version", side_effect=[1, RuntimeError("disk full")]
         ),
-        caplog.at_level(logging.ERROR, logger="payroll.services.publish"),
+        caplog.at_level(logging.ERROR, logger="apps.payroll.services.publish"),
     ):
         approve(org.manager, org.dev1)
     assert PeriodApproval.objects.get(employee=org.dev1).status == "APPROVED"
@@ -304,7 +304,8 @@ def test_supersede_failure_is_repaired_by_sync(
     ]
     with (
         mock.patch(
-            "payroll.services.publish.supersede_week", side_effect=RuntimeError("payroll locked")
+            "apps.payroll.services.publish.supersede_week",
+            side_effect=RuntimeError("payroll locked"),
         ),
         django_capture_on_commit_callbacks(execute=True),
     ):
@@ -316,7 +317,7 @@ def test_supersede_failure_is_repaired_by_sync(
     assert live(org.dev1, WEEK1).version == 2 and live(org.dev1, WEEK1).regular_minutes == 240
 
     # A stale live record from an older decision is superseded by the next publish (D-66).
-    with mock.patch("payroll.services.publish.supersede_after_commit"):
+    with mock.patch("apps.payroll.services.publish.supersede_after_commit"):
         change2 = ChangeRequest.objects.create(
             timesheet_id=week1.source_timesheet_id, requester=org.dev1, reason="Again"
         )

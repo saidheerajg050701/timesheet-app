@@ -1,11 +1,11 @@
 from datetime import date, time
 
-from directory.models import Employee
-from payroll.services.export import hours
-from payroll.services.hours import split_hours
-from timesheets.models import TimeEntry
-from timesheets.services.calendar import expected_minutes_for
-from timesheets.templatetags.timesheet_tags import hours2
+from apps.directory.models import Employee
+from apps.payroll.services.export import hours
+from apps.payroll.services.hours import split_hours
+from apps.timesheets.models import TimeEntry
+from apps.timesheets.services.calendar import expected_minutes_for
+from apps.timesheets.templatetags.timesheet_tags import hours2
 
 WEEK = date(2026, 10, 4)  # Sun 4 – Sat 10 Oct
 

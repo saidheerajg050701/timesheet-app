@@ -3,11 +3,11 @@
 from django.urls import reverse
 from playwright.sync_api import expect
 
+from apps.timesheets.models import PeriodApproval
 from tests.e2e.conftest import E2E
 from tests.e2e.helpers import (
     NEW_PASSWORD,
 )
-from timesheets.models import PeriodApproval
 
 pytestmark = E2E
 

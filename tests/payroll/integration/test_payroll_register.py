@@ -12,18 +12,18 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.urls import reverse
 
-from audit.models import AuditLog
-from payroll.models import (
+from apps.audit.models import AuditLog
+from apps.payroll.models import (
     AppendOnlyError,
     PayrollAdjustment,
     PayrollRegister,
     PayrollRegisterLine,
     PayrollWeek,
 )
-from payroll.services.adjustments import carry_period
-from payroll.services.export import CSV_COLUMNS, export_period
-from payroll.services.export import mark_paid as pay_batch
-from payroll.services.register import (
+from apps.payroll.services.adjustments import carry_period
+from apps.payroll.services.export import CSV_COLUMNS, export_period
+from apps.payroll.services.export import mark_paid as pay_batch
+from apps.payroll.services.register import (
     OPEN,
     READY,
     REGISTER_COLUMNS,
@@ -35,17 +35,17 @@ from payroll.services.register import (
     preview,
     table,
 )
-from payroll.services.sync import sync_payroll_report
-from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory, task
-from timesheets.models import Timesheet
-from timesheets.services.approvals import (
+from apps.payroll.services.sync import sync_payroll_report
+from apps.timesheets.models import Timesheet
+from apps.timesheets.services.approvals import (
     approve_period,
     company_period_rows,
     period_rows,
 )
-from timesheets.services.calendar import approval_deadline_for
-from timesheets.services.changes import edit_directly, raise_request
-from timesheets.services.validation import EntryData
+from apps.timesheets.services.calendar import approval_deadline_for
+from apps.timesheets.services.changes import edit_directly, raise_request
+from apps.timesheets.services.validation import EntryData
+from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory, task
 
 pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 

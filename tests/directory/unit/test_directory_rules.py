@@ -1,4 +1,4 @@
-from directory.services.rules import creates_loop, cycle_members, in_company_domain
+from apps.directory.services.rules import creates_loop, cycle_members, in_company_domain
 
 
 def test_loops_are_found():

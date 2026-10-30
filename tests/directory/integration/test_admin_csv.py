@@ -5,8 +5,8 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 
-from audit.models import AuditLog
-from directory.models import Employee
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee
 
 IMPORT = "admin:directory_employee_import"
 EXPORT = "admin:directory_employee_export"

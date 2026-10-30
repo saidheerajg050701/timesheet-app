@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}{{ target.first_name }} {{ target.last_name }} — Team — Timesheets{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">{{ target.first_name }} {{ target.last_name }}</h1>
+    <p class="page-subtitle">{{ target.employee_code }} · {{ target.job_title }}{% if target.team %} · {{ target.team.name }}{% endif %}{% if target.status != "ACTIVE" %} · inactive{% endif %} {% include "includes/status_badge.html" with status="READ_ONLY" only %}</p>
+  </div>
+  <div class="page-actions">
+    <nav aria-label="Range" class="btn-group">
+      {% for n in ranges %}<a class="btn btn-sm {% if n == dash.weeks %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?weeks={{ n }}">Last {{ n }} weeks</a>{% endfor %}
+    </nav>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'team' %}">&larr; Team</a>
+  </div>
+</header>
+
+{% include "analytics/_dashboard.html" with dash=dash own=False %}
+
+<div class="card shadow-sm mt-3" id="member-timesheets">
+  <div class="card-body">
+    <h2 class="h6 text-body-secondary">Timesheets</h2>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead><tr><th scope="col">Week</th><th scope="col">Status</th><th scope="col" class="text-end">Hours worked</th><th scope="col" class="text-end">Leave</th><th scope="col" class="text-end">Expected</th></tr></thead>
+        <tbody>
+          {% for state, worked, leave in timesheets %}
+            <tr data-week="{{ state.week_start|date:'Y-m-d' }}">
+              <td><a href="{% url 'team_member_week' target.employee_code state.week_start %}">{{ state.week_start|date:"M j" }} – {{ state.week_start|add_days:6|date:"M j, Y" }}</a></td>
+              <td>{% include "includes/week_badges.html" with state=state only %}</td>
+              <td class="text-end">{{ worked|hm }}</td>
+              <td class="text-end">{{ leave|hm }}</td>
+              <td class="text-end">{{ state.expected_minutes|hm }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="5" class="text-body-secondary">No weeks in this range.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'vendor/chartjs/chart.umd.min.js' %}"></script>
+<script src="{% static 'timesheets/countdown.js' %}"></script>
+<script src="{% static 'analytics/dashboard.js' %}"></script>
+{% endblock %}

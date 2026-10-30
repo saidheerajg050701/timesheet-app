@@ -9,18 +9,18 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
-from payroll.models import AppendOnlyError, PayrollAdjustment, PayrollWeek
-from payroll.services.adjustments import carry_period
-from payroll.services.export import batch_csv, export_period, mark_paid
-from payroll.services.register import finalize
-from payroll.services.sync import sync_payroll_counts
+from apps.audit.models import AuditLog
+from apps.payroll.models import AppendOnlyError, PayrollAdjustment, PayrollWeek
+from apps.payroll.services.adjustments import carry_period
+from apps.payroll.services.export import batch_csv, export_period, mark_paid
+from apps.payroll.services.register import finalize
+from apps.payroll.services.sync import sync_payroll_counts
+from apps.timesheets.models import PeriodApproval
+from apps.timesheets.services.approvals import approve_period
+from apps.timesheets.services.changes import edit_directly, raise_request
+from apps.timesheets.services.validation import EntryData
 from tests.factories import TimeEntryFactory, task
 from tests.forms import grid_post
-from timesheets.models import PeriodApproval
-from timesheets.services.approvals import approve_period
-from timesheets.services.changes import edit_directly, raise_request
-from timesheets.services.validation import EntryData
 
 pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 

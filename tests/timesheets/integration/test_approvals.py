@@ -5,25 +5,25 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
-from directory.models import Employee
-from tests.factories import EmployeeFactory, TimeEntryFactory
-from tests.forms import form, work
-from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
-from timesheets.services.approvals import period_rows
-from timesheets.services.calendar import (
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee
+from apps.timesheets.models import ChangeRequest, PeriodApproval, Timesheet
+from apps.timesheets.services.approvals import period_rows
+from apps.timesheets.services.calendar import (
     current_period,
     default_period,
     period_start_for,
     recent_periods,
 )
+from tests.factories import EmployeeFactory, TimeEntryFactory
+from tests.forms import form, work
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wed, in the period of Oct 11
 PERIOD = date(2026, 9, 27)  # most recent completed period: weeks of Sun Sep 27 + Oct 4
 WEEK1, WEEK2 = PERIOD, PERIOD + timedelta(weeks=1)
 CURRENT = date(2026, 10, 11)  # current period: weeks of Sun Oct 11 + Oct 18
-HOOK = "timesheets.services.approvals.publish_payroll_period"
+HOOK = "apps.timesheets.services.approvals.publish_payroll_period"
 
 
 def detail_url(employee, period=PERIOD):

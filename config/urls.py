@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_not_required
 from django.contrib.staticfiles.views import serve as serve_static
 from django.urls import include, path, re_path
 
-from directory.views import admin_login
+from apps.directory.views import admin_login
 
 
 @login_not_required
@@ -19,10 +19,11 @@ def static_file(request, path):
 urlpatterns = [
     path("admin/login/", admin_login),  # one login page for the whole app
     path("admin/", admin.site.urls),
-    path("", include("directory.urls")),
-    path("", include("timesheets.urls")),
-    path("", include("analytics.urls")),
-    path("", include("payroll.urls")),
+    path("", include("apps.directory.urls")),
+    path("", include("apps.timesheets.urls")),
+    path("", include("apps.analytics.urls")),
+    path("", include("apps.reports.urls")),
+    path("", include("apps.payroll.urls")),
     # The vendored CSS/JS also when DEBUG is off: fine for a local single-machine app (D-96).
     re_path(r"^static/(?P<path>.*)$", static_file),
 ]

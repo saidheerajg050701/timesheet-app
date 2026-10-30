@@ -12,16 +12,16 @@ import pytest
 import time_machine
 from django.urls import reverse
 
-from analytics.services.metrics import dashboard_for
-from audit.models import AuditLog
-from payroll.models import PayrollRegister, PayrollRegisterLine, PayrollWeek
-from payroll.services.register import OPEN, READY, finalize, period_state
+from apps.analytics.services.metrics import dashboard_for
+from apps.audit.models import AuditLog
+from apps.payroll.models import PayrollRegister, PayrollRegisterLine, PayrollWeek
+from apps.payroll.services.register import OPEN, READY, finalize, period_state
+from apps.timesheets.models import PeriodApproval, Timesheet
+from apps.timesheets.services.approvals import approve_period, period_row
+from apps.timesheets.services.calendar import effective_status, week_state
+from apps.timesheets.services.changes import raise_request
 from tests.factories import EmployeeFactory
 from tests.forms import form, work
-from timesheets.models import PeriodApproval, Timesheet
-from timesheets.services.approvals import approve_period, period_row
-from timesheets.services.calendar import effective_status, week_state
-from timesheets.services.changes import raise_request
 
 pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 

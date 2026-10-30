@@ -3,9 +3,9 @@ import json
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
-from directory.models import User
-from directory.services.permissions import can_approve, can_view
+from apps.audit.models import AuditLog
+from apps.directory.models import User
+from apps.directory.services.permissions import can_approve, can_view
 from tests.factories import TEST_PASSWORD
 
 NEW_PASSWORD = "Fresh-Password-2026"

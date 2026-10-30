@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}{{ target.first_name }} {{ target.last_name }}, week of {{ state.week_start|date:"M j" }} — Timesheets{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">{{ target.first_name }} {{ target.last_name }} · week of {{ state.week_start|date:"M j, Y" }}</h1>
+    <p class="page-subtitle">{% include "includes/week_badges.html" with state=state badge_id="week-status" only %} {% include "includes/status_badge.html" with status="READ_ONLY" only %}</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-sm btn-outline-secondary" href="{% url 'team_member' target.employee_code %}">&larr; {{ target.first_name }}'s overview</a></div>
+</header>
+
+{% include "timesheets/_grid.html" %}
+<h2 class="section-title">Day summary</h2>
+{% include "timesheets/_summary.html" with summary=summary live=False %}
+{% endblock %}
+
+{% block scripts %}<script src="{% static 'timesheets/grid.js' %}"></script>{% endblock %}

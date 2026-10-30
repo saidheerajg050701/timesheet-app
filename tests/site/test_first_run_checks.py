@@ -11,9 +11,9 @@ from django.conf import settings
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from directory.checks import EXAMPLE_SECRET_KEY, secret_key_is_not_the_example
-from directory.management.commands.seed_demo import EXAMPLE_DEMO_PASSWORD
-from directory.models import Employee
+from apps.directory.checks import EXAMPLE_SECRET_KEY, secret_key_is_not_the_example
+from apps.directory.management.commands.seed_demo import EXAMPLE_DEMO_PASSWORD
+from apps.directory.models import Employee
 
 ROOT = Path(settings.BASE_DIR)
 

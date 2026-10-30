@@ -1,7 +1,7 @@
 import pytest
 
-from directory.models import Employee
-from directory.services.signup import (
+from apps.directory.models import Employee
+from apps.directory.services.signup import (
     NOT_IN_DIRECTORY,
     Refusal,
     check_signup_eligibility,

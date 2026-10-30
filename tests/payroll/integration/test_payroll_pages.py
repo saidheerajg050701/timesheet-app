@@ -7,14 +7,14 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
-from payroll.models import PayrollRegister, PayrollWeek
-from payroll.services.export import export_period, safe_cell
-from payroll.services.publish import supersede_week
-from payroll.services.register import finalize, period_items
+from apps.audit.models import AuditLog
+from apps.payroll.models import PayrollRegister, PayrollWeek
+from apps.payroll.services.export import export_period, safe_cell
+from apps.payroll.services.publish import supersede_week
+from apps.payroll.services.register import finalize, period_items
+from apps.timesheets.models import ChangeRequest
+from apps.timesheets.services.approvals import approve_period
 from tests.factories import EmployeeFactory
-from timesheets.models import ChangeRequest
-from timesheets.services.approvals import approve_period
 
 pytestmark = pytest.mark.django_db(databases=["default", "payroll"])
 

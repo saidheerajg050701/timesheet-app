@@ -1,0 +1,55 @@
+{# The weekly grid (D-106–D-110). Context: grid (timesheets.grid.Grid), optional grid_id when a page shows several; editable grids also need row_url, rows_url, projects_url (D-157), category_groups, task_choices (D-152), and after a row action its notice (D-129). #}{% load timesheet_tags %}
+<div class="week-grid-wrap{% if grid.editable %} is-editable{% endif %}" data-week-grid{% if grid.editable %} data-rows-url="{{ rows_url }}" data-projects-url="{{ projects_url }}"{% endif %}>
+  <div class="table-responsive grid-scroll">
+    <table class="table week-grid mb-0" id="{{ grid_id|default:'entries' }}" data-next-index="{{ grid.next_index }}" aria-label="Week of {{ grid.week_start|date:'M j, Y' }}: hours per project or category and day">
+      <thead>
+        <tr>
+          <th scope="col" class="grid-label">Project / Category</th>
+          {% for day in grid.days %}<th scope="col" class="grid-day{% if day.weekday >= 5 %} is-weekend{% endif %}"><span class="grid-dayname">{{ day|date:"D" }}</span><span class="grid-date">{{ day|date:"M j, Y" }}</span></th>{% endfor %}
+          <th scope="col" class="text-end grid-total-head">Total worked hours</th>
+        </tr>
+      </thead>
+      <tbody id="{% if grid_id %}{{ grid_id }}-rows{% else %}entry-rows{% endif %}" data-role="grid-rows">
+        {% for row in grid.rows %}{% include "timesheets/_grid_row.html" %}{% empty %}
+          <tr class="grid-empty"><td colspan="9" class="text-body-secondary">No entries{% if grid.editable %} yet — use <strong>+ Add row</strong> below{% endif %}.</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="grid-footer">
+          <th scope="row" class="grid-label">Total worked hours</th>
+          {% for day, minutes, errors in grid.footer %}<td class="text-end grid-day-total{% if day.weekday >= 5 %} is-weekend{% endif %}{% if errors %} has-error{% endif %}" data-role="day-total"{% if errors %} title="{{ errors|join:' ' }}"{% endif %}>{{ minutes|hours2 }}</td>{% endfor %}
+          <td class="text-end grid-week-total" id="{{ grid_id|default:'grid' }}-week-total" data-role="week-total">{{ grid.worked|hours2 }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% if grid.editable %}
+    {{ task_choices|json_script:"task-choices" }}
+    <div class="grid-notice-area" data-role="grid-notice" role="status" data-notice="{{ notice|default:'' }}"></div>
+    <button type="button" class="btn btn-outline-secondary mt-3" data-grid-action="add-row">+ Add row</button>
+    <dialog class="cell-dialog" id="add-row-dialog" aria-labelledby="add-row-title" data-row-url="{{ row_url }}">
+      <div class="cell-dialog-head">
+        <h2 class="h6 mb-0" id="add-row-title">Add a row</h2>
+        <button type="button" class="btn-close" data-grid-action="close" aria-label="Close"></button>
+      </div>
+      <p class="small text-body-secondary">Pick a category; Project work also needs a project and one of its tasks.</p>
+      <label class="form-label" for="add-row-category">Category</label>
+      <select class="form-select mb-3" id="add-row-category" data-role="new-category">
+        <option value="">Choose…</option>
+        {% for group, options in category_groups %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+      </select>
+      {% include "projects/_project_combo.html" with combo_id="add-row-project" value="" label="" hidden=True only %}
+      <div data-role="new-task-field" hidden>
+        <label class="form-label" for="add-row-task">Task</label>
+        <select class="form-select mb-3" id="add-row-task" data-role="new-task">
+          <option value="">Choose…</option>
+        </select>
+      </div>
+      <p class="invalid-feedback d-block" data-role="add-row-error" role="alert" hidden></p>
+      <div class="cell-dialog-actions">
+        <button type="button" class="btn btn-sm btn-outline-secondary" data-grid-action="close">Cancel</button>
+        <button type="button" class="btn btn-sm btn-primary" data-grid-action="insert-row">Add row</button>
+      </div>
+    </dialog>
+  {% endif %}
+</div>

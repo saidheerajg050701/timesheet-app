@@ -4,8 +4,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.db import IntegrityError, transaction
 
-from audit.models import AuditLog
-from audit.services.log import record
+from apps.audit.models import AuditLog
+from apps.audit.services.log import record
 
 
 @pytest.mark.django_db

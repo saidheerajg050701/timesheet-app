@@ -6,10 +6,10 @@ import pytest
 import time_machine
 from django.urls import reverse
 
-from audit.models import AuditLog
+from apps.audit.models import AuditLog
+from apps.timesheets.models import TimeEntry, Timesheet
 from tests.factories import EmployeeFactory, TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, leave, work
-from timesheets.models import TimeEntry, Timesheet
 
 TZ = ZoneInfo("America/Chicago")
 WEEK = date(2026, 10, 18)  # Sun–Sat; fixed_now (Wed 21 Oct 10:00) is in this week

@@ -7,12 +7,12 @@ import time_machine
 from django.core.exceptions import ValidationError
 from django.urls import reverse
 
-from audit.models import AuditLog
+from apps.audit.models import AuditLog
+from apps.timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
+from apps.timesheets.services.approvals import reject_period
+from apps.timesheets.services.changes import raise_request
 from tests.factories import TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, leave, work
-from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
-from timesheets.services.approvals import reject_period
-from timesheets.services.changes import raise_request
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now: Wednesday of the week of Sun 18 Oct
@@ -20,7 +20,7 @@ THIS_WEEK = date(2026, 10, 18)
 LAST_WEEK = date(2026, 10, 11)  # deadline Sat 17 Oct 12:00 (passed)
 TWO_WEEKS_AGO = date(2026, 10, 4)
 PERIOD = date(2026, 9, 27)  # pay period: weeks of Sun Sep 27 + Oct 4 (anchor 2026-01-04)
-HOOK = "timesheets.services.approvals.supersede_payroll_week"
+HOOK = "apps.timesheets.services.approvals.supersede_payroll_week"
 
 
 def monday(week):

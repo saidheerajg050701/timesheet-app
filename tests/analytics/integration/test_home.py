@@ -12,7 +12,7 @@ def test_home_dashboard_renders_with_vendored_assets(client, user):
         "vendor/bootstrap/bootstrap.min.css",
         "vendor/htmx/htmx.min.js",
         "vendor/chartjs/chart.umd.min.js",
-        "js/dashboard.js",
+        "analytics/dashboard.js",
     ):
         assert asset in html
         assert finders.find(asset)

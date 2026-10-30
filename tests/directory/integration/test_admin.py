@@ -1,11 +1,11 @@
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
-from audit.services.log import record
-from directory.models import User
+from apps.audit.models import AuditLog
+from apps.audit.services.log import record
+from apps.directory.models import User
+from apps.timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 from tests.factories import TimeEntryFactory, UserFactory
-from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 
 VIEW_ONLY_MODELS = (  # Team, Employee and Project became editable in Phase 11 (D-87)
     User,

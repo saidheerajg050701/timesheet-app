@@ -6,10 +6,10 @@ from pathlib import Path
 from django.urls import reverse
 from playwright.sync_api import expect
 
-from directory.models import Employee
+from apps.directory.models import Employee
+from apps.timesheets.services.approvals import approve_period
 from tests.e2e.conftest import E2E, PERIOD, TZ
 from tests.e2e.helpers import WEEK2
-from timesheets.services.approvals import approve_period
 
 pytestmark = E2E
 

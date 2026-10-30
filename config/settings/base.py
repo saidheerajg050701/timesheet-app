@@ -37,18 +37,21 @@ DEMO_PASSWORD = env("DEMO_PASSWORD", default="")
 INSTALLED_APPS = [
     # "directory" comes before django.contrib.auth so its createsuperuser command
     # (employee_code flow, D-02) replaces Django's built-in one.
-    "directory",
-    "directory.admin_site.CompanyAdminConfig",  # directory admins only (D-93)
+    "apps.directory",
+    "apps.compensation",
+    "apps.directory.admin_site.CompanyAdminConfig",  # directory admins only (D-93)
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "axes",
-    "timesheets",
-    "audit",
-    "payroll",
-    "analytics",
+    "apps.timesheets",
+    "apps.projects",
+    "apps.audit",
+    "apps.payroll",
+    "apps.analytics",
+    "apps.reports",
 ]
 
 MIDDLEWARE = [
@@ -60,7 +63,7 @@ MIDDLEWARE = [
     # Login required everywhere except views marked @login_not_required (login, sign-up).
     "django.contrib.auth.middleware.LoginRequiredMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "directory.middleware.PasswordChangeRequiredMiddleware",  # after an HR reset (D-91)
+    "apps.directory.middleware.PasswordChangeRequiredMiddleware",  # after an HR reset (D-91)
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "axes.middleware.AxesMiddleware",  # must be last
 ]
@@ -77,7 +80,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
-                "directory.context_processors.current_employee",
+                "apps.directory.context_processors.current_employee",
             ],
         },
     },
@@ -97,12 +100,12 @@ DATABASES = {
         "NAME": BASE_DIR / "payroll.sqlite3",
     },
 }
-DATABASE_ROUTERS = ["payroll.routers.PayrollRouter"]
+DATABASE_ROUTERS = ["apps.payroll.routers.PayrollRouter"]
 
 AUTH_USER_MODEL = "directory.User"
 AUTHENTICATION_BACKENDS = [
     "axes.backends.AxesStandaloneBackend",  # lockout check first (FR-1)
-    "directory.backends.EmployeeBackend",  # email + password; ACTIVE employees only
+    "apps.directory.backends.EmployeeBackend",  # email + password; ACTIVE employees only
 ]
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
@@ -112,7 +115,7 @@ LOGOUT_REDIRECT_URL = "login"
 AXES_FAILURE_LIMIT = 5
 AXES_COOLOFF_TIME = timedelta(minutes=15)
 AXES_LOCKOUT_PARAMETERS = ["username"]
-AXES_USERNAME_CALLABLE = "directory.services.login.lockout_username"
+AXES_USERNAME_CALLABLE = "apps.directory.services.login.lockout_username"
 AXES_RESET_ON_SUCCESS = True
 AXES_LOCKOUT_TEMPLATE = "registration/locked.html"
 # axes.W006 recommends adding ip_address to the lockout key; we lock the account itself (D-28).

@@ -4,8 +4,8 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 from django.views import View
 
-from directory.models import Employee
-from directory.services.permissions import (
+from apps.directory.models import Employee
+from apps.directory.services.permissions import (
     PermissionRequiredMixin,
     can_access_payroll,
     can_approve,

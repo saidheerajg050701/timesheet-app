@@ -3,10 +3,10 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from directory.models import Employee
-from timesheets.checks import pay_period_anchor_is_a_sunday
-from timesheets.models import Timesheet
-from timesheets.services.calendar import (
+from apps.directory.models import Employee
+from apps.timesheets.checks import pay_period_anchor_is_a_sunday
+from apps.timesheets.models import Timesheet
+from apps.timesheets.services.calendar import (
     NOT_STARTED,
     OUTSIDE_EMPLOYMENT,
     deadline_for,

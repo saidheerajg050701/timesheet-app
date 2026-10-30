@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}Change request — Timesheets{% endblock %}
+
+{% block content %}
+{% with employee=sheet.employee %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">Change request from {{ employee.first_name }} {{ employee.last_name }}</h1>
+    <p class="page-subtitle">{{ employee.employee_code }} · week of {{ sheet.week_start|date:"l, M j, Y" }} {% include "includes/status_badge.html" with status=sheet.status only %}</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'request_inbox' %}">&larr; All requests</a></div>
+</header>
+{% endwith %}
+
+<div class="card card-body mb-3">
+  <p class="mb-1"><strong>Reason:</strong> {{ change.reason }}</p>
+  <p class="mb-0 small text-body-secondary">Requested {{ change.created_at|date:"l, M j, g:i A" }}</p>
+  {% if change.status != "OPEN" %}
+    <p class="mb-0 mt-2"><strong>{{ change.get_status_display|title }}</strong> by {{ change.reviewer.first_name }} {{ change.reviewer.last_name }} on {{ change.resolved_at|date:"M j, g:i A" }}{% if change.resolution %} — “{{ change.resolution }}”{% endif %}</p>
+  {% endif %}
+</div>
+
+{% include "timesheets/_grid.html" %}
+<h2 class="section-title">Day summary</h2>
+{% include "timesheets/_summary.html" with live=False %}
+
+{% if change.status == "OPEN" %}
+  <form method="post" class="card card-body mt-3" id="handle-request">
+    {% csrf_token %}
+    <label for="id_note" class="form-label">Note to the employee (optional)</label>
+    <textarea name="note" id="id_note" rows="2" maxlength="2000" class="form-control mb-3"></textarea>
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-primary" href="{% url 'request_edit' change.pk %}">Edit directly</a>
+      <button type="submit" name="action" value="unlock" class="btn btn-outline-primary">Unlock for employee</button>
+      <button type="submit" name="action" value="reject" class="btn btn-outline-danger">Reject</button>
+    </div>
+    <p class="small text-body-secondary mt-2 mb-0">
+      Unlock reopens the week for the employee until the later of 48 hours from now and the week's Saturday 12:00 deadline.
+      Edit directly changes the rows yourself; the week is then submitted. Both reset an approved period to pending.
+    </p>
+  </form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="{% static 'timesheets/grid.js' %}"></script>{% endblock %}

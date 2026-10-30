@@ -1,0 +1,46 @@
+{# A row's "⋮" menu and its two dialogs (Change 7, D-129, D-130). Context: row. #}{% load timesheet_tags %}
+<div class="dropdown row-actions">
+  <button type="button" class="row-actions-toggle" data-bs-toggle="dropdown" data-bs-popper-config='{"strategy":"fixed"}' aria-expanded="false" aria-label="Row actions for {{ row.label }}">⋮</button>
+  <ul class="dropdown-menu">
+    <li><button type="button" class="dropdown-item" data-grid-action="change-row">Change row</button></li>
+    <li><button type="button" class="dropdown-item text-danger" data-grid-action="delete-row">Delete row</button></li>
+  </ul>
+</div>
+<dialog class="cell-dialog row-dialog" id="{{ row.dom_id }}-change" aria-labelledby="{{ row.dom_id }}-change-title" data-role="change-row-dialog">
+  <div class="cell-dialog-head">
+    <h2 class="h6 mb-0" id="{{ row.dom_id }}-change-title">Change project, task or category<span class="cell-dialog-day">{{ row.label }}</span></h2>
+    <button type="button" class="btn-close" data-grid-action="close" aria-label="Close"></button>
+  </div>
+  <p class="small text-body-secondary">Every {% if row.kind == "leave" %}leave entry{% else %}time slot{% endif %} in this row moves; dates, {% if row.kind == "leave" %}hours{% else %}times{% endif %} and reasons stay the same.</p>
+  <label class="form-label" for="{{ row.dom_id }}-category">Category</label>
+  <select class="form-select mb-3" id="{{ row.dom_id }}-category" data-role="new-category">
+    {% for group, options in row.change_groups %}<optgroup label="{{ group }}">{% for value, label in options %}<option value="{{ value }}"{% if value == row.category %} selected{% endif %}>{{ label }}</option>{% endfor %}</optgroup>{% endfor %}
+  </select>
+  {% with combo_id=row.dom_id|add:"-project" %}{% if row.category == "PROJECT" %}{% include "projects/_project_combo.html" with combo_id=combo_id value=row.project label=row.name hidden=False only %}{% else %}{% include "projects/_project_combo.html" with combo_id=combo_id value="" label="" hidden=True only %}{% endif %}{% endwith %}
+  <div data-role="new-task-field" hidden>
+    <label class="form-label" for="{{ row.dom_id }}-task">Task</label>
+    <select class="form-select mb-3" id="{{ row.dom_id }}-task" data-role="new-task" data-current="{{ row.task }}">
+      <option value="">Choose…</option>
+    </select>
+  </div>
+  <p class="row-note" data-role="merge-note" hidden></p>
+  <p class="row-note is-warning" data-role="break-note" hidden></p>
+  <p class="invalid-feedback d-block" data-role="row-error" role="alert" hidden></p>
+  <div class="cell-dialog-actions">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-grid-action="close">Cancel</button>
+    <button type="button" class="btn btn-sm btn-primary" data-grid-action="confirm-change">Change row</button>
+  </div>
+</dialog>
+<dialog class="cell-dialog row-dialog" id="{{ row.dom_id }}-delete" aria-labelledby="{{ row.dom_id }}-delete-title" data-role="delete-row-dialog" data-row-name="{{ row.name }}">
+  <div class="cell-dialog-head">
+    <h2 class="h6 mb-0" id="{{ row.dom_id }}-delete-title">Delete row<span class="cell-dialog-day">{{ row.label }}</span></h2>
+    <button type="button" class="btn-close" data-grid-action="close" aria-label="Close"></button>
+  </div>
+  <p class="mb-0" data-role="delete-text">Delete {{ row.name }}? This removes {{ row.slot_count }} {% if row.kind == "leave" %}leave {{ row.slot_count|pluralize:"entry,entries" }}{% else %}time slot{{ row.slot_count|pluralize }}{% endif %} ({{ row.minutes|hours2 }} h) from this week.</p>
+  <p class="small text-body-secondary mt-2 mb-0">Nothing is saved until you save the week.</p>
+  <p class="invalid-feedback d-block" data-role="row-error" role="alert" hidden></p>
+  <div class="cell-dialog-actions">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-grid-action="close">Cancel</button>
+    <button type="button" class="btn btn-sm btn-danger" data-grid-action="confirm-delete">Delete row</button>
+  </div>
+</dialog>

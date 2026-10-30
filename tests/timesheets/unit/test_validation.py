@@ -2,9 +2,9 @@ from datetime import date, time
 
 import pytest
 
-from directory.models import Employee
+from apps.directory.models import Employee
+from apps.timesheets.services.validation import EntryData, duration, validate_entries
 from tests.factories import ProjectFactory, task
-from timesheets.services.validation import EntryData, duration, validate_entries
 
 # Since Change 10 the rules read a project's allowed tasks, so the projects are saved (D-151).
 pytestmark = pytest.mark.django_db

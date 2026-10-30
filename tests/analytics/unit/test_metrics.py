@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from analytics.services.metrics import Categories, Punctuality, range_weeks, week_starts
+from apps.analytics.services.metrics import Categories, Punctuality, range_weeks, week_starts
 
 TZ = ZoneInfo("America/Chicago")
 

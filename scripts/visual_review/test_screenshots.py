@@ -20,8 +20,9 @@ import time_machine
 from django.core.management import call_command
 from django.urls import reverse
 
-from directory.models import Employee
-from timesheets.models import ChangeRequest, Project, TimeEntry, Timesheet
+from apps.directory.models import Employee
+from apps.projects.models import Project
+from apps.timesheets.models import ChangeRequest, TimeEntry, Timesheet
 
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")  # Playwright's sync API (D-94)
 

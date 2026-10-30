@@ -5,8 +5,10 @@ from datetime import datetime, timedelta
 from django.urls import reverse
 from playwright.sync_api import expect
 
-from audit.models import AuditLog
-from directory.models import Employee
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee
+from apps.timesheets.models import ChangeRequest, Timesheet
+from apps.timesheets.services.approvals import approve_period
 from tests.e2e.conftest import E2E, PERIOD, THIS_WEEK, TZ
 from tests.e2e.helpers import (
     PORTAL,
@@ -17,8 +19,6 @@ from tests.e2e.helpers import (
     status_of,
     week_url,
 )
-from timesheets.models import ChangeRequest, Timesheet
-from timesheets.services.approvals import approve_period
 
 pytestmark = E2E
 

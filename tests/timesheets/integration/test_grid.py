@@ -6,11 +6,11 @@ from datetime import date, time, timedelta
 import pytest
 from django.urls import reverse
 
+from apps.timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
+from apps.timesheets.services.summary import summarize
+from apps.timesheets.services.weeks import entries_snapshot
 from tests.factories import ProjectFactory, TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, leave, work
-from timesheets.models import ChangeRequest, PeriodApproval, TimeEntry, Timesheet
-from timesheets.services.summary import summarize
-from timesheets.services.weeks import entries_snapshot
 
 WEEK = date(2026, 10, 18)  # the current week (Sun–Sat) at fixed_now (Wed 21 Oct)
 MONDAY, TUESDAY, WEDNESDAY = (WEEK + timedelta(days=n) for n in (1, 2, 3))

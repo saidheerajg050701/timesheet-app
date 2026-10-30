@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load static timesheet_tags %}
+
+{% block title %}Approve {{ row.employee.first_name }} {{ row.employee.last_name }} — Timesheets{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <div>
+    <h1 class="h3 mb-0">{{ row.employee.first_name }} {{ row.employee.last_name }}</h1>
+    <p class="page-subtitle">{{ row.employee.employee_code }} · pay period {{ row.period_start|date:"M j" }} – {{ row.period_start|add_days:13|date:"M j, Y" }} {% include "includes/status_badge.html" with status=row.status badge_id="period-status" only %}</p>
+  </div>
+  <div class="page-actions"><a class="btn btn-outline-secondary btn-sm" href="{% url 'approvals' %}?period={{ row.period_start|date:'Y-m-d' }}">&larr; All employees</a></div>
+</header>
+
+{% if row.approval and row.approval.decided_at %}
+  <p class="small" id="decision">{{ row.status|title }} by {{ row.approval.approver.first_name }} {{ row.approval.approver.last_name }} on {{ row.approval.decided_at|date:"M j, g:i A" }}{% if row.approval.comment %}: “{{ row.approval.comment }}”{% endif %}</p>
+{% endif %}
+
+<p class="mb-4">
+  Hours worked <strong>{{ row.worked|hm }}</strong> · Leave <strong>{{ row.leave|hm }}</strong>
+  <span class="badges ms-1">{% include "timesheets/_flags.html" with flags=row.flags only %}</span>
+</p>
+
+{% for week, grid, grid_id, can_edit in weeks %}
+  <section class="mb-4" id="week-{{ week.number }}">
+    <h2 class="section-title">
+      Week {{ week.number }} · {{ week.week_start|date:"M j" }} – {{ week.week_start|add_days:6|date:"M j" }}
+      {% include "includes/week_badges.html" with state=week.state only %}{% if week.not_submitted_by_employee %} {% include "includes/status_badge.html" with status="UNSUBMITTED" label="Not submitted by employee" only %}{% endif %}
+    </h2>
+    {% if can_edit %}
+      <p class="mb-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'approval_week_edit' row.period_start row.employee.employee_code week.week_start %}">Edit week {{ week.number }}</a>
+      <span class="small text-body-secondary">{% if week.state.status == "LOCKED" %}{{ row.employee.first_name }} didn't submit this week. You can enter or correct the hours, then approve or reject.{% else %}Correct the hours before you decide; the week stays submitted.{% endif %}</span></p>
+    {% endif %}
+    {% if week.open_request %}
+      <div class="alert alert-warning py-2">Open change request: “{{ week.open_request.reason }}” — <a href="{% url 'request_detail' week.open_request.pk %}">handle it</a>.</div>
+    {% endif %}
+    {% if week.state.status == "LOCKED" %}
+      <form method="post" class="mb-2">
+        {% csrf_token %}
+        <input type="hidden" name="week" value="{{ week.week_start|date:'Y-m-d' }}">
+        <button type="submit" name="action" value="unlock" class="btn btn-sm btn-outline-primary">Unlock week {{ week.number }} for the employee</button>
+        <span class="small text-body-secondary">Reopens it until the later of 48 hours from now and that week's Saturday 12:00.</span>
+      </form>
+    {% endif %}
+    {% if week.required %}
+      {% include "timesheets/_grid.html" with grid_id=grid_id %}
+      {% include "timesheets/_summary.html" with summary=week.summary live=False %}
+    {% else %}
+      <p class="text-body-secondary">Not employed this week — not needed for approval.</p>
+    {% endif %}
+  </section>
+{% endfor %}
+
+{% if row.blockers %}
+  <div class="alert alert-secondary" id="blockers">
+    <p class="fw-semibold mb-1">Approve and Reject aren't available yet:</p>
+    <ul class="mb-0">{% for reason in row.blockers %}<li>{{ reason }}</li>{% endfor %}</ul>
+  </div>
+{% else %}
+  <div class="row g-3" id="decide">
+    <div class="col-md-4">
+      {% if unsubmitted_notes %}
+        <button type="button" class="btn btn-success w-100" id="approve-open" onclick="document.getElementById('approve-dialog').showModal()">Approve both weeks</button>
+        <dialog class="cell-dialog" id="approve-dialog" aria-labelledby="approve-title">
+          <div class="cell-dialog-head">
+            <h2 class="h6 mb-0" id="approve-title">Approve weeks that weren't submitted?</h2>
+            <button type="button" class="btn-close" aria-label="Close" onclick="this.closest('dialog').close()"></button>
+          </div>
+          <ul id="unsubmitted-notes">{% for note in unsubmitted_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+          <p class="small text-body-secondary">These hours go to payroll as approved. The week still counts as missed for {{ row.employee.first_name }} (it was never submitted).</p>
+          <form method="post" class="cell-dialog-actions">
+            {% csrf_token %}
+            <input type="hidden" name="confirm_unsubmitted" value="1">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" name="action" value="approve" class="btn btn-sm btn-success">Approve both weeks</button>
+          </form>
+        </dialog>
+      {% else %}
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" name="action" value="approve" class="btn btn-success w-100">Approve both weeks</button>
+        </form>
+      {% endif %}
+    </div>
+    <div class="col-md-8">
+      <form method="post" class="card card-body">
+        {% csrf_token %}
+        <label for="id_comment" class="form-label">Comment for the employee (required to reject)</label>
+        <textarea name="comment" id="id_comment" rows="2" class="form-control mb-2"></textarea>
+        <button type="submit" name="action" value="reject" class="btn btn-outline-danger">Reject</button>
+      </form>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}<script src="{% static 'timesheets/grid.js' %}"></script>{% endblock %}

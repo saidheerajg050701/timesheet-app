@@ -9,13 +9,14 @@ from django.core.exceptions import ValidationError
 from django.test import Client
 from django.urls import reverse
 
-from audit.models import AuditLog
-from audit.services.log import record
-from directory.models import Employee, Team, User
-from directory.services import directory_admin
-from payroll.models import PayrollWeek
+from apps.audit.models import AuditLog
+from apps.audit.services.log import record
+from apps.directory.models import Employee, Team, User
+from apps.directory.services import directory_admin
+from apps.payroll.models import PayrollWeek
+from apps.projects.models import Project
+from apps.timesheets.models import ChangeRequest, PeriodApproval, Timesheet
 from tests.factories import TEST_PASSWORD, EmployeeFactory, ProjectFactory, UserFactory
-from timesheets.models import ChangeRequest, PeriodApproval, Project, Timesheet
 
 PERIOD = date(2026, 9, 27)  # most recent completed period at fixed_now: Sep 27 + Oct 4
 TEMP = "Temporary-Pass-2026"
@@ -115,7 +116,7 @@ def test_employee_edit_is_audited(org, login_as):
     assert len(rows("Employee", "UPDATE")) == 1
 
     dev1.first_name = "Johnny"
-    with mock.patch("directory.services.directory_admin.record", side_effect=RuntimeError):
+    with mock.patch("apps.directory.services.directory_admin.record", side_effect=RuntimeError):
         with pytest.raises(RuntimeError):
             directory_admin.save_employee(org.hr, dev1)
     assert refreshed(org.dev1).first_name == "Jon"  # the save rolled back with the audit row

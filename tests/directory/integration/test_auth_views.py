@@ -5,9 +5,9 @@ import time_machine
 from django.db import connections
 from django.urls import reverse
 
-from audit.models import AuditLog
-from directory.models import Employee, User
-from directory.services.signup import check_signup_eligibility, create_account
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee, User
+from apps.directory.services.signup import check_signup_eligibility, create_account
 from tests.factories import TEST_PASSWORD, EmployeeFactory, UserFactory
 
 NEW_PASSWORD = "Long-Enough-Pass-1"

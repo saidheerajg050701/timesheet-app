@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 from django.db import router
 
-from directory.models import User
-from payroll.routers import PayrollRouter
+from apps.directory.models import User
+from apps.payroll.routers import PayrollRouter
 
 payroll_router = PayrollRouter()
 

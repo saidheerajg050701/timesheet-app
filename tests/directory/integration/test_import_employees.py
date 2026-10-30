@@ -5,8 +5,8 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from audit.models import AuditLog
-from directory.models import Employee, Team, User
+from apps.audit.models import AuditLog
+from apps.directory.models import Employee, Team, User
 
 HEADER = (
     "employee_code,email,first_name,last_name,job_title,team,department,manager_code,"

@@ -7,7 +7,7 @@ from pathlib import Path
 from django.urls import reverse
 from playwright.sync_api import expect
 
-from audit.models import AuditLog
+from apps.audit.models import AuditLog
 from tests.e2e.conftest import E2E, PERIOD
 from tests.e2e.helpers import (
     REPORT_FILES,
@@ -100,7 +100,7 @@ def test_pay_and_project_budget_in_a_real_browser(e2e_org, make_week, open_as):
 
     from openpyxl import load_workbook
 
-    from directory.models import PayRecord
+    from apps.compensation.models import PayRecord
 
     director = EmployeeFactory(
         employee_code="DIR", first_name="Dina", last_name="Ross", manager=e2e_org.ceo,

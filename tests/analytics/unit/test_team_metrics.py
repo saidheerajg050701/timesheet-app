@@ -4,9 +4,9 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from analytics.services.metrics import Overtime, Punctuality
-from analytics.services.team import sort_people, utilization
-from directory.services.permissions import reporting_tree_ids, team_scope
+from apps.analytics.services.metrics import Overtime, Punctuality
+from apps.analytics.services.team import sort_people, utilization
+from apps.directory.services.permissions import reporting_tree_ids, team_scope
 
 
 def person(last, worked, available, late=0):

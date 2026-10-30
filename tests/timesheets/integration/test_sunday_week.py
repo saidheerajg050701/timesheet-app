@@ -6,16 +6,16 @@ from zoneinfo import ZoneInfo
 import time_machine
 from django.urls import reverse
 
-from tests.factories import TimesheetFactory
-from tests.forms import form, work
-from timesheets.models import TimeEntry, Timesheet
-from timesheets.services.calendar import (
+from apps.timesheets.models import TimeEntry, Timesheet
+from apps.timesheets.services.calendar import (
     deadline_for,
     effective_status,
     expected_minutes_for,
     week_start_for,
     week_state,
 )
+from tests.factories import TimesheetFactory
+from tests.forms import form, work
 
 TZ = ZoneInfo("America/Chicago")
 WEEK = date(2026, 10, 18)  # Sun 18 – Sat 24 Oct; deadline Sat 24 Oct 12:00

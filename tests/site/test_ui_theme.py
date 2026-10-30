@@ -7,9 +7,9 @@ from django.conf import settings
 from django.test import Client
 from django.urls import reverse
 
-from payroll.models import PayrollWeek
-from timesheets.models import ChangeRequest, PeriodApproval, Timesheet
-from timesheets.templatetags.timesheet_tags import TONES, status_label, status_tone
+from apps.payroll.models import PayrollWeek
+from apps.timesheets.models import ChangeRequest, PeriodApproval, Timesheet
+from apps.timesheets.templatetags.timesheet_tags import TONES, status_label, status_tone
 
 THEME = Path(settings.BASE_DIR) / "static" / "css" / "theme.css"
 TEMPLATES = Path(settings.BASE_DIR) / "templates"
@@ -52,7 +52,11 @@ def test_static_files_are_revalidated_on_every_page_load(settings, debug):
     """T-201: CSS/JS answer with Cache-Control: no-cache, and 304 while unchanged (D-131)."""
     settings.DEBUG = debug
     browser = Client()  # anonymous: the login page needs them too
-    for path in ("/static/js/grid.js", "/static/css/theme.css", "/static/vendor/htmx/htmx.min.js"):
+    for path in (
+        "/static/timesheets/grid.js",
+        "/static/css/theme.css",
+        "/static/vendor/htmx/htmx.min.js",
+    ):
         first = browser.get(path)
         assert first.status_code == 200 and first["Cache-Control"] == "no-cache", path
         again = browser.get(path, headers={"If-Modified-Since": first["Last-Modified"]})

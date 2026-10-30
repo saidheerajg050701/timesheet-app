@@ -7,11 +7,11 @@ from datetime import date, time, timedelta
 import pytest
 from django.urls import reverse
 
-from audit.models import AuditLog
+from apps.audit.models import AuditLog
+from apps.timesheets.models import ChangeRequest, TimeEntry, Timesheet
+from apps.timesheets.services.changes import raise_request, reject_request
 from tests.factories import ProjectFactory, TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, grid_post, leave, work
-from timesheets.models import ChangeRequest, TimeEntry, Timesheet
-from timesheets.services.changes import raise_request, reject_request
 
 WEEK = date(2026, 10, 18)  # the current week at fixed_now (Wed 21 Oct)
 MONDAY, TUESDAY, WEDNESDAY = (WEEK + timedelta(days=n) for n in (1, 2, 3))

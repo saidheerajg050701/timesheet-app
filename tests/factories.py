@@ -5,26 +5,40 @@ from datetime import date, time
 
 import factory
 import factory.random
+from django.apps import apps as django_apps
 from django.conf import settings
 from factory.django import DjangoModelFactory
 
-from directory.models import Employee, Team, User
-from timesheets.models import Project, Task, TimeEntry, Timesheet
-from timesheets.services.projects import format_code
+from apps.directory.models import Employee, Team, User
+from apps.projects.models import Project, Task
+from apps.projects.services.projects import format_code
+from apps.timesheets.models import TimeEntry, Timesheet
 
 TEST_PASSWORD = "Test-Password-123!"
 
 factory.random.reseed_random("timesheet-app-tests")  # repeatable Faker values
 
 
+class _MigrationApps:
+    """Today's models under the labels an old migration asks for: Project and Task were
+    timesheets models when those migrations were written; they belong to projects now (D-174).
+    Lets tests run an old data migration's function against the live models."""
+
+    def get_model(self, app_label, model_name):
+        if app_label == "timesheets" and model_name in ("Project", "Task"):
+            app_label = "projects"
+        return django_apps.get_model(app_label, model_name)
+
+
+MIGRATION_APPS = _MigrationApps()
+
+
 def default_tasks():
     """The 9 default tasks of migration timesheets/0007 (Change 10) — made again when a
     transactional (browser) test has emptied the tables."""
     if not Task.objects.exists():
-        from django.apps import apps
-
-        migration = importlib.import_module("timesheets.migrations.0007_default_tasks")
-        migration.add_default_tasks(apps, None)
+        migration = importlib.import_module("apps.timesheets.migrations.0007_default_tasks")
+        migration.add_default_tasks(MIGRATION_APPS, None)
     return Task.objects.all()
 
 

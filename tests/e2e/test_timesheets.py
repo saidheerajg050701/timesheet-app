@@ -7,6 +7,7 @@ import pytest
 from django.urls import reverse
 from playwright.sync_api import expect
 
+from apps.timesheets.models import TimeEntry
 from tests.e2e.conftest import E2E, THIS_WEEK, TZ
 from tests.e2e.helpers import (
     BREAK,
@@ -24,7 +25,6 @@ from tests.e2e.helpers import (
 from tests.factories import (
     ProjectFactory,
 )
-from timesheets.models import TimeEntry
 
 pytestmark = E2E
 

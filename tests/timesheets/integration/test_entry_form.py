@@ -6,9 +6,9 @@ from datetime import date, time
 import pytest
 from django.urls import reverse
 
+from apps.timesheets.models import ChangeRequest, TimeEntry
 from tests.factories import TimeEntryFactory, TimesheetFactory
 from tests.forms import brk, form, work
-from timesheets.models import ChangeRequest, TimeEntry
 
 THIS_WEEK = date(2026, 10, 18)  # employee page: current week (fixed_now is Wed 21 Oct)
 LAST_WEEK = date(2026, 10, 11)  # Edit directly: dev1's submitted week with an open request
@@ -142,6 +142,6 @@ def test_grid_script_keeps_totals_live():
     """Helper check: the grid script recalculates totals while typing and guards unsaved work."""
     from pathlib import Path
 
-    script = Path("static/js/grid.js").read_text()
+    script = Path("apps/timesheets/static/timesheets/grid.js").read_text()
     assert 'addEventListener("input"' in script and "toFixed(2)" in script
     assert "beforeunload" in script and "showModal" in script

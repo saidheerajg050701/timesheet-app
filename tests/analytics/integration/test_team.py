@@ -10,9 +10,9 @@ from django.db import connections
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
-from directory.models import Employee, Team
+from apps.directory.models import Employee, Team
+from apps.timesheets.models import PeriodApproval, TimeEntry, Timesheet
 from tests.factories import EmployeeFactory, TeamFactory, TimeEntryFactory, UserFactory
-from timesheets.models import PeriodApproval, TimeEntry, Timesheet
 
 TZ = ZoneInfo("America/Chicago")
 NOW = datetime(2026, 10, 21, 10, 0, tzinfo=TZ)  # fixed_now

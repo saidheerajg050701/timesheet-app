@@ -9,7 +9,8 @@
 
 | Version | Change | Details |
 |---|---|---|
-| 3.9 | **Refactor R1 – Reorganized for long-term maintenance (no change in behaviour)** | Same pages, URLs, permissions, rules, tables, migrations, numbers and files. Settings are a package (`config/settings/`: base, local — the default — test for pytest, and a production skeleton that is not used yet); `timesheets/views/` and `analytics/views/` packages replace the `*_views.py` files; the largest services are packages that re-export their public names (`directory/services/demo/`, `analytics/services/project_report/`, `payroll/services/register/`; "who still has to approve" moved to `timesheets/services/pending.py`); tests are grouped by app in `tests/<app>/unit` and `tests/<app>/integration`, with `tests/site/` for whole-site checks and one browser-test file per area; a `Makefile` with everyday commands. Before and after: the same 350 tests (270 catalogued IDs); coverage 98.24 % before, 98.25 % after (D-173) |
+| 4.0 | **Refactor R2 – Own apps for projects, pay and reports; all apps in apps/ (no change in behaviour)** | Three new apps: **projects** (Project, Task, allowed tasks, budgets; their services and Admin), **compensation** (pay records, the Pay pages and Pay CSV, the salary permission helpers) and **reports** (Project hours and Project budget with their downloads). Every app now lives in `apps/` and is imported as `apps.<app>`, keeping its label, so tables, migrations and audit names are unchanged. Each app keeps its own templates and JavaScript (`apps/<app>/templates/<app>/`, `apps/<app>/static/<app>/`); only site-wide files stay at the top. Four state-only migrations (`projects/0001`, `timesheets/0010`, `compensation/0001`, `directory/0004`) move the models without touching a table or a row. Same pages, URLs and URL names, permissions, numbers, downloads and audit rows; the Admin pages of projects and tasks are now under Admin → Projects (`/admin/projects/…`) and the JS files are served from `/static/<app>/…`. Same 350 tests; coverage 98.25 % before, 98.27 % after (D-174) |
+| 3.9 | **Refactor R1 – Reorganized for long-term maintenance (no change in behaviour)** | Same pages, URLs, permissions, rules, tables, migrations, numbers and files. Settings are a package (`config/settings/`: base, local — the default — test for pytest, and a production skeleton that is not used yet); `apps/timesheets/views/` and `apps/analytics/views/` packages replace the `*_views.py` files; the largest services are packages that re-export their public names (`apps/directory/services/demo/`, `apps/reports/services/project_report/`, `apps/payroll/services/register/`; "who still has to approve" moved to `apps/timesheets/services/pending.py`); tests are grouped by app in `tests/<app>/unit` and `tests/<app>/integration`, with `tests/site/` for whole-site checks and one browser-test file per area; a `Makefile` with everyday commands. Before and after: the same 350 tests (270 catalogued IDs); coverage 98.24 % before, 98.25 % after (D-173) |
 | 3.8 | **Change 12 – Employee pay, project budgets and labour cost** | HR records each person's **pay** in Admin (admins only): **Salaried** (annual salary + the hourly rate HR fixes, suggested as salary ÷ 2,080) or **Hourly**, each with an "effective from" date. Pay is **history**: a change — or a correction for the same date — is a new record, never an edit; back-dated changes are allowed (not before the hire date) and re-price work from that date; every change is audited. An admin-only **Pay CSV** exports the history and imports new records (preview, line-numbered errors, all-or-nothing). Projects get an optional **budget** (USD) and "costs count from" date. New **Reports → Project budget** for managers (their tree), payroll and HR (everyone): per project the budget, total cost to date (the whole project's approved labour cost), remaining, % used, status (On track / At risk / Over budget / No budget set), cost and hours this period; cost by team or manager, task, pay type and pay period; **By employee** with hourly rate and cost; the **Rate missing** list (hours with no pay record, never costed at $0). Approved hours only; overtime at the same rate (no premium). Two separate downloads: the **costs** file (Excel / CSV) and the Change 11 **hours** file. Migrations `directory/0003_payrecord`, `timesheets/0009_project_budget`; payroll unchanged (D-166–D-172, T-258–T-270) |
 | 3.7 | **Change 11b – Only the report filters that make a difference** | On Reports → Project hours a manager now sees only the choices that change the result: **People** (whole tree / direct reports / one manager's group) only when someone under them manages people too; **Group by** only when both Team (people in more than one team) and Manager (more than one manager row) apply — otherwise the one that applies is used and its table shown, and no group table at all when neither does. The Excel skips the same one-row tabs. An address with an option that isn't offered falls back to the default (no error, nobody extra). Directors and admins see what they saw before. No migration (D-165, T-254–T-257) |
 | 3.6 | **Change 11 – Reports → Project hours** | A new **Reports** menu item for everyone opens **Project hours** (`/reports/project-hours/`). Filters (kept in the address, so a link can be shared): **Period** (this / last pay period, last 4 or 12 weeks, custom dates widened to whole Sunday–Saturday weeks), **Projects** (the 10b search box; several; inactive projects too), **Hours** (Approved / Approved + Submitted / Everything entered). Employees — payroll-only users too — see only their own hours; managers their tree, directors all their managers' groups, admins everyone, with **People** (whole tree / direct reports / one manager's group) and **Group by** (team or manager). It shows a Summary (project hours, non-project time "not filtered by project", total time, "X with hours of Y people"), By project (with a bar chart), By task, Project × task, By week, Non-project time, and for managers By team or **By manager** (own group + "including everyone below", click to drill in) and **By employee** (everyone in scope, 0.00 rows with a note, leave for context). **Excel** (tabs by role) and **CSV** (one row per counted entry, no reasons) downloads, formula-safe, each written to the audit log. Same numbers everywhere from one service; 9 database reads whatever the size. New package `openpyxl`. No migration (D-160–D-164, T-244–T-253) |
@@ -67,7 +68,8 @@
 | Change 11 | Reports → Project hours with Excel and CSV downloads (post-release) | `23fcc6b` | Done |
 | Change 11b | Only the report filters that make a difference (post-release) | `4dd8155` | Done |
 | Change 12 | Employee pay, project budgets, labour cost and budget vs cost (post-release) | `062a78f` | Done |
-| Refactor R1 | Reorganized code and tests; settings package; Makefile — no behaviour change | (commit pending) | Done — ready to commit |
+| Refactor R1 | Reorganized code and tests; settings package; Makefile — no behaviour change | `228eae6` | Done |
+| Refactor R2 | projects, compensation and reports apps; all apps in apps/; templates and JS per app — no behaviour change | (commit pending) | Done — ready to commit |
 
 ---
 
@@ -316,7 +318,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 2. The manager's **Change Requests** page lists open requests (count shown in the menu).
 3. Manager chooses **Reject**, **Unlock for employee** (open until the later of +48 hours and the week's Saturday 12:00 deadline, D-21; if unused, the week becomes LOCKED — D-08), or **Edit directly**.
 4. Every manager/admin change creates an **Audit Log** entry: who, when, before and after values, linked request.
-5. Editing a week in an approved period sets that approval back to PENDING — done only through `timesheets/services/approvals.py`, in the same transaction (D-10) — and the payroll record for that week is marked **superseded** (see FR-11).
+5. Editing a week in an approved period sets that approval back to PENDING — done only through `apps/timesheets/services/approvals.py`, in the same transaction (D-10) — and the payroll record for that week is marked **superseded** (see FR-11).
 
 **FR-10 Admin (HR).** Rules in B.12 D-87–D-93. Through Django Admin at `/admin/` (directory admins only): manage employees (CSV import, deactivate, set Payroll/Admin flags), teams, projects; read-only audit log; view all timesheets; reset passwords.
 
@@ -352,7 +354,7 @@ Bootstrap, HTMX and Chart.js files are saved inside the project (`static/vendor/
 
 **Reopen window (D-21):** `reopen_until` = the later of (unlock/reject time + 48 hours) and the week's normal Saturday 12:00 deadline. A week unlocked on Wednesday therefore stays editable until Saturday 12:00.
 
-**Who may change APPROVED (D-10):** `PeriodApproval` is the source of truth. Only `timesheets/services/approvals.py` may move a `Timesheet.status` to or from APPROVED, in the same database transaction as the matching `PeriodApproval` change.
+**Who may change APPROVED (D-10):** `PeriodApproval` is the source of truth. Only `apps/timesheets/services/approvals.py` may move a `Timesheet.status` to or from APPROVED, in the same database transaction as the matching `PeriodApproval` change.
 
 **Payroll record status (D-15):** `CURRENT` → `EXPORTED` → `PAID`, forward only; any of these → `SUPERSEDED` when the week changes. Only `status`, `export_batch`, `exported_at`, `paid_at` and `superseded_at` may ever change. **Since Change 4:** a corrected version of a week that was already exported is created CURRENT and immediately becomes **SETTLED** (never exported; → SUPERSEDED if corrected again); its difference is a **PayrollAdjustment** (CURRENT → EXPORTED → PAID, D-118–D-120).
 
@@ -362,7 +364,7 @@ Django "apps": `directory` (employees, teams, users), `timesheets` (projects, we
 
 ### Main database (`db.sqlite3`)
 ```python
-# directory/models.py
+# apps/directory/models.py
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -388,10 +390,11 @@ class Employee(models.Model):              # the company employee directory
     expected_weekly_minutes = models.PositiveIntegerField(default=2400)   # 40 h
     is_admin = models.BooleanField(default=False)
     is_payroll = models.BooleanField(default=False)                       # NEW
-    # save() calls directory/services/accounts.py → sync_account(self), which updates the linked
+    # save() calls apps/directory/services/accounts.py → sync_account(self), which updates the linked
     # User: is_staff/is_superuser = is_admin, is_active = (status == ACTIVE) (D-13), and
     # email = self.email lower-cased (D-20).
 
+# apps/compensation/models.py — since Refactor R2 (D-174); the table is still directory_payrecord
 class PayRecord(models.Model):            # Change 12 (D-166): pay history, admin-only, append-only
     class PayType(models.TextChoices):
         SALARIED = "SALARIED"; HOURLY = "HOURLY"
@@ -413,14 +416,15 @@ class User(AbstractUser):                  # login account — MUST exist before
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = []
     must_change_password = models.BooleanField(default=False)       # set by an HR reset (D-91), migration 0002
-    objects = UserManager()                # custom manager, email login (D-02) — directory/managers.py
+    objects = UserManager()                # custom manager, email login (D-02) — apps/directory/managers.py
     # The inherited "password" field stores only the Argon2 hash, e.g. "argon2$argon2id$v=19$..."
 ```
 
 **User manager (D-02).** `UserManager.create_user(email, password, employee)` and `create_superuser(...)` both require an `employee`; flags and email are taken from it (D-13, D-20). `manage.py createsuperuser` asks for an **employee_code** that must exist, be ACTIVE, and have no account yet. Normal accounts come only from `seed_demo` or sign-up.
 
 ```python
-# timesheets/models.py
+# apps/projects/models.py — Task and Project since Refactor R2 (D-174); their tables are still
+# timesheets_task, timesheets_project and timesheets_project_tasks (Meta.db_table)
 class Task(models.Model):                  # what project work is spent on, e.g. DEV Development (D-148)
     code = models.CharField(max_length=10, unique=True)   # read-only once added; never deleted
     name = models.CharField(max_length=80)
@@ -441,13 +445,14 @@ class Project(models.Model):              # coded by the app, never typed or edi
     class Meta:
         ordering = ("number",)                # by I-code everywhere
 
+# apps/timesheets/models.py
 class Timesheet(models.Model):             # one per employee per week
     class Status(models.TextChoices):
         DRAFT="DRAFT"; SUBMITTED="SUBMITTED"; LOCKED="LOCKED"; REOPENED="REOPENED"; APPROVED="APPROVED"
     employee = models.ForeignKey("directory.Employee", on_delete=models.PROTECT, related_name="timesheets")
     week_start = models.DateField()        # always a Sunday (D-111)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.DRAFT)
-    # to/from APPROVED only via timesheets/services/approvals.py (D-10)
+    # to/from APPROVED only via apps/timesheets/services/approvals.py (D-10)
     submitted_at = models.DateTimeField(null=True, blank=True)
     is_late = models.BooleanField(default=False)
     reopen_until = models.DateTimeField(null=True, blank=True)
@@ -509,7 +514,7 @@ class ChangeRequest(models.Model):
 ```
 
 ```python
-# audit/models.py
+# apps/audit/models.py
 class AuditLog(models.Model):
     class Action(models.TextChoices):     # full list (D-22)
         CREATE="CREATE"; UPDATE="UPDATE"; DELETE="DELETE"; SUBMIT="SUBMIT"; APPROVE="APPROVE"
@@ -534,7 +539,7 @@ class AuditLog(models.Model):
 
 ### Payroll database (`payroll.sqlite3`) — NEW
 ```python
-# payroll/models.py   (stored ONLY in the "payroll" database via payroll/routers.py)
+# apps/payroll/models.py   (stored ONLY in the "payroll" database via apps/payroll/routers.py)
 class PayrollWeek(models.Model):
     class Status(models.TextChoices):
         CURRENT="CURRENT"; EXPORTED="EXPORTED"; PAID="PAID"; SETTLED="SETTLED"; SUPERSEDED="SUPERSEDED"
@@ -585,9 +590,9 @@ class PayrollAdjustment(AppendOnlyRecord):   # Change 4 (D-119–D-121), payroll
 
 How the two databases work together:
 - `settings.DATABASES` has `default` → `db.sqlite3` and `payroll` → `payroll.sqlite3`.
-- `payroll/routers.py` sends every read, write and migration of the `payroll` app to the `payroll` database, and keeps all other apps out of it.
+- `apps/payroll/routers.py` sends every read, write and migration of the `payroll` app to the `payroll` database, and keeps all other apps out of it.
 - Migrate both: `uv run python manage.py migrate` and `uv run python manage.py migrate --database=payroll`.
-- `payroll/services/publish.py → publish_period(approval)` runs after an approval and writes the week records. It is **idempotent** (running it twice never creates duplicates), so `manage.py sync_payroll` can safely re-check all approved periods and fill in anything missing — this protects against the two databases getting out of step.
+- `apps/payroll/services/publish.py → publish_period(approval)` runs after an approval and writes the week records. It is **idempotent** (running it twice never creates duplicates), so `manage.py sync_payroll` can safely re-check all approved periods and fill in anything missing — this protects against the two databases getting out of step.
 
 Design notes:
 - The custom `User` model and its `UserManager` must be set up (`AUTH_USER_MODEL = "directory.User"`) **before the very first migrate** (D-02).
@@ -689,7 +694,7 @@ uv run python manage.py import_employees data/your_file.csv   # load a real dire
 | `/reports/project-budget/` (+ `excel/`, `csv/`) | Managers (own tree), payroll and admins (everyone); others 403 | Project budget: labour cost of approved hours against budgets; the costs downloads, audited (D-170, D-171) |
 | `/admin/directory/employee/<id>/pay/`, `…/pay-import/`, `…/pay-export/` | Admins only | Employee pay: current, history, Add pay change; Pay CSV (D-167) |
 | `/reports/project-hours/excel/`, `/reports/project-hours/csv/` | All (same rule) | The report as Excel (tabs by role) / the Detail as CSV; each download audited (D-163) |
-| `/admin/` | Admins | Django Admin |
+| `/admin/` | Admins | Django Admin (projects and tasks under Admin → Projects, `/admin/projects/…`, since R2, D-174) |
 
 Every view checks permissions on the server — hiding a menu item is never the only protection.
 
@@ -699,30 +704,30 @@ Every app uses a services package, `<app>/services/<module>.py` (D-04).
 
 | # | Function | Location |
 |---|---|---|
-| 1 | `week_start_for(d)` → Sunday of that Sunday→Saturday week (D-111); `week_days` Sun…Sat; `working_days` Mon–Fri (D-114) | `timesheets/services/calendar.py` |
+| 1 | `week_start_for(d)` → Sunday of that Sunday→Saturday week (D-111); `week_days` Sun…Sat; `working_days` Mon–Fri (D-114) | `apps/timesheets/services/calendar.py` |
 | 2 | `deadline_for(week_start, tz)` → Saturday 12:00 company time, the week's last day (D-112) | same |
 | 3 | `effective_status(timesheet, now)` → DRAFT becomes LOCKED after deadline; REOPENED becomes LOCKED after `reopen_until` (D-08, D-21) | same |
 | 4 | `pay_period_for(d, anchor)` → `(period_start, week1, week2)`; 14 days from a Sunday anchor, `ValueError` for any other day (D-113) | same |
 | 5 | `expected_minutes_for(employee, week_start)` → `expected_weekly_minutes × active weekdays (Mon–Fri, within hire_date…end_date) / 5`; 0 for weeks fully outside employment (D-19) | same |
-| 6 | `reporting_tree(employee)` → all reports, cycle-safe; built in memory from one `(id, manager_id)` query (D-86); `team_scope(viewer, scope)` → whole tree (everyone for admins) or direct reports, never the viewer (D-81) | `directory/services/permissions.py` |
+| 6 | `reporting_tree(employee)` → all reports, cycle-safe; built in memory from one `(id, manager_id)` query (D-86); `team_scope(viewer, scope)` → whole tree (everyone for admins) or direct reports, never the viewer (D-81) | `apps/directory/services/permissions.py` |
 | 7 | `can_view`, `can_approve`, `can_edit`, `can_access_payroll` — `can_approve` = direct manager, or Admin for employees with no manager, never self (D-11); payroll flag grants nothing beyond `/payroll/` (D-12) | same |
-| 8 | `sync_account(employee)` → copies is_admin → is_staff/is_superuser, status → is_active, email (lower-cased) → User (D-13, D-20) | `directory/services/accounts.py` |
-| 9 | `validate_entries(...)` → reason optional, ≤ 255 (D-36, D-128); work and Break rows: start/end in 15-min steps, end after start, same day (D-37), no overlaps (D-38); leave: hours only (D-40); dates in week and within hire_date…end_date (D-19); PROJECT ⇔ active project and an active task the project allows, other categories no task (D-151), Break never a project (D-18, D-39); work + Break + leave ≤ 24 h/day (D-42) | `timesheets/services/validation.py` |
-| 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `timesheets/services/approvals.py` |
-| 11 | `check_signup_eligibility(email)` | `directory/services/signup.py` |
-| 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `payroll/services/hours.py` |
-| 13 | `publish_period(approval, …)` (idempotent, D-66; settles corrected versions of once-exported weeks and creates their adjustments, D-118–D-121), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` (also creates missing adjustments, D-125) | `payroll/services/publish.py`, `payroll/services/adjustments.py`, `payroll/services/sync.py` |
-| 14 | `export_period(...)` (whole period: CURRENT weeks + CURRENT adjustments, batch `EXP-0001`…, D-68, D-123), `batch_csv(...)` (WEEK and ADJUSTMENT rows; text cells spreadsheet-safe), `mark_paid(...)` (per batch, both kinds, D-69), `corrections()` (with adjustments, D-124), `carry_period(...)` (D-121) | `payroll/services/export.py`, `payroll/services/adjustments.py` |
-| 17 | `approval_deadline_for(period_start)` → `APPROVAL_DEADLINE_DAYS` after the period's last day at `APPROVAL_DEADLINE_TIME`, company time (default Monday 12:00, D-133); `must_be_approved(employees, period_start)` → the one "who must be approved" rule, used per manager by `period_rows` and company-wide by `company_period_rows` (D-54, D-134) | `timesheets/services/calendar.py`, `timesheets/services/approvals.py` |
-| 18 | `period_state(period_start, now)` → OPEN / READY (live) or FINALIZED / PAID (saved), approved x of y, why it isn't ready (D-132, D-133); `period_items` + `build_lines` → the register's lines from the PayrollWeek and PayrollAdjustment records only — the same code for the preview and for finalizing (D-134, D-136); `finalize(...)` (one batch, frozen lines, audit, D-135); `mark_paid(...)`; `register_csv(...)`; `build_registers(...)` for earlier exports (D-137); `closed_periods()` / `carry_period(...)` (D-136) | `payroll/services/register/` (state, table, actions, backfill), `payroll/services/adjustments.py` |
-| 19 | `decision_blockers(row)` → the one rule for Approve / Reject (required weeks SUBMITTED or LOCKED; a REOPENED week waits; open change request blocks, D-139); `edit_blockers`, `unsubmitted_notes`, `pending_by_manager(period_start, now)` (D-143) in `timesheets/services/approvals.py`; `edit_for_approval(viewer, employee, week_start, entries, now)` — the approver's edit from Approvals, status and submission time untouched (D-140) | `timesheets/services/approvals.py` (`pending_by_manager`: `timesheets/services/pending.py`), `timesheets/services/changes.py` |
-| 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks): `dashboard_for`, `punctuality`, `overtime`, `hours_by_project`, `hours_by_task`, `hours_by_charge_code` ("Task not recorded" as its own line, D-153), `hours_by_category`, `approval_outcomes` — built on `week_state`, `summarize` and `split_hours` (D-74–D-79) | `analytics/services/metrics.py` |
-| 20 | `charge_code(project, task)` → "I-001-DEV" (project code alone without a task, D-150); `task_label`, `TASK_NOT_RECORDED`; `task_problem(project, task)` → the one task rule used by `validate_entries` and "+ Add row" / ⋮ (D-151); `task_choices()` → each active project's allowed active tasks for the grid dialogs (D-152). Admin: `save_task` and `set_project_tasks` (audited, D-148, D-149) | `timesheets/services/tasks.py`, `directory/services/directory_admin.py` |
-| 21 | `format_code(number)` → "I-007"; `next_number()` (1 + the highest number ever used); `assign_code(project)` — the only place a project gets its code, called by `directory_admin.save_project` and `seed_demo` (D-155); `search_projects(text)` — the one project-search rule (I-code or name, partial, any case, active only, by I-code); `recent_projects(employee, week_start)` and `project_options(text, employee, week_start)` — what the search box lists (D-157, D-158) | `timesheets/services/projects.py` |
-| 22 | `project_report(viewer, params, now)` → the one ProjectReport the page, the Excel and the CSV use (D-160–D-164): `read_filters` (period → whole Sunday–Saturday weeks with calendar.py, projects, Hours, scope, group), `report_people` (own hours, or the viewer + tree / direct reports / one manager's group via `manager_map` / `reporting_tree_ids`; 403 outside), `build_report` (project hours, non-project time, total time, by project / task / project × task / week / team / manager with roll-up, By employee with 0.00 notes, the Detail); `report_files.workbook` / `detail_csv` / `file_name` / `audit_download` (layout only; `safe_cell`) | `analytics/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `analytics/services/report_files.py` |
-| 23 | `suggested_hourly(salary)` (÷ 2,080, half-up to cents), `labour_cost(minutes, rate)` (hours × rate, cents), `rate_index(ids)` / `record_on(records, day)` (the pay in force: latest effective_from ≤ day, newest for a tie), `check_pay`, `add_pay` (audited) — the only pay rules (D-166); `pay_import.export_pay` / `import_pay` (D-167) | `directory/services/pay.py`, `directory/services/pay_import.py` |
-| 24 | `project_costs(viewer, params, now)` → the one CostReport the Project budget page, the costs Excel and CSV use: the Project hours report with Approved only (`everyone` for payroll and admins), each Project-work entry priced, per-project budget figures from the whole project's approved cost since costs_from, breakdowns, Rate missing; `budget_status(budget, cost)` with BUDGET_AT_RISK_PERCENT / BUDGET_OVER_PERCENT; `cost_files.workbook` / `detail_csv` (layout only) | `analytics/services/project_costs.py`, `analytics/services/cost_files.py` |
-| 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `timesheets/services/summary.py` |
+| 8 | `sync_account(employee)` → copies is_admin → is_staff/is_superuser, status → is_active, email (lower-cased) → User (D-13, D-20) | `apps/directory/services/accounts.py` |
+| 9 | `validate_entries(...)` → reason optional, ≤ 255 (D-36, D-128); work and Break rows: start/end in 15-min steps, end after start, same day (D-37), no overlaps (D-38); leave: hours only (D-40); dates in week and within hire_date…end_date (D-19); PROJECT ⇔ active project and an active task the project allows, other categories no task (D-151), Break never a project (D-18, D-39); work + Break + leave ≤ 24 h/day (D-42) | `apps/timesheets/services/validation.py` |
+| 10 | `approve_period`, `reject_period`, `reset_approval`, `unlock_week` — the **only** code that moves a week to/from APPROVED, in one transaction with PeriodApproval (D-06, D-07, D-10); `unlock_week` and `reject_period` set `reopen_until` per D-21 | `apps/timesheets/services/approvals.py` |
+| 11 | `check_signup_eligibility(email)` | `apps/directory/services/signup.py` |
+| 12 | `split_hours(entries, expected)` → regular / overtime / PTO / sick / holiday; Break time is excluded from regular hours and overtime (D-45) | `apps/payroll/services/hours.py` |
+| 13 | `publish_period(approval, …)` (idempotent, D-66; settles corrected versions of once-exported weeks and creates their adjustments, D-118–D-121), `supersede_week(...)`; run after the main commit by the timesheet hooks (D-65); `sync_payroll(at)` (also creates missing adjustments, D-125) | `apps/payroll/services/publish.py`, `apps/payroll/services/adjustments.py`, `apps/payroll/services/sync.py` |
+| 14 | `export_period(...)` (whole period: CURRENT weeks + CURRENT adjustments, batch `EXP-0001`…, D-68, D-123), `batch_csv(...)` (WEEK and ADJUSTMENT rows; text cells spreadsheet-safe), `mark_paid(...)` (per batch, both kinds, D-69), `corrections()` (with adjustments, D-124), `carry_period(...)` (D-121) | `apps/payroll/services/export.py`, `apps/payroll/services/adjustments.py` |
+| 17 | `approval_deadline_for(period_start)` → `APPROVAL_DEADLINE_DAYS` after the period's last day at `APPROVAL_DEADLINE_TIME`, company time (default Monday 12:00, D-133); `must_be_approved(employees, period_start)` → the one "who must be approved" rule, used per manager by `period_rows` and company-wide by `company_period_rows` (D-54, D-134) | `apps/timesheets/services/calendar.py`, `apps/timesheets/services/approvals.py` |
+| 18 | `period_state(period_start, now)` → OPEN / READY (live) or FINALIZED / PAID (saved), approved x of y, why it isn't ready (D-132, D-133); `period_items` + `build_lines` → the register's lines from the PayrollWeek and PayrollAdjustment records only — the same code for the preview and for finalizing (D-134, D-136); `finalize(...)` (one batch, frozen lines, audit, D-135); `mark_paid(...)`; `register_csv(...)`; `build_registers(...)` for earlier exports (D-137); `closed_periods()` / `carry_period(...)` (D-136) | `apps/payroll/services/register/` (state, table, actions, backfill), `apps/payroll/services/adjustments.py` |
+| 19 | `decision_blockers(row)` → the one rule for Approve / Reject (required weeks SUBMITTED or LOCKED; a REOPENED week waits; open change request blocks, D-139); `edit_blockers`, `unsubmitted_notes`, `pending_by_manager(period_start, now)` (D-143) in `apps/timesheets/services/approvals.py`; `edit_for_approval(viewer, employee, week_start, entries, now)` — the approver's edit from Approvals, status and submission time untouched (D-140) | `apps/timesheets/services/approvals.py` (`pending_by_manager`: `apps/timesheets/services/pending.py`), `apps/timesheets/services/changes.py` |
+| 15 | Dashboard and team metrics (on-time rate, overtime, hours by project, missed weeks): `dashboard_for`, `punctuality`, `overtime`, `hours_by_project`, `hours_by_task`, `hours_by_charge_code` ("Task not recorded" as its own line, D-153), `hours_by_category`, `approval_outcomes` — built on `week_state`, `summarize` and `split_hours` (D-74–D-79) | `apps/analytics/services/metrics.py` |
+| 20 | `charge_code(project, task)` → "I-001-DEV" (project code alone without a task, D-150); `task_label`, `TASK_NOT_RECORDED`; `task_problem(project, task)` → the one task rule used by `validate_entries` and "+ Add row" / ⋮ (D-151); `task_choices()` → each active project's allowed active tasks for the grid dialogs (D-152). Admin: `save_task` and `set_project_tasks` (audited, D-148, D-149) | `apps/projects/services/tasks.py`, `apps/projects/services/project_admin.py` |
+| 21 | `format_code(number)` → "I-007"; `next_number()` (1 + the highest number ever used); `assign_code(project)` — the only place a project gets its code, called by `directory_admin.save_project` and `seed_demo` (D-155); `search_projects(text)` — the one project-search rule (I-code or name, partial, any case, active only, by I-code); `recent_projects(employee, week_start)` and `project_options(text, employee, week_start)` — what the search box lists (D-157, D-158) | `apps/projects/services/projects.py` |
+| 22 | `project_report(viewer, params, now)` → the one ProjectReport the page, the Excel and the CSV use (D-160–D-164): `read_filters` (period → whole Sunday–Saturday weeks with calendar.py, projects, Hours, scope, group), `report_people` (own hours, or the viewer + tree / direct reports / one manager's group via `manager_map` / `reporting_tree_ids`; 403 outside), `build_report` (project hours, non-project time, total time, by project / task / project × task / week / team / manager with roll-up, By employee with 0.00 notes, the Detail); `report_files.workbook` / `detail_csv` / `file_name` / `audit_download` (layout only; `safe_cell`) | `apps/reports/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `apps/reports/services/report_files.py` |
+| 23 | `suggested_hourly(salary)` (÷ 2,080, half-up to cents), `labour_cost(minutes, rate)` (hours × rate, cents), `rate_index(ids)` / `record_on(records, day)` (the pay in force: latest effective_from ≤ day, newest for a tie), `check_pay`, `add_pay` (audited) — the only pay rules (D-166); `pay_import.export_pay` / `import_pay` (D-167) | `apps/compensation/services/pay.py`, `apps/compensation/services/pay_import.py` |
+| 24 | `project_costs(viewer, params, now)` → the one CostReport the Project budget page, the costs Excel and CSV use: the Project hours report with Approved only (`everyone` for payroll and admins), each Project-work entry priced, per-project budget figures from the whole project's approved cost since costs_from, breakdowns, Rate missing; `budget_status(budget, cost)` with BUDGET_AT_RISK_PERCENT / BUDGET_OVER_PERCENT; `cost_files.workbook` / `detail_csv` (layout only) | `apps/reports/services/project_costs.py`, `apps/reports/services/cost_files.py` |
+| 16 | `summarize(entries, employee, week_start)` → per day and week: Hours worked (work rows only), Break, Leave, expected, first start, last end (D-41) | `apps/timesheets/services/summary.py` |
 
 ## B.10 Quality rules
 
@@ -767,7 +772,6 @@ tests/
       test_admin_edit.py  # audited edits, read-only/no delete, deactivate, password reset, 403s (T-133–T-141, T-144, T-145)
       test_auth_views.py
       test_import_employees.py
-      test_pay.py         # pay records, the Admin pay page, the Pay CSV, project budgets in Admin (T-258–T-261)
       test_seed_demo.py
   timesheets/
     unit/
@@ -779,10 +783,8 @@ tests/
       test_entry_form.py  # the grid on the week page and Edit directly: blank/partial entries, re-render, cell hours (T-89–T-91)
       test_grid.py        # weekly grid: layout, totals, add row, slots, leave, errors on cells, read-only (T-160–T-166), several slots per cell (T-184–T-186), optional reasons (T-188)
       test_manager_decisions.py # Change 9: edit / approve / reject locked people, register waits, pending by manager (T-217–T-223)
-      test_projects.py    # I-codes and the project search box: code generation, admin, migration, search, recent projects (T-238–T-242)
       test_row_actions.py # change / delete a whole grid row: delete, merge, kinds, refusals, audit, markup (T-191–T-197, T-199)
       test_sunday_week.py # Sunday-to-Saturday weeks: last-day deadline, redirects, daylight-saving week (T-169, T-171, T-172)
-      test_tasks.py       # tasks and charge codes: admin, allowed tasks, rules, grid, ⋮, history, analytics, payroll, seed, approve after a task is removed (T-227–T-235, T-237)
       test_timesheet_flow.py
   payroll/
     unit/
@@ -800,9 +802,18 @@ tests/
     integration/
       test_analytics.py
       test_home.py
-      test_project_costs.py # Reports → Project budget: cost rules, rate missing, budget, totals, who sees what, downloads, seed, query count (T-262–T-269)
-      test_project_report.py # Reports → Project hours: who sees what, numbers, filters, By employee, Excel, CSV + audit, query count (T-244–T-251), only the filters that matter (T-254–T-257)
       test_team.py        # /team/, drill-down, week view, large-data query count (T-123–T-132)
+  projects/
+    integration/
+      test_projects.py    # I-codes and the project search box: code generation, admin, migration, search, recent projects (T-238–T-242)
+      test_tasks.py       # tasks and charge codes: admin, allowed tasks, rules, grid, ⋮, history, analytics, payroll, seed, approve after a task is removed (T-227–T-235, T-237)
+  compensation/
+    integration/
+      test_pay.py         # pay records, the Admin pay page, the Pay CSV, project budgets in Admin (T-258–T-261)
+  reports/
+    integration/
+      test_project_report.py # Reports → Project hours: who sees what, numbers, filters, By employee, Excel, CSV + audit, query count (T-244–T-251), only the filters that matter (T-254–T-257)
+      test_project_costs.py # Reports → Project budget: cost rules, rate missing, budget, totals, who sees what, downloads, seed, query count (T-262–T-269)
   audit/
     unit/
       test_audit.py       # exactly one of actor / system_actor (D-14)
@@ -1109,7 +1120,7 @@ New catalogued tests continue as **T-43, T-44, …** and are added to this table
 
 ### Status of every test (Phase 12, updated for Changes 1–12)
 
-Result of `bash scripts/test_all.sh` on October 28, 2026 (after Change 11) (fixed clocks, test databases only): **350 test cases, all passed** (326 unit + integration, 24 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216, Change 9 T-217–T-224, the first-run checks T-225–T-226 and Change 10 T-227–T-237 and Change 10b T-238–T-243 and Change 11 T-244–T-253 and Change 11b T-254–T-257 and Change 12 T-258–T-270, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.25 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
+Result of `bash scripts/test_all.sh` on October 28, 2026 (after Change 11) (fixed clocks, test databases only): **350 test cases, all passed** (326 unit + integration, 24 e2e; parametrised cases counted separately), including the catalogued tests T-01–T-156 below (Change 1 adds T-157–T-159, Change 2 T-160–T-167, Change 3 T-168–T-172, Change 4 T-173–T-182, Change 5 T-183–T-186, Change 6 T-187–T-190, Change 7 T-191–T-202, Change 8 T-203–T-216, Change 9 T-217–T-224, the first-run checks T-225–T-226 and Change 10 T-227–T-237 and Change 10b T-238–T-243 and Change 11 T-244–T-253 and Change 11b T-254–T-257 and Change 12 T-258–T-270, all passing; tests set the Sunday pay-period anchor themselves); the rest are helper checks without an ID (D-17). Coverage (unit + integration): **98.27 %** of the whole project (target ≥ 80 %); every `*/services/*` module ≥ 95 % (target ≥ 90 %). Parametrised tests count once here.
 
 | ID | Area | Test (`tests/…`) | Status |
 |---|---|---|---|
@@ -1339,49 +1350,49 @@ Result of `bash scripts/test_all.sh` on October 28, 2026 (after Change 11) (fixe
 | T-224 | E2E | `e2e/test_approvals.py::test_manager_edits_and_approves_a_locked_employee` | ✅ Pass |
 | T-225 | Setup | `site/test_first_run_checks.py::test_secret_key_must_not_be_the_example` | ✅ Pass |
 | T-226 | Setup | `site/test_first_run_checks.py::test_seed_refuses_the_example_demo_password` | ✅ Pass |
-| T-227 | Admin | `timesheets/integration/test_tasks.py::test_task_admin` | ✅ Pass |
-| T-228 | Admin | `timesheets/integration/test_tasks.py::test_allowed_tasks_per_project` | ✅ Pass |
-| T-229 | Rules | `timesheets/integration/test_tasks.py::test_task_rules` | ✅ Pass |
-| T-230 | Grid | `timesheets/integration/test_tasks.py::test_grid_rows_per_project_and_task` | ✅ Pass |
-| T-231 | Grid | `timesheets/integration/test_tasks.py::test_row_menu_changes_the_task_in_every_editor` | ✅ Pass |
-| T-232 | History | `timesheets/integration/test_tasks.py::test_history_without_a_task` | ✅ Pass |
-| T-233 | Analytics | `timesheets/integration/test_tasks.py::test_analytics_by_task_and_charge_code` | ✅ Pass |
-| T-234 | Payroll | `timesheets/integration/test_tasks.py::test_payroll_is_unchanged_by_tasks` | ✅ Pass |
-| T-235 | Data | `timesheets/integration/test_tasks.py::test_seed_books_allowed_tasks` | ✅ Pass |
+| T-227 | Admin | `projects/integration/test_tasks.py::test_task_admin` | ✅ Pass |
+| T-228 | Admin | `projects/integration/test_tasks.py::test_allowed_tasks_per_project` | ✅ Pass |
+| T-229 | Rules | `projects/integration/test_tasks.py::test_task_rules` | ✅ Pass |
+| T-230 | Grid | `projects/integration/test_tasks.py::test_grid_rows_per_project_and_task` | ✅ Pass |
+| T-231 | Grid | `projects/integration/test_tasks.py::test_row_menu_changes_the_task_in_every_editor` | ✅ Pass |
+| T-232 | History | `projects/integration/test_tasks.py::test_history_without_a_task` | ✅ Pass |
+| T-233 | Analytics | `projects/integration/test_tasks.py::test_analytics_by_task_and_charge_code` | ✅ Pass |
+| T-234 | Payroll | `projects/integration/test_tasks.py::test_payroll_is_unchanged_by_tasks` | ✅ Pass |
+| T-235 | Data | `projects/integration/test_tasks.py::test_seed_books_allowed_tasks` | ✅ Pass |
 | T-236 | E2E | `e2e/test_timesheets.py::test_tasks_and_charge_codes_in_a_real_browser` | ✅ Pass |
-| T-237 | Approvals | `timesheets/integration/test_tasks.py::test_approve_after_a_task_is_removed` | ✅ Pass |
-| T-238 | Projects | `timesheets/integration/test_projects.py::test_code_generation` | ✅ Pass |
-| T-239 | Admin | `timesheets/integration/test_projects.py::test_admin_assigns_the_code` | ✅ Pass |
-| T-240 | Projects | `timesheets/integration/test_projects.py::test_migration_renames_projects` | ✅ Pass |
-| T-241 | Projects | `timesheets/integration/test_projects.py::test_project_search` | ✅ Pass |
-| T-242 | Projects | `timesheets/integration/test_projects.py::test_recent_projects` | ✅ Pass |
+| T-237 | Approvals | `projects/integration/test_tasks.py::test_approve_after_a_task_is_removed` | ✅ Pass |
+| T-238 | Projects | `projects/integration/test_projects.py::test_code_generation` | ✅ Pass |
+| T-239 | Admin | `projects/integration/test_projects.py::test_admin_assigns_the_code` | ✅ Pass |
+| T-240 | Projects | `projects/integration/test_projects.py::test_migration_renames_projects` | ✅ Pass |
+| T-241 | Projects | `projects/integration/test_projects.py::test_project_search` | ✅ Pass |
+| T-242 | Projects | `projects/integration/test_projects.py::test_recent_projects` | ✅ Pass |
 | T-243 | E2E | `e2e/test_timesheets.py::test_project_search_in_a_real_browser` | ✅ Pass |
-| T-244 | Reports | `analytics/integration/test_project_report.py::test_employees_see_only_their_own_hours` | ✅ Pass |
-| T-245 | Reports | `analytics/integration/test_project_report.py::test_who_managers_directors_and_admins_see` | ✅ Pass |
-| T-246 | Reports | `analytics/integration/test_project_report.py::test_numbers_add_up` | ✅ Pass |
-| T-247 | Reports | `analytics/integration/test_project_report.py::test_filters` | ✅ Pass |
-| T-248 | Reports | `analytics/integration/test_project_report.py::test_by_employee_lists_everyone` | ✅ Pass |
-| T-249 | Reports | `analytics/integration/test_project_report.py::test_excel` | ✅ Pass |
-| T-250 | Reports | `analytics/integration/test_project_report.py::test_csv_and_audit` | ✅ Pass |
-| T-251 | Reports | `analytics/integration/test_project_report.py::test_query_count_is_fixed` | ✅ Pass |
+| T-244 | Reports | `reports/integration/test_project_report.py::test_employees_see_only_their_own_hours` | ✅ Pass |
+| T-245 | Reports | `reports/integration/test_project_report.py::test_who_managers_directors_and_admins_see` | ✅ Pass |
+| T-246 | Reports | `reports/integration/test_project_report.py::test_numbers_add_up` | ✅ Pass |
+| T-247 | Reports | `reports/integration/test_project_report.py::test_filters` | ✅ Pass |
+| T-248 | Reports | `reports/integration/test_project_report.py::test_by_employee_lists_everyone` | ✅ Pass |
+| T-249 | Reports | `reports/integration/test_project_report.py::test_excel` | ✅ Pass |
+| T-250 | Reports | `reports/integration/test_project_report.py::test_csv_and_audit` | ✅ Pass |
+| T-251 | Reports | `reports/integration/test_project_report.py::test_query_count_is_fixed` | ✅ Pass |
 | T-252 | E2E | `e2e/test_reports.py::test_employee_project_hours_report` | ✅ Pass |
 | T-253 | E2E | `e2e/test_reports.py::test_director_project_hours_report` | ✅ Pass |
-| T-254 | Reports | `analytics/integration/test_project_report.py::test_a_manager_without_sub_managers_sees_no_extra_controls` | ✅ Pass |
-| T-255 | Reports | `analytics/integration/test_project_report.py::test_two_teams_show_the_team_table` | ✅ Pass |
-| T-256 | Reports | `analytics/integration/test_project_report.py::test_directors_and_admins_keep_every_option` | ✅ Pass |
-| T-257 | Reports | `analytics/integration/test_project_report.py::test_hidden_options_fall_back_safely` | ✅ Pass |
-| T-258 | Pay | `directory/integration/test_pay.py::test_pay_records` | ✅ Pass |
-| T-259 | Pay | `directory/integration/test_pay.py::test_admin_pay_page` | ✅ Pass |
-| T-260 | Pay | `directory/integration/test_pay.py::test_pay_csv` | ✅ Pass |
-| T-261 | Pay | `directory/integration/test_pay.py::test_project_budgets_in_admin` | ✅ Pass |
-| T-262 | Costs | `analytics/integration/test_project_costs.py::test_cost_rules` | ✅ Pass |
-| T-263 | Costs | `analytics/integration/test_project_costs.py::test_rate_missing` | ✅ Pass |
-| T-264 | Costs | `analytics/integration/test_project_costs.py::test_budget` | ✅ Pass |
-| T-265 | Costs | `analytics/integration/test_project_costs.py::test_totals_add_up` | ✅ Pass |
-| T-266 | Costs | `analytics/integration/test_project_costs.py::test_who_sees_costs` | ✅ Pass |
-| T-267 | Costs | `analytics/integration/test_project_costs.py::test_costs_downloads` | ✅ Pass |
-| T-268 | Data | `analytics/integration/test_project_costs.py::test_seed_pay_and_budgets` | ✅ Pass |
-| T-269 | Costs | `analytics/integration/test_project_costs.py::test_cost_query_count_is_fixed` | ✅ Pass |
+| T-254 | Reports | `reports/integration/test_project_report.py::test_a_manager_without_sub_managers_sees_no_extra_controls` | ✅ Pass |
+| T-255 | Reports | `reports/integration/test_project_report.py::test_two_teams_show_the_team_table` | ✅ Pass |
+| T-256 | Reports | `reports/integration/test_project_report.py::test_directors_and_admins_keep_every_option` | ✅ Pass |
+| T-257 | Reports | `reports/integration/test_project_report.py::test_hidden_options_fall_back_safely` | ✅ Pass |
+| T-258 | Pay | `compensation/integration/test_pay.py::test_pay_records` | ✅ Pass |
+| T-259 | Pay | `compensation/integration/test_pay.py::test_admin_pay_page` | ✅ Pass |
+| T-260 | Pay | `compensation/integration/test_pay.py::test_pay_csv` | ✅ Pass |
+| T-261 | Pay | `compensation/integration/test_pay.py::test_project_budgets_in_admin` | ✅ Pass |
+| T-262 | Costs | `reports/integration/test_project_costs.py::test_cost_rules` | ✅ Pass |
+| T-263 | Costs | `reports/integration/test_project_costs.py::test_rate_missing` | ✅ Pass |
+| T-264 | Costs | `reports/integration/test_project_costs.py::test_budget` | ✅ Pass |
+| T-265 | Costs | `reports/integration/test_project_costs.py::test_totals_add_up` | ✅ Pass |
+| T-266 | Costs | `reports/integration/test_project_costs.py::test_who_sees_costs` | ✅ Pass |
+| T-267 | Costs | `reports/integration/test_project_costs.py::test_costs_downloads` | ✅ Pass |
+| T-268 | Data | `reports/integration/test_project_costs.py::test_seed_pay_and_budgets` | ✅ Pass |
+| T-269 | Costs | `reports/integration/test_project_costs.py::test_cost_query_count_is_fixed` | ✅ Pass |
 | T-270 | E2E | `e2e/test_reports.py::test_pay_and_project_budget_in_a_real_browser` | ✅ Pass |
 
 ### Example test code (the style Claude Code should follow)
@@ -1493,13 +1504,13 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-01 | Setup | `test_all.sh`: when no tests are marked `e2e`, skip the e2e step and print `e2e: skipped - no e2e tests yet`; treat pytest exit code 5 as success **only** for that step. Phase 12 installs Chromium and makes e2e mandatory — done, see D-95. | B.11, C.4 P1/P12 |
 | D-02 | Setup | Custom `UserManager` with email login. `create_user` / `create_superuser` require an employee. `createsuperuser` asks for an `employee_code` that must exist, be ACTIVE and have no account. Normal accounts come from `seed_demo` or sign-up. | B.6, C.4 P1 |
 | D-03 | Setup | Add `DJANGO_ALLOWED_HOSTS` to `.env.example` (default `127.0.0.1,localhost`). | B.1 `.env`, C.4 P1 |
-| D-04 | Setup | Every app uses a services package: `<app>/services/<module>.py` (e.g. `payroll/services/publish.py`, `analytics/services/metrics.py`). | B.6, B.9, B.11, C.4 |
+| D-04 | Setup | Every app uses a services package: `<app>/services/<module>.py` (e.g. `apps/payroll/services/publish.py`, `apps/analytics/services/metrics.py`). | B.6, B.9, B.11, C.4 |
 | D-05 | Setup | Git: the project owner runs `git init` and the first commit before Phase 0. | C.1 |
 | D-06 | Timesheet status | Only SUBMITTED weeks can be approved. A LOCKED week must first be unlocked (through a change request, or by the manager directly from the approval page, which creates a manager-authored ChangeRequest and an audit entry) and then submitted. | B.1, B.4 FR-7, B.5, B.6, B.7, B.8, B.9, B.11 T-29 *Since D-139 a LOCKED week no longer has to be unlocked first: the approver can edit, approve or reject it from Approvals.* |
 | D-07 | Timesheet status | Reject sets both weeks to REOPENED with `reopen_until` set per D-21. | B.4 FR-7, B.5, B.11 T-31 |
 | D-08 | Timesheet status | When a reopen window (unlock or reject, length per D-21) ends without resubmission, the week becomes LOCKED. A week submitted after its original deadline keeps `is_late = True`. | B.1, B.4 FR-8/FR-9, B.5, B.9, B.11 T-24 |
 | D-09 | Timesheet status | The Saturday 12:00 deadline is intended. Weekend hours may be entered in advance; any change after submitting goes through a change request. | B.1, B.4 FR-8 |
-| D-10 | Timesheet status | `PeriodApproval` is the source of truth. Only `timesheets/services/approvals.py` may change `Timesheet.status` to or from APPROVED, in the same database transaction as the PeriodApproval change. | B.4 FR-9, B.5, B.6, B.9 |
+| D-10 | Timesheet status | `PeriodApproval` is the source of truth. Only `apps/timesheets/services/approvals.py` may change `Timesheet.status` to or from APPROVED, in the same database transaction as the PeriodApproval change. | B.4 FR-9, B.5, B.6, B.9 |
 | D-11 | Roles | Nobody can ever approve their own timesheet. Approver = direct manager. Admins approve only employees with no manager, never themselves (the CEO is approved by the HR admin). In B.3, Admin approves "top-level employees only". | B.1, B.3, B.4 FR-7, B.9 |
 | D-12 | Roles | Roles add up. Payroll users are also employees (own timesheet, analytics, change requests). The payroll flag only adds `/payroll/` and never grants access to other people's timesheet details. A payroll user who is also a manager gets normal manager rights for their own tree. | B.1, B.3, B.4 FR-11, B.9 |
 | D-13 | Roles | Keep `User.is_staff` and `is_superuser` in sync with `Employee.is_admin`, and `User.is_active` with `Employee.status`, whenever an Employee is saved. | B.3, B.4 FR-1/FR-2, B.6, B.9, C.4 P1/P3 |
@@ -1542,7 +1553,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-50 | Change request | **Unlock** sets REOPENED with `reopen_until` = the later of now + 48 h and the week's Saturday 12:00 (D-21); an APPROVED week is first reset through `approvals.unlock_week`. An unused window makes the week LOCKED (read-time, D-08, D-34). | B.4 FR-9, B.5 |
 | D-51 | Timesheet | A reopened past week stays editable by its employee until `reopen_until`; D-33 only stops future weeks. Employee saves in a REOPENED week write an UPDATE audit row with before/after entries. | B.4 FR-8/FR-9 |
 | D-52 | Timesheet | `is_late` is decided by the first submission only: an on-time week reopened and resubmitted stays on time; a missed week submitted later is late and stays late (refines D-08). | B.4 FR-8, B.5 |
-| D-53 | Payroll | Payroll hook: `timesheets/services/approvals.py → supersede_payroll_week(timesheet, actor, at)` is called for every week that leaves APPROVED; it does nothing until Phase 8 calls `payroll/services/publish.py → supersede_week` (D-15). | B.9 #10/#13, C.4 P8 |
+| D-53 | Payroll | Payroll hook: `apps/timesheets/services/approvals.py → supersede_payroll_week(timesheet, actor, at)` is called for every week that leaves APPROVED; it does nothing until Phase 8 calls `apps/payroll/services/publish.py → supersede_week` (D-15). | B.9 #10/#13, C.4 P8 |
 | D-54 | Approvals | `/approvals/` lists the employees the viewer may approve — direct reports, plus no-manager employees for admins, never the viewer (D-11, D-31) — active employees employed on at least one day of the period, and inactive employees only if they have a timesheet in it (their existing timesheets can still be approved, D-19). Periods are 14 days from `PAY_PERIOD_ANCHOR`; default = the most recent completed period; the picker offers the current period and earlier; `?period=` takes any date and snaps to its period start. | B.4 FR-7, B.8 |
 | D-55 | Approvals | Flags: **late** = either week `is_late`; **overtime** = a week's Hours worked (Phase 5b `summarize`, Break excluded) above that week's prorated expected hours; **missing days** = an employed weekday (Mon–Fri, up to today) with no entries at all (leave counts as an entry). | B.4 FR-7 |
 | D-56 | Approvals | Only weeks with at least one employed day must be SUBMITTED; a week fully outside employment is not required (refines D-06 for D-19). | B.4 FR-7, B.5 *Since D-139 a required week must be SUBMITTED or LOCKED.* |
@@ -1568,7 +1579,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-76 | Analytics | Dashboard overtime = payroll `split_hours` per week (prorated expected) summed over SUBMITTED and APPROVED weeks in the range, so approved weeks match the payroll records exactly. | B.4 FR-5 |
 | D-77 | Analytics | The hours charts use every saved entry in the range (drafts and the current week included): Hours worked = work rows; by project = Project work rows; by category = work categories plus leave; Break is listed separately as unpaid and excluded from every total. | B.4 FR-5 |
 | D-78 | Analytics | Approval outcomes: every pay period overlapping the range in which the person was employed, with its PeriodApproval status (no record = pending); the current, unfinished period is shown as "in progress" and not counted. | B.4 FR-5 |
-| D-79 | Analytics | The dashboard is built by `analytics/services/metrics.py → dashboard_for(employee, weeks, now)` and rendered by `templates/analytics/_dashboard.html` plus `parts/*.html`, which take that object (and `own`) — Phase 10 reuses them read-only for a team member. | C.4 P9/P10 |
+| D-79 | Analytics | The dashboard is built by `apps/analytics/services/metrics.py → dashboard_for(employee, weeks, now)` and rendered by `templates/analytics/_dashboard.html` plus `parts/*.html`, which take that object (and `own`) — Phase 10 reuses them read-only for a team member. | C.4 P9/P10 |
 | D-80 | Analytics | Charts use the vendored Chart.js with data only through `json_script`; every chart has a table or text with the same numbers; friendly empty states. Viewing never writes (D-34) and uses a fixed number of queries whatever the range. | B.4 FR-5, B.10 |
 | D-81 | Team | Who is on `/team/`: **whole tree** = the viewer's reporting tree, or **everyone** for an admin; **direct reports** = only people whose manager is the viewer. The viewer is never listed; the payroll flag adds nothing (D-12). An optional team filter narrows the list (an unknown value = all teams). People with no employed day in the range are left out; inactive employees appear only with a timesheet in the range (as D-54). | B.4 FR-6, B.3 |
 | D-82 | Team | **Utilization** = hours worked ÷ available hours, where available = prorated expected (D-19) − leave hours, summed over weeks in the range whose deadline has passed (the current week is not counted). Break never counts. "—" when nothing is available. Team average = total worked ÷ total available (weighted by available hours, not a mean of percentages). | B.4 FR-6 |
@@ -1577,7 +1588,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-85 | Team | **Drill-down is read-only.** `/team/<code>/` reuses `_dashboard.html` with `own=False` (no "Open this week") plus that person's timesheets list; each week opens `/team/<code>/weeks/<YYYY-MM-DD>/`, which shows the rows, day summary and status with no edit, submit or approve controls (those stay on `/approvals/` and change requests). Access = `can_access_team` + `can_view` (403 otherwise; unknown code 404); a viewer may open their own drill-down. | B.8, D-30 |
 | D-86 | Team | **Performance.** The reporting tree is built in memory from one `(id, manager_id)` query (cycle-safe; T-27/T-28 unchanged). The team page and dashboard load people, timesheets, entries (as light read-only `EntryFacts` records via `values_list`, not model objects), projects and approvals in a fixed number of queries, whatever the tree size or range (T-132); measured in the test DB with ~500 people and 26 weeks of entries: CEO 0.3 s (12 weeks) / 0.6 s (26 weeks). `uv run python manage.py time_team_page <email> [--weeks 4|12|26] [--direct]` renders `/team/` in memory (no session, no writes) and prints the time and query count. | B.9 #6, B.10 |
 | D-87 | Admin | **D-26 ends for directory data only.** Editable in Admin: **Employee** (first/last name, job title, location, email, team, manager, hire date, expected weekly hours typed as hours and stored as minutes, is_admin, is_payroll; new employees can be added), **Team** (name, department; add), **Project** (name, active; code only when adding). Not in the employee form: `employee_code` after creation, `status` and `end_date` (Deactivate/Reactivate only). Read-only: Timesheet, TimeEntry, PeriodApproval, ChangeRequest, AuditLog, PayrollWeek, User (masked password) and the django-axes records; Django's `Group` is unregistered (access comes from is_admin, D-13). **Nothing can be deleted in Admin** (no delete permission, no "delete selected"); retire a project by clearing Active, an employee by deactivating. A changed expected weekly hours value applies to every week computed afterwards (no per-week history). | B.4 FR-10 |
-| D-88 | Admin | Every Admin add/change goes through `directory/services/directory_admin.py` (`save_employee`, `save_team`, `save_project`; actions call `deactivate`, `reactivate`, `reset_password`, `export_employees`), which checks the rules, saves and writes the CREATE/UPDATE audit row with the admin as actor in one transaction; before/after hold only the changed fields and a save with no changes writes nothing. Audit `entity_id` as before: employee code, team name (before a rename), project code. | B.10, CLAUDE.md |
+| D-88 | Admin | Every Admin add/change goes through `apps/directory/services/directory_admin.py` (`save_employee`, `save_team`; `save_project` / `save_task` are in `apps/projects/services/project_admin.py` since R2, D-174; actions call `deactivate`, `reactivate`, `reset_password`, `export_employees`), which checks the rules, saves and writes the CREATE/UPDATE audit row with the admin as actor in one transaction; before/after hold only the changed fields and a save with no changes writes nothing. Audit `entity_id` as before: employee code, team name (before a rename), project code. | B.10, CLAUDE.md |
 | D-89 | Admin | Directory safety rules (`check_employee`, and the same checks in the CSV import): nobody is their own manager; a manager change that makes a reporting loop is refused; a newly assigned manager must be ACTIVE; you cannot remove your own admin flag; at least one ACTIVE admin always remains; a new or changed email is lower-cased, unique across Employee and User (any case) and must end in `COMPANY_EMAIL_DOMAIN`; a changed hire date may not be after the person's first saved entry or after their end date. The command-line import and `seed_demo` keep the Phase 2 rules plus the loop and last-admin checks; the domain and "your own" rules apply when an admin imports. | B.4 FR-10, B.9 |
 | D-90 | Admin | **Deactivate** (admin action with a confirmation page; all or nothing for the selection): status INACTIVE and `end_date` (default today; allowed from the hire date and the last saved entry up to today, never in the future). The User becomes inactive (D-13), so an open session ends on the next request; history stays and existing timesheets can still be approved and paid (D-19). Refused for yourself, for someone who still manages ACTIVE people outside the selection ("reassign their reports first"), and when no ACTIVE admin would remain. **Reactivate**: ACTIVE with `end_date` cleared, hire date unchanged. Both write an UPDATE audit row. | B.4 FR-10, D-19 |
 | D-91 | Admin | **Password reset by HR** from the employee's admin page: a temporary password typed twice that passes `AUTH_PASSWORD_VALIDATORS`; Argon2 hash stored and `User.must_change_password` set (migration `directory/0002`). The person's other sessions end (session hash), their axes lockout is cleared, and the UPDATE audit row holds only `{"changed": ["password"], "must_change_password": true, "lockout_cleared": n}`. While the flag is set every page except Profile, logout and static files redirects to Profile; the profile password change clears it. Not for yourself (use Profile) or people without an account. `/admin/password_change/` redirects to Profile so every change is audited. Passwords are never shown. | B.4 FR-2/FR-10, B.6 |
@@ -1598,9 +1609,9 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-106 | Grid | **Change 2 – Weekly grid.** The week's entries are shown as a grid instead of a list: one row per Project / Category (project rows by code as "I-001 Customer Portal / Project work", then Meetings, Training, Other, "Break (unpaid)", then PTO, Sick, Holiday tagged "leave"); columns Mon–Sun headed with the day and date ("Mon" / "Oct 26, 2026"), then **Total worked hours**; a footer with Total worked hours per day and for the week. The footer counts work rows only; Break and leave rows show their own totals and are never added to it — exactly as `summarize` (D-39, D-41). The day summary (first start, last end, hours worked, expected, break, leave) stays below the grid. Week, deadline and pay periods are unchanged. *Column order superseded by D-111: the columns run Sun–Sat since Change 3.* | B.4 FR-8, B.8 |
 | D-107 | Grid | **Cells and slots.** A cell is a button showing its hours (2 decimals) and opens a dialog for that row and day: work and Break cells hold one or more time slots (start, end, reason; "+ Add time slot", Remove; *"+ Add another time slot" since D-127*); leave cells hold hours and a reason (*optional since D-128*). Each slot is posted as one entry with the same `entry-N-*` fields as before (day, category and project fixed by its cell), so `parse_entries`, `validate_entries`, `save_week`, `edit_directly`, audit and approval/payroll hooks are reused unchanged; no model change, no migration. Slots left empty are dropped before posting; the server still ignores blank entries. "+ Add row" (HTMX, `timesheet_row`) offers a category and, for Project work, an active project (D-18); duplicates are refused (*superseded by D-127: "+ Add row" for an existing row points at it instead of showing an error*); a row added without slots survives a failed save (`grid-row` keys) and disappears after a successful one. *Since D-129 / D-130 a whole row can also be moved to another project or category, or deleted, from its "⋮" menu.* | B.4 FR-8, D-35 |
 | D-108 | Grid | **Errors on the right cell.** Messages are unchanged. Reading problems (`ParsedEntries.problems`) go to the slot's cell; rule messages go to every cell whose entry they name, matched with `validation.mentions(entry)` (the same "Tue 20 Oct, I-001 09:00–12:00" texts the messages are built from); an overlap marks both cells; the 24-hour rule marks the day's footer total; anything else (e.g. an empty week) is listed at the top. Marked cells are outlined with `aria-invalid`, list their messages inside the dialog, and the summary at the top links to them. | B.9 #9 |
-| D-109 | Grid | **One grid component**: `templates/timesheets/_grid.html` (+ `_grid_row.html`, `_grid_slot.html`) built by `timesheets/grid.py → build_grid`. Editable on the employee's week page and on Edit directly (same rules and audit as before); read-only on submitted, approved and locked weeks, the change-request detail, both weeks of the approval page and the Team week view, where a cell's dialog lists its slots' times, hours and reasons without inputs. It replaces `_row.html` and `timesheet.js`. | B.8, D-85 |
+| D-109 | Grid | **One grid component**: `templates/timesheets/_grid.html` (+ `_grid_row.html`, `_grid_slot.html`) built by `apps/timesheets/grid.py → build_grid`. Editable on the employee's week page and on Edit directly (same rules and audit as before); read-only on submitted, approved and locked weeks, the change-request detail, both weeks of the approval page and the Team week view, where a cell's dialog lists its slots' times, hours and reasons without inputs. It replaces `_row.html` and `timesheet.js`. | B.8, D-85 |
 | D-110 | Grid | **Comfort and accessibility**: live cell, row and footer totals while typing (convenience; the server recomputes, and the HTMX day summary still updates); the browser asks before leaving with unsaved changes (never after Save/Submit); cells are buttons with descriptive names ("I-001 Customer Portal / Project work, Mon Oct 26: 8.00 hours, 2 slots"; since D-127 followed by the slot times, and the cell shows "8.00 · 2 slots"); native `<dialog>`: focus moves in, Esc closes, focus returns to the cell; Enter inside a slot doesn't submit the week. On narrow windows the grid scrolls sideways with the first column fixed; the page itself never scrolls sideways. Vendored HTMX and plain JavaScript only (`static/js/grid.js`). | B.10 |
-| D-111 | Calendar | **Change 3 – weeks run Sunday → Saturday** and are identified by their Sunday; `Timesheet.week_start` is always a Sunday. The rule lives only in `timesheets/services/calendar.py` (`WEEK_START_WEEKDAY = 6`, `week_start_for`, `week_days` Sun…Sat); every page and service (timesheet list and week, grid and day summary columns, countdown, change requests, approvals and the pay-period picker, payroll labels/filters/CSV, dashboard, team analytics, seed) uses it. **Supersedes** B.1 row 9 (Monday → Sunday) and the column order of D-106. | B.1 row 9, B.9 #1, FR-8 |
+| D-111 | Calendar | **Change 3 – weeks run Sunday → Saturday** and are identified by their Sunday; `Timesheet.week_start` is always a Sunday. The rule lives only in `apps/timesheets/services/calendar.py` (`WEEK_START_WEEKDAY = 6`, `week_start_for`, `week_days` Sun…Sat); every page and service (timesheet list and week, grid and day summary columns, countdown, change requests, approvals and the pay-period picker, payroll labels/filters/CSV, dashboard, team analytics, seed) uses it. **Supersedes** B.1 row 9 (Monday → Sunday) and the column order of D-106. | B.1 row 9, B.9 #1, FR-8 |
 | D-112 | Calendar | The deadline stays **Saturday 12:00 noon company time**, now the **last day** of the week (`DEADLINE_DAY_OFFSET = 6`). D-09 still applies (the rest of Saturday may be entered in advance). LOCKED/missed, late (D-08, D-52), the reopen window (D-21: later of +48 h and that week's Saturday 12:00) and "missed = never submitted" (D-75) are unchanged. | B.1 row 10, B.5, FR-8 |
 | D-113 | Calendar | **Pay periods**: 14 days anchored on **Sunday 2026-01-04** (`PAY_PERIOD_ANCHOR`, settings default and `.env.example`). The anchor must be a Sunday: system check `timesheets.E001` makes `runserver`, `migrate`, `seed_demo` and every management command refuse to start with "PAY_PERIOD_ANCHOR … is a Monday; it must be a Sunday …", and `pay_period_for` raises `ValueError` for a non-Sunday anchor. Tests set the anchor themselves (`tests/conftest.py`), whatever `.env` says. **Supersedes** B.1 row 12 (Monday 2026-01-05). | B.1 row 12, FR-7 |
 | D-114 | Calendar | **Working days stay Monday–Friday** (D-19): `working_days(week_start)` = Mon…Fri (the week's days 2–6), used by expected hours and partial weeks, the day summary's expected column (and so the missing-day flag, D-55) and the seed. Sunday and Saturday are the weekend at the two ends of the week. | B.9 #5, D-19 |
@@ -1618,7 +1629,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-126 | Data | **Seed**: the existing correction (an hour added to a paid week of the oldest period) now publishes its v2 as SETTLED with a **+1.00 h adjustment, Scheduled**, carried to the first period without an export batch (the last approved period, whose weeks are still waiting to be exported) — one correction plus one carried-forward adjustment. | B.7, T-114 |
 | D-127 | Grid | **Change 5 – Easier multiple time slots** (refines D-107 and D-110). Still **one row per Project / Category**; a second period of work on the same day is another time slot in the same cell. **"+ Add row" for a row that is already there** shows no error: the dialog closes, the existing row is scrolled into view and highlighted briefly (no animation with reduced motion), its first day cell gets focus, and a notice under the grid (`role="status"`) says "I-001 Customer Portal / Project work already has a row. Click a day to add another time slot (for example 2:00 PM – 5:00 PM)." (leave rows: "PTO already has a row. Click a day to enter or change its hours."). **Cell dialog:** the button reads "+ Add another time slot" (leave: "+ Add another leave entry"); a work or Break cell that already has slots opens with them listed plus one empty new slot, focused and ready to fill; a leave cell opens as before. An offered slot left empty is dropped when the dialog closes and never posted (as before). **Hint:** a cell with more than one slot shows "8.00 · 2 slots"; its tooltip (`title`) and accessible name list the slot times ("08:00–13:00, 14:00–17:00"; leave: hours) — rendered on the server (`Cell.slot_times`), kept up to date while typing, and shown on read-only grids too (submitted weeks, change requests, approvals, Team week view) as well as on Edit directly. **Rules unchanged:** 15-minute steps, no overlaps across all rows of a day, a reason on every slot (*optional since D-128*), Break never counted; the server's validation stays the authority. | B.4 FR-8, B.10 |
 | D-128 | Timesheet | **Change 6 – Optional reason on time entries** (supersedes the "required reason" of D-36 and the reason rule in D-49, D-107, D-127 and B.4 FR-8). The Reason field stays in every time-slot dialog (employee grid and Edit directly) but may be left empty for work, Break and leave; an empty or spaces-only reason is saved as blank (`""`); at most 255 characters is still checked. Read-only cell dialogs (submitted, locked and approved weeks, change requests, approvals, Team week view) show the Reason column only when at least one of the cell's slots has a reason; a slot without one shows an empty cell there. All other entry rules are unchanged; an entry with nothing typed is still ignored and one with only a reason still needs its times or hours. **Still required:** a change request's reason ("Explain what needs to change.") and a rejection comment (D-07). `TimeEntry.reason` gets `blank=True` in migration `timesheets/0005` (no database column changes). The demo data still gives every row a reason. | B.4 FR-8, B.6 |
-| D-129 | Grid | **Change 7 – Row actions.** On an **editable** grid only — the employee's own open week (Draft, Reopened after an unlock or a rejection) and the manager's Edit directly — each row's label has a Bootstrap "⋮" dropdown (`aria-label="Row actions for I-001 Customer Portal"`) with **Change project / category** and **Delete row**; the menu opens below ⋮, aligned to its start, on top of everything in the table and never clipped (Popper `fixed` strategy, so the scrolling table and the rounded card can't clip it; the open menu's sticky name cell is raised above the other rows' sticky cells). Both open in the grid's native dialog, like "+ Add row" and the cells (never a browser `confirm()`); Esc or Cancel closes it and focus returns to ⋮. Delete asks first: "Delete I-001 Customer Portal? This removes 3 time slots (6.50 h) from this week." (leave: "leave entries"), counted from the grid as typed; a row without slots is removed at once. The action POSTs the whole week **as typed** (HTMX, CSRF) to `timesheet_rows` / `request_rows`; the server applies it with `timesheets/services/grid_rows.py` and returns the re-drawn grid (row, day and week totals) with a status notice ("…Save to keep this change."); the day summary refreshes. **Nothing is saved until the week is saved** (Save draft / Submit through `save_week`, "Save and submit for the employee" through `edit_directly`), so every entry rule, status-on-read, the single Edit directly UPDATE audit row (before/after) and re-approval → publish → pay adjustments (D-118) are unchanged; leaving without saving warns as usual (D-110). **Server checks:** POST only; the employee's endpoint refuses a week that isn't editable (403, `WeekLocked`); Edit directly's needs an open change request the user may handle (403, D-47). Submitted, approved, exported and paid weeks stay read-only, with no menu; they change only through a change request. | B.4 FR-8, B.10, D-49 |
+| D-129 | Grid | **Change 7 – Row actions.** On an **editable** grid only — the employee's own open week (Draft, Reopened after an unlock or a rejection) and the manager's Edit directly — each row's label has a Bootstrap "⋮" dropdown (`aria-label="Row actions for I-001 Customer Portal"`) with **Change project / category** and **Delete row**; the menu opens below ⋮, aligned to its start, on top of everything in the table and never clipped (Popper `fixed` strategy, so the scrolling table and the rounded card can't clip it; the open menu's sticky name cell is raised above the other rows' sticky cells). Both open in the grid's native dialog, like "+ Add row" and the cells (never a browser `confirm()`); Esc or Cancel closes it and focus returns to ⋮. Delete asks first: "Delete I-001 Customer Portal? This removes 3 time slots (6.50 h) from this week." (leave: "leave entries"), counted from the grid as typed; a row without slots is removed at once. The action POSTs the whole week **as typed** (HTMX, CSRF) to `timesheet_rows` / `request_rows`; the server applies it with `apps/timesheets/services/grid_rows.py` and returns the re-drawn grid (row, day and week totals) with a status notice ("…Save to keep this change."); the day summary refreshes. **Nothing is saved until the week is saved** (Save draft / Submit through `save_week`, "Save and submit for the employee" through `edit_directly`), so every entry rule, status-on-read, the single Edit directly UPDATE audit row (before/after) and re-approval → publish → pay adjustments (D-118) are unchanged; leaving without saving warns as usual (D-110). **Server checks:** POST only; the employee's endpoint refuses a week that isn't editable (403, `WeekLocked`); Edit directly's needs an open change request the user may handle (403, D-47). Submitted, approved, exported and paid weeks stay read-only, with no menu; they change only through a change request. | B.4 FR-8, B.10, D-49 |
 | D-130 | Grid | **Change 7 – Row action rules** (one place: `grid_rows.py`). **Change project / category** moves every slot of the row to the chosen category (and active project for Project work, D-18; the same check as "+ Add row"); dates, times, hours and reasons are kept. Allowed: a work or Break row → any work category or Break (the dialog warns "Break is unpaid: these hours will no longer count as worked time", or that Break hours will count as worked time); a leave row → another leave type only, because leave has hours, not times. Anything else is refused (400) and nothing changes. If the chosen project / category **already has a row this week, the slots merge into it**; the dialog says so first ("… already has a row this week: the 3 time slots of this row will be added to it.") and the notice confirms it; overlaps and all other rules are checked as always when the week is saved (D-38). **Delete row** removes the row's slots for this week only. No schema change. | B.4 FR-8 |
 | D-131 | Hardening | **Static files are revalidated on every page load.** `/static/` (D-96) answers with `Cache-Control: no-cache`; an unchanged file answers `304 Not Modified` to the browser's If-Modified-Since, so this costs almost nothing. Reason: before, files were served with only Last-Modified, so Chrome reused cached copies by its own heuristic (about a tenth of the file's age); after an update a page could run with the previous `grid.js` and `theme.css` — found in Change 7, where the new ⋮ menu then sat under the next row and its items did nothing. Chosen over versioned file names (`ManifestStaticFilesStorage` needs `collectstatic`, which this app doesn't use) and a hand-bumped `?v=` (easy to forget). After this change, one hard reload (⌘⇧R) clears copies a browser cached earlier. | B.10, D-96 |
 | D-132 | Payroll | **Change 8 – Pay Period Register.** Every ended 2-week pay period has a register. While it isn't finalized it is **worked out live** (status **OPEN**, then **READY**) — never saved, because an approval can still go back to PENDING when an approved week is edited or unlocked, and payroll records only move forward. **Finalize & export** saves it as `PayrollRegister` (payroll database only, append-only through `AppendOnlyRecord`: born **FINALIZED** with its batch, who finalized it and when, why it was ready, approved x of y; the only move is FINALIZED → **PAID**, setting `paid_at`) with one `PayrollRegisterLine` per employee (`FrozenRecord`: saved once, never changed or deleted; a foreign key to its register inside the payroll database, none across databases). Migration `payroll/0003`; no change to `db.sqlite3`. | B.4 FR-11, B.6, D-15 |
@@ -1634,7 +1645,7 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-142 | Payroll | **The register waits for everyone** (supersedes the deadline part of D-133 and the 0.00 lines of D-134). READY only when the period has ended, **every person who must be approved is APPROVED**, no change request is open on its weeks, and every approved week has its payroll record. The approval deadline is only the "Approve by …" reminder and the Overdue badge. Finalize & export is refused on the server until READY, so there are no 0.00 lines; "Missed – not submitted" / "Waiting for manager approval" remain only on registers saved before. While OPEN the period page shows only progress, the deadline and who is pending — no register table, week records, Finalize or downloads (week records still show for periods exported before registers). Carry-forward is unchanged: corrections after finalizing (D-136) and anything that becomes approvable afterwards (e.g. a new hire back-dated into the period). Before finalizing, a re-approved week simply replaces the old one in the register. Saved registers never change; `build_registers` / `sync_payroll` still only build registers for earlier exports. | B.4 FR-11 |
 | D-143 | Payroll | **Pending approvals by manager** (`/payroll/pending/`, payroll staff and admins; read only — nobody approves there): for a period (default the most recent ended one) one row per approver who still has people to approve — manager and team ("HR / admins" for no-manager staff), pending x of y, each person with their state (Submitted, Locked – not submitted, Reopened until …, Change request open, Not submitted yet) and Overdue after the deadline; totals managers done x of y and people approved x of y; CSV `payroll-pending_<start>_to_<end>.csv` (formula-safe). Linked from the Payroll list ("Who's pending" on OPEN periods), the register page and the Admin header. Built from `company_period_rows` + `decision_blockers` (one rule). | B.4 FR-11, D-12 |
 | D-144 | Data | **Seed (Change 9):** after the history is built, each manager also approves the people older periods left pending — locked weeks with what was entered, and weeks with no timesheet (sign-up candidates) at 0.00 — through `approve_period`, so every older period is fully approved and its register can be finalized; those weeks keep no submission time (still missed). The most recent completed period stays pending (B.7). Updates D-137. | B.7 |
-| D-145 | Setup | **The secret key can't stay the example.** A system check (`directory/checks.py`, run before runserver, migrate, seed_demo and every command) flags a `SECRET_KEY` equal to the `.env.example` value or shorter than 50 characters (Django's own deploy-check length): a **warning** (`directory.W001`) while `DEBUG` is on, an **error** (`directory.E001`) with `DEBUG` off, which stops the app. The message says which problem it is and how to generate a key; it never shows the key. | B.10, D-96 |
+| D-145 | Setup | **The secret key can't stay the example.** A system check (`apps/directory/checks.py`, run before runserver, migrate, seed_demo and every command) flags a `SECRET_KEY` equal to the `.env.example` value or shorter than 50 characters (Django's own deploy-check length): a **warning** (`directory.W001`) while `DEBUG` is on, an **error** (`directory.E001`) with `DEBUG` off, which stops the app. The message says which problem it is and how to generate a key; it never shows the key. | B.10, D-96 |
 | D-146 | Setup | **`seed_demo` refuses the example `DEMO_PASSWORD`** (`choose-a-strong-demo-password` from `.env.example`) with a clear message, before anything is written — in addition to the empty and weak-password checks. | B.7 |
 | D-147 | Setup | **`doctor.sh` gives two answers.** "Ready to RUN the app" needs Git, uv, Python 3.13 via uv (as `.python-version` / `pyproject.toml`) and a free port 8000: missing ones are ❌ and the script exits with an error. "Ready to BUILD with Claude Code" (Claude Code, no `ANTHROPIC_API_KEY`, Git identity, home folder not a repository; on macOS Xcode tools, Homebrew, Antigravity) only gives ⚠️ warnings. Computer information (macOS version, chip, RAM, disk) is a warning only; macOS-only checks are skipped on Linux. | A.3, A.4 |
 | D-148 | Data | **Change 10 – Tasks.** `Task` (code ≤ 10 characters, unique; name; description; active; sort order) says what project work was spent on. Admins add and edit tasks in Admin → Tasks (`directory_admin.save_task`, CREATE / UPDATE audit rows, D-88); the code is read-only once added (entries and audit rows refer to it); tasks are **never deleted** (no delete permission; `TimeEntry.task` is PROTECT) — clear Active instead. The change page shows how many saved entries use the task. **Defaults:** PLN Planning & Analysis, DES Design & Architecture, DEV Development, TST Testing & QA, REL Release & DevOps, SUP Support & Bug Fixes, SEC Security & Compliance, DOC Documentation & Knowledge Transfer, MTG Project Meetings & Coordination (sort 10…90, with the agreed descriptions), created by the data migration `timesheets/0007_default_tasks` (get-or-create, safe to repeat; reversing it deletes nothing) and so present in every database, `seed_demo` included. | B.6 |
@@ -1658,11 +1669,12 @@ Decisions made after the spec review (D-01–D-20 on October 21, 2026; D-21–D-
 | D-166 | Pay | **Change 12 – Employee pay is history.** `PayRecord` (directory app): SALARIED (annual salary + the hourly rate HR fixes; suggested = salary ÷ 2,080, 40 h × 52 weeks, half-up to cents, used when the rate is left empty) or HOURLY (hourly rate), each with `effective_from`. A pay change — or a correction for the same date — is a **new record**: saving an existing record, deleting, and bulk updates/deletes raise `PayHistoryError`. The record in force on a day is the one with the latest `effective_from` up to that day, the newest for a tie (`pay.record_on`). Back-dated changes are allowed (not before the hire date) and re-price work from that date — older dates keep their rate. Money is `Decimal` with exact cents everywhere, never float. Every change writes a CREATE "Pay" audit row (before = the pay in force until then, after, `correction`). | B.6 |
 | D-167 | Pay | **Only admins see or change pay** (`can_manage_pay`). Admin → Employees: the employee page shows a read-only Pay line and links to `/admin/…/pay/` — current pay, the history (corrections marked), **Add pay change** (the form suggests salary ÷ 2,080 with "Use it"); nothing is ever deleted (PayRecord has no admin of its own). Pay is not in the employee list, the employee CSV, the employee import or the Profile. **Pay CSV** (admin-only, from the employee list): Export = every record (employee_code, pay_type, annual_salary, hourly_rate, effective_from; formula-safe; EXPORT audit row); Import = the same columns, checked like the employee import (preview, line-numbered errors, all-or-nothing, two rows for one person and date refused), **only adds** records (identical = unchanged, same date with other values = correction), each audited. Pay amounts never appear in logs, error messages or `str()`; outside Admin only hourly rates and costs appear, on Project budget (D-170). | B.3, D-92 |
 | D-168 | Data | **Project budgets.** `Project.budget` (USD, ≥ 0, optional; empty = "No budget set") and `Project.costs_from` (optional; empty = all time), edited on the Admin project page through the audited `save_project`; audit rows keep amounts and dates as exact text. | B.6, D-88 |
-| D-169 | Costs | **Cost rules** (one place: `analytics/services/project_costs.py`, built on the Project hours report so the hours always match it). **Approved hours only** — the page has no Hours filter; any `hours` parameter is ignored. Cost of a Project-work entry = hours × the hourly rate in force on its work date, rounded half-up to cents (`pay.labour_cost`); every total is the sum of the rounded rows, so the page, Excel and CSV add up. Break, leave, Meetings, Training and Other are never charged to projects. Overtime uses the same rate ("overtime premium not included"). An entry with no pay on its date is **not costed** (never $0): it is listed under **Rate missing** (person, hours, dates), warned about on the page and noted per project. Per project: **total cost to date** = the whole project's approved cost since `costs_from` — everyone's, whatever the period or the viewer's tree; **remaining** = budget − total; **% used** = total ÷ budget (one decimal); **status** On track (< `BUDGET_AT_RISK_PERCENT`, default 80), At risk (up to `BUDGET_OVER_PERCENT`, default 100), Over budget (above it), No budget set; a 0 budget is Over budget as soon as anything is spent. Cost and hours **this period** are the report's people's. Projects listed: the chosen ones; otherwise those the report's people worked on, plus every budgeted project for admins and payroll. Breakdowns: team or manager (D-162, D-165), task, pay type (in force on the date), pay period, By employee (pay type and hourly rate(s) used, hours, cost). | D-161 |
+| D-169 | Costs | **Cost rules** (one place: `apps/reports/services/project_costs.py`, built on the Project hours report so the hours always match it). **Approved hours only** — the page has no Hours filter; any `hours` parameter is ignored. Cost of a Project-work entry = hours × the hourly rate in force on its work date, rounded half-up to cents (`pay.labour_cost`); every total is the sum of the rounded rows, so the page, Excel and CSV add up. Break, leave, Meetings, Training and Other are never charged to projects. Overtime uses the same rate ("overtime premium not included"). An entry with no pay on its date is **not costed** (never $0): it is listed under **Rate missing** (person, hours, dates), warned about on the page and noted per project. Per project: **total cost to date** = the whole project's approved cost since `costs_from` — everyone's, whatever the period or the viewer's tree; **remaining** = budget − total; **% used** = total ÷ budget (one decimal); **status** On track (< `BUDGET_AT_RISK_PERCENT`, default 80), At risk (up to `BUDGET_OVER_PERCENT`, default 100), Over budget (above it), No budget set; a 0 budget is Over budget as soon as anything is spent. Cost and hours **this period** are the report's people's. Projects listed: the chosen ones; otherwise those the report's people worked on, plus every budgeted project for admins and payroll. Breakdowns: team or manager (D-162, D-165), task, pay type (in force on the date), pay period, By employee (pay type and hourly rate(s) used, hours, cost). | D-161 |
 | D-170 | Costs | **Reports → Project budget: who sees what** (`can_see_costs`, `can_see_everyones_costs`): managers and directors see **their own tree** — per-person hours, hourly rate used and cost, the Detail and their people's Rate missing — and project-wide budget totals; **payroll staff and admins see everyone** (payroll view only); anyone else gets **403** on the page and both downloads and has no menu item (Reports becomes a dropdown: Project hours, Project budget). Nobody here sees annual salaries, pay types' history or pay changes — those stay in Admin. People / Group by follow D-160 and D-165 (payroll counts as "everyone"). | B.3 |
 | D-171 | Costs | **Two separate downloads.** Costs: `project-costs_<from>_to_<to>.xlsx` with Summary (filters, generated at/by, the notes), By project, By team / By manager (as offered, D-165), By task, By pay type, By pay period, By employee, Detail (one row per entry with hourly rate and cost) and Rate missing (when there is any); money as exact numbers formatted "$"#,##0.00; and `….csv` = the Detail (date, week_start, employee_code, employee_name, team, manager, project_code, project_name, task_code, task_name, charge_code, hours, pay_type, hourly_rate, cost, rate_missing) — no salaries, no reasons; formula-safe text; one EXPORT "ProjectCosts" audit row per download (viewer, filters, rows). Hours: links to the Change 11 report files with these filters and Approved (`project-hours_…`); payroll staff who manage nobody get no hours link, because that report shows them only their own hours (D-160). Speed (`seed_demo --large`, HR): last pay period page 0.6 s, files 0.5 s; 12 weeks page 1.1 s, CSV 1.3 s, Excel 5 s; a whole year page 3.8 s, CSV 5.3 s, Excel ~25 s (millions of cells — use the CSV for that much). | D-68, D-163 |
 | D-172 | Data | **Demo pay and budgets** (`seed_demo`): everyone gets pay from the later of the history start and their hire date — salaried by job title (e.g. Software Engineer ~$125,000, rate = salary ÷ 2,080), hourly for Operations Analysts, Support Specialists and Executive Assistants ($24–$33.50) — DEV1 a 6 % raise four periods before the end, and the first Data staff member none (Rate missing). Budgets on I-001 … I-007 come from each project's approved cost so far, so the demo shows On track, At risk (I-003, ~90 %) and Over budget (I-002, ~115 %); I-008 (closed) has none. Pay rows are audited like any pay change; budgets are part of the projects' CREATE audit rows. | B.7 |
-| D-173 | Layout | **Refactor R1 – the code layout** (no behaviour change: same URLs, pages, permissions, rules, tables, migrations, numbers, files and the same 350 tests). **Settings** are a package: `config/settings/base.py` (everything shared, reads `.env`), `local.py` (the default for manage.py, wsgi and asgi), `test.py` (pytest, via pyproject) and `production.py` — a skeleton for later (PostgreSQL through `DATABASE_URL` / `PAYROLL_DATABASE_URL`, which will need `uv add "psycopg[binary]"`; HTTPS, secure cookies, HSTS; logging to stdout) that nothing uses yet; coverage leaves out the two entry-point settings files like wsgi/asgi. **Views**: an app with more than one view file has a `views/` package — `timesheets/views/{weeks,approvals,requests}.py`, `analytics/views/{dashboard,team,reports}.py`; single-file apps keep `views.py`. **Large services are packages** whose `__init__.py` re-exports every public name, so imports never change: `directory/services/demo/` (constants, people, projects, history, pay, approvals, writing — the seeder's parts as mixins — payroll, calendar, records), `analytics/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `payroll/services/register/` (constants, state, table, actions, backfill). `timesheets/services/approvals.py` is split only at its natural seam: "who still has to approve" (Change 9) is `timesheets/services/pending.py`, still importable from `approvals` (looked up on use, as pending builds on approvals); the approve / reject / unlock workflow and its payroll hooks stay together. **Tests** by app: `tests/<app>/unit/` (pure rules) and `tests/<app>/integration/` (pages, database); `tests/site/` for whole-site checks (menus and 403s across apps, DEBUG-off errors, theme, first-run checks); `tests/e2e/` has `helpers.py` and one file per area (auth, admin, timesheets, approvals, payroll, reports); shared `conftest.py`, `factories.py`, `forms.py` stay in `tests/`. **Makefile**: run, test, test-fast, e2e, lint, backup, migrate (both databases), check, help — none deletes or reseeds data. | D-04, B.11 |
+| D-173 | Layout | **Refactor R1 – the code layout** (no behaviour change: same URLs, pages, permissions, rules, tables, migrations, numbers, files and the same 350 tests). **Settings** are a package: `config/settings/base.py` (everything shared, reads `.env`), `local.py` (the default for manage.py, wsgi and asgi), `test.py` (pytest, via pyproject) and `production.py` — a skeleton for later (PostgreSQL through `DATABASE_URL` / `PAYROLL_DATABASE_URL`, which will need `uv add "psycopg[binary]"`; HTTPS, secure cookies, HSTS; logging to stdout) that nothing uses yet; coverage leaves out the two entry-point settings files like wsgi/asgi. **Views**: an app with more than one view file has a `views/` package — `apps/timesheets/views/{weeks,approvals,requests}.py`, `apps/analytics/views/{dashboard,team,reports}.py`; single-file apps keep `views.py`. **Large services are packages** whose `__init__.py` re-exports every public name, so imports never change: `apps/directory/services/demo/` (constants, people, projects, history, pay, approvals, writing — the seeder's parts as mixins — payroll, calendar, records), `apps/reports/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `apps/payroll/services/register/` (constants, state, table, actions, backfill). `apps/timesheets/services/approvals.py` is split only at its natural seam: "who still has to approve" (Change 9) is `apps/timesheets/services/pending.py`, still importable from `approvals` (looked up on use, as pending builds on approvals); the approve / reject / unlock workflow and its payroll hooks stay together. **Tests** by app: `tests/<app>/unit/` (pure rules) and `tests/<app>/integration/` (pages, database); `tests/site/` for whole-site checks (menus and 403s across apps, DEBUG-off errors, theme, first-run checks); `tests/e2e/` has `helpers.py` and one file per area (auth, admin, timesheets, approvals, payroll, reports); shared `conftest.py`, `factories.py`, `forms.py` stay in `tests/`. **Makefile**: run, test, test-fast, e2e, lint, backup, migrate (both databases), check, help — none deletes or reseeds data. | D-04, B.11 |
+| D-174 | Layout | **Refactor R2 – own apps; everything in `apps/`** (no behaviour change). **Apps:** `apps/directory` (people, accounts, permissions, employee admin, importer, demo seed), `apps/timesheets` (weeks, grid, change requests, approvals), **`apps/projects`** (Project, Task, the allowed-task link and the budget fields with `services/projects.py`, `tasks.py`, `project_admin.py` and the Project/Task admin), **`apps/compensation`** (PayRecord with `services/pay.py`, `pay_import.py` and `access.py` — `can_manage_pay`, `can_see_costs`, `can_see_everyones_costs` — and `PayAdminMixin`, which the Employee admin uses so the Pay pages keep their addresses and URL names), `apps/payroll`, `apps/audit`, `apps/analytics` (Dashboard and Team only) and **`apps/reports`** (Project hours and Project budget: services, views, URLs, templates, JS, `time_project_report`). Each `apps.py` sets `name = "apps.<app>"` and keeps `label = "<app>"`, so `AUTH_USER_MODEL = "directory.User"`, table names, migration history, the payroll router (label "payroll") and audit entity names are unchanged; code imports `apps.<app>…`. **Moving models without moving data:** the moved models keep their tables through `Meta.db_table` (`timesheets_project`, `timesheets_task`, `timesheets_project_tasks`, `directory_payrecord`), and four migrations are state-only (`SeparateDatabaseAndState` with no database operations): `projects/0001_initial` and `compensation/0001_initial` create the models in Django's state; `timesheets/0010_move_projects` points `TimeEntry.project` / `.task` at `projects.*` and drops Project/Task from timesheets' state; `directory/0004_move_payrecord` drops PayRecord from directory's state. They run no SQL; an existing database only records them (proved on a seeded test database: schema and every data table's rows identical before, after and on re-apply; only Django's content-type and permission bookkeeping gains rows for the new labels). `directory/0001` now imports `apps.directory.managers` (one-line path fix, no schema change). **Templates and JS per app:** `apps/<app>/templates/<app>/…` (same template names) and `apps/<app>/static/<app>/…` (`timesheets/grid.js`, `timesheets/countdown.js`, `projects/project_search.js`, `analytics/dashboard.js`, `analytics/team.js`, `reports/report.js`, `reports/budget.js`); site-wide stay in `templates/` (base, 403/404/500, includes, registration, admin/base_site) and `static/` (`css/theme.css`, `vendor/`). **Accepted address changes:** Project/Task Admin pages `/admin/projects/…` (Admin → Projects) and the JS file addresses above; every app page, URL and URL name is unchanged. **Tests:** `tests/projects/`, `tests/compensation/`, `tests/reports/`; old data-migration functions are tested with `tests.factories.MIGRATION_APPS` (today's models under the labels those migrations ask for). | D-173, B.6 |
 
 ---
 
@@ -1706,10 +1718,10 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 
 ## Conventions
 - Apps: directory, timesheets, audit, payroll, analytics. Settings package: config.
-- Every app uses a services package: <app>/services/<module>.py (e.g. payroll/services/publish.py,
-  analytics/services/metrics.py); never a single services.py. Business rules live there as plain,
+- Every app uses a services package: <app>/services/<module>.py (e.g. apps/payroll/services/publish.py,
+  apps/analytics/services/metrics.py); never a single services.py. Business rules live there as plain,
   tested functions. Views stay thin.
-- Every view enforces permissions server-side via directory/services/permissions.py.
+- Every view enforces permissions server-side via apps/directory/services/permissions.py.
 - Payroll models live only in the payroll database; no foreign keys across databases; payroll
   records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
 - Passwords: Argon2 first in PASSWORD_HASHERS; never log, print or store plain passwords.
@@ -1717,28 +1729,35 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - Use TextChoices for all statuses. Every manager/admin/payroll action writes an AuditLog row
   (system actions use system_actor instead of actor, D-14).
 - Project work is booked to a project and a task (D-148–D-152): the task rule lives only in
-  timesheets/services/validation.py with timesheets/services/tasks.py; the charge code
+  apps/timesheets/services/validation.py with apps/projects/services/tasks.py; the charge code
   "<project>-<task>" is computed by tasks.charge_code, never stored. Payroll never sees tasks.
-- Project codes are I-001, I-002, … (D-155): assigned only by timesheets/services/projects.py
+- Project codes are I-001, I-002, … (D-155): assigned only by apps/projects/services/projects.py
   (assign_code, never typed or edited, never reused) and sorted by Project.number, never as text.
   Project search matching lives only in projects.search_projects (D-157).
 - Reports → Project hours (D-160–D-164): every number comes from
-  analytics/services/project_report.py (page, Excel and CSV alike; who is in it only from
+  apps/reports/services/project_report.py (page, Excel and CSV alike; who is in it only from
   report_people; which People / Group by choices are offered only from scope_options /
   group_options, D-165); report_files.py only lays out files, with safe_cell text, no reasons,
   and one EXPORT audit row per download.
-- Pay (D-166, D-167): only through directory/services/pay.py (rate in force by date, suggested
+- Pay (D-166, D-167): only through apps/compensation/services/pay.py (rate in force by date, suggested
   salary ÷ 2,080, labour_cost) and pay_import.py; PayRecord is append-only history (a change or
   correction is a new record); Decimal cents, never float; only admins see salaries or pay
   history (can_manage_pay); never log an amount. Costs (D-169–D-171): only from
-  analytics/services/project_costs.py, APPROVED hours only, rounded per entry; managers see
+  apps/reports/services/project_costs.py, APPROVED hours only, rounded per entry; managers see
   their tree, payroll and admins everyone (can_see_costs / can_see_everyones_costs).
-- Layout (D-173): settings are config/settings/{base,local,test,production}.py (local is the
-  default, pytest uses test, production is a skeleton not used yet). An app with several view
-  files has a views/ package (timesheets/views/{weeks,approvals,requests}.py,
-  analytics/views/{dashboard,team,reports}.py). A big service may be a package whose
-  __init__.py re-exports its public names (directory/services/demo/,
-  analytics/services/project_report/, payroll/services/register/). Tests live in
+- Layout (D-173, D-174): every app is in apps/ and imported as apps.<app>, with its label
+  unchanged (directory, timesheets, projects, compensation, payroll, audit, analytics,
+  reports). Projects and tasks are apps.projects; pay is apps.compensation (salary permissions
+  in apps/compensation/services/access.py); Project hours and Project budget are apps.reports.
+  Each app keeps its templates in apps/<app>/templates/<app>/ and its JS in
+  apps/<app>/static/<app>/; only site-wide files stay in templates/ and static/. A model moved
+  to another app keeps its table (Meta.db_table) and moves with state-only migrations
+  (SeparateDatabaseAndState). Settings are config/settings/{base,local,test,production}.py
+  (local is the default, pytest uses test, production is a skeleton not used yet). An app with
+  several view files has a views/ package (apps/timesheets/views/{weeks,approvals,requests}.py,
+  apps/analytics/views/{dashboard,team}.py). A big service may be a package whose
+  __init__.py re-exports its public names (apps/directory/services/demo/,
+  apps/reports/services/project_report/, apps/payroll/services/register/). Tests live in
   tests/<app>/unit/ and tests/<app>/integration/, whole-site checks in tests/site/, browser tests
   in tests/e2e/test_<area>.py with shared helpers in tests/e2e/helpers.py.
 - Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
@@ -1800,10 +1819,10 @@ Plan first, then scaffold the project in the current folder:
   pytest-playwright, ruff.
 - Django project package "config"; apps: directory, timesheets, audit, payroll, analytics, each with
   a services/ package (D-04).
-- Two databases (default → db.sqlite3, payroll → payroll.sqlite3) and payroll/routers.py as in B.6.
+- Two databases (default → db.sqlite3, payroll → payroll.sqlite3) and apps/payroll/routers.py as in B.6.
 - Custom User model (directory.User) with Team and Employee models exactly as in B.6 (including
   end_date), with AUTH_USER_MODEL set BEFORE the first migrate. Custom UserManager and the
-  createsuperuser employee_code flow (D-02). directory/services/accounts.py sync_account called on
+  createsuperuser employee_code flow (D-02). apps/directory/services/accounts.py sync_account called on
   every Employee save (D-13, D-20).
 - PASSWORD_HASHERS with Argon2PasswordHasher first; password validators with min length 12.
 - Settings from .env via django-environ; .env.example with every variable from B.1, including
@@ -1842,7 +1861,7 @@ plus import_employees tests and a new catalogued test for D-14.
 ### Phase 3 — Login & sign-up with directory check
 ```
 Implement FR-1 and FR-2: /login/, /signup/, /logout/ with Bootstrap pages.
-Eligibility rules in directory/services/signup.py. Configure django-axes (5 failures → 15-minute lock).
+Eligibility rules in apps/directory/services/signup.py. Configure django-axes (5 failures → 15-minute lock).
 Require login everywhere except login and signup. Inactive employees cannot log in.
 Directory admins get is_staff and is_superuser through the D-13 sync (built in Phase 1).
 Tests: T-01 to T-05 and T-09 to T-11.
@@ -1854,7 +1873,7 @@ Tests: T-01 to T-05 and T-09 to T-11.
 Build the logged-in layout: navbar with name, Employee ID, job title and team (FR-4); menu: Dashboard,
 Timesheets, Requests for everyone; Team and Approvals only for managers; Payroll only for payroll/admin;
 Admin link only for admins. /profile/ with password change.
-directory/services/permissions.py: reporting_tree (cycle-safe), is_manager, can_view, can_approve,
+apps/directory/services/permissions.py: reporting_tree (cycle-safe), is_manager, can_view, can_approve,
 can_edit, can_access_payroll, plus view decorators/mixins. can_approve per D-11 (never self; admins
 only for employees with no manager); roles add up and the payroll flag grants nothing beyond /payroll/
 (D-12). Tests: T-26, T-27, T-28, plus new catalogued tests for D-11 and D-12.
@@ -1866,7 +1885,7 @@ only for employees with no manager); roles add up and the payroll flag grants no
 Implement FR-8 and /timesheets/ and /timesheets/<YYYY-MM-DD>/: one row per entry (date, category,
 project, start/end time or leave hours, reason (optional since D-128); unlimited rows, D-35–D-43), 15-minute steps, live
 day summary with HTMX, Save draft, Submit, deadline countdown.
-Calendar logic in timesheets/services/calendar.py, validation in timesheets/services/validation.py.
+Calendar logic in apps/timesheets/services/calendar.py, validation in apps/timesheets/services/validation.py.
 Weekend hours can be entered in advance (D-09). PROJECT entries need an active project, other
 categories none (D-18). Entries only within hire_date…end_date; expected_minutes_for prorates
 partial weeks; weeks outside employment are never missed (D-19).
@@ -1879,7 +1898,7 @@ D-18 and D-19.
 ```
 Implement FR-9: Request change; /requests/; /approvals/requests/ with Reject, Unlock (window per D-21) and
 Edit directly; AuditLog with before/after for every manager/admin change; editing a week in an approved
-period resets that PeriodApproval to PENDING through timesheets/services/approvals.py in one
+period resets that PeriodApproval to PENDING through apps/timesheets/services/approvals.py in one
 transaction (D-10) (leave a clear hook for the payroll "supersede" step, implemented in Phase 8).
 reopen_until = the later of +48 h and the week's Saturday 12:00 deadline (D-21); an unused window
 makes the week LOCKED; late resubmissions keep is_late (D-08).
@@ -1893,7 +1912,7 @@ Implement FR-7: /approvals/ with pay-period picker and one row per direct report
 or reject (comment required); bulk approve for rows without flags; admins approve employees with no
 manager, never themselves (D-11). Only SUBMITTED weeks can be approved; LOCKED weeks get an Unlock
 button that creates a manager-authored ChangeRequest + audit entry (D-06). Reject → REOPENED with
-reopen_until per D-21 (D-07). Logic in timesheets/services/approvals.py, the only code that moves
+reopen_until per D-21 (D-07). Logic in apps/timesheets/services/approvals.py, the only code that moves
 weeks to/from APPROVED (D-10). Tests: T-29 to T-32, plus new catalogued tests for D-06, D-07, D-10, D-11.
 ```
 ✅ Verify: as eng.manager, approve the pending period for dev2 and reject one for dev1; dev1 sees the comment and can resubmit.
@@ -1901,7 +1920,7 @@ weeks to/from APPROVED (D-10). Tests: T-29 to T-32, plus new catalogued tests fo
 ### Phase 8 — Payroll database (NEW)
 ```
 Implement FR-11 and the payroll app (models only in the payroll database, as in B.6):
-- payroll/services/ package (D-04): hours.py split_hours (overtime rule from B.1 row 16; Break time
+- apps/payroll/services/ package (D-04): hours.py split_hours (overtime rule from B.1 row 16; Break time
   excluded from regular hours and overtime, D-45);
   publish.py publish_period (idempotent), supersede_week; export.py export_period (CSV + batch number),
   mark_paid. Call publish_period after approval; call supersede_week from the Phase 6 hook.
@@ -1921,7 +1940,7 @@ Tests: T-33 to T-39, the payroll part of T-41, plus new catalogued tests for D-1
 
 ### Phase 9 — Personal analytics dashboard
 ```
-Implement FR-5 on the home page with Chart.js. Metrics in analytics/services/metrics.py as tested pure
+Implement FR-5 on the home page with Chart.js. Metrics in apps/analytics/services/metrics.py as tested pure
 functions (missed weeks counted only within hire_date…end_date; expected hours prorated for partial
 weeks, D-19). Chart data via json_script. Range filter 4/12/26 weeks.
 Current-week card with countdown. Test: T-40.

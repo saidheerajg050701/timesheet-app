@@ -6,7 +6,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.db import IntegrityError
 
-from directory.models import Employee, User
+from apps.directory.models import Employee, User
 from tests.factories import EmployeeFactory, UserFactory
 
 PASSWORD = "Long-Enough-Pass-1"

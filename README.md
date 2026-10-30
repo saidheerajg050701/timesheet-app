@@ -125,6 +125,9 @@ uv run python manage.py migrate --database=payroll
 uv run python manage.py seed_demo
 ```
 
+Since Refactor R2, `migrate` also records four bookkeeping migrations that move projects, tasks
+and pay into their own apps; they change no table and no row.
+
 Since Change 12, `migrate` also adds employee pay and project budgets (both empty on an
 existing database: HR enters pay in Admin, or rebuild the demo data as above to get demo pay
 and budgets).
@@ -184,7 +187,7 @@ for 15 minutes. There is no self-service password reset: ask an admin.
 Everyone gets Dashboard, Timesheets, Requests, Reports and Profile. Team and Approvals appear for
 managers (anyone with reports) and directory admins; Payroll for payroll users and admins;
 Admin only for directory admins. Every page also checks permissions on the server
-(`directory/services/permissions.py`).
+(`apps/directory/services/permissions.py`).
 
 ## Dashboard
 The home page shows your own last 4, 12 or 26 weeks: this week's status with a live countdown
@@ -356,7 +359,7 @@ uv run python manage.py sync_payroll       # safe to repeat; also creates missin
 
 ## Admin (HR)
 
-Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every change is written to the audit log with the admin's name.
+Directory admins open **Admin** (`/admin/`); everyone else gets 403. Every change is written to the audit log with the admin's name. Projects and tasks are in the **Projects** section of Admin; employee pay is on each employee's page (**Pay**).
 
 - **Employees, teams, projects:** add and edit. Nothing can be deleted: deactivate employees and clear *Active* on projects instead.
 - **Project codes** are assigned by the app: a new project gets the next I-code (I-001, I-002, …, I-1000 after I-999) when you save. You only type the name; the code is shown after saving and can never be edited or reused.
@@ -481,19 +484,21 @@ config/
   settings/       base.py (shared, reads .env) · local.py (the default) · test.py (pytest)
                   · production.py (a skeleton for a future server, not used yet)
   urls.py  wsgi.py  asgi.py
-directory/  timesheets/  audit/  payroll/  analytics/     Django apps; business rules live in
-                                                          each app's services/ package
-  timesheets/views/   weeks.py · approvals.py · requests.py
-  analytics/views/    dashboard.py · team.py · reports.py
-  directory/services/demo/            the demo company (seed_demo), one file per part
-  analytics/services/project_report/  Reports → Project hours: filters, scope, rows, numbers
-  payroll/services/register/          pay period registers: state, table/CSV, actions, backfill
-payroll/routers.py    sends the payroll app to payroll.sqlite3 and keeps every other app out
-templates/  static/   pages; Bootstrap 5, HTMX and Chart.js saved locally (no JS build step)
+apps/             the Django apps, imported as apps.<app>; business rules live in each app's
+                  services/; each app has its own templates/<app>/ and static/<app>/
+  directory/      employees, teams, accounts, sign-up, permissions, employee admin, demo seed
+  timesheets/     weeks and the grid, change requests, approvals (views/: weeks, approvals, requests)
+  projects/       projects (I-codes), tasks, allowed tasks, budgets — Admin → Projects
+  compensation/   employee pay, the Pay pages and Pay CSV, who may see pay and costs
+  payroll/        approved hours for payroll (its own database: payroll/routers.py)
+  audit/          the audit log
+  analytics/      Dashboard and Team
+  reports/        Reports → Project hours and Project budget, with Excel/CSV downloads
+templates/  static/   site-wide pages (base, errors, login) · theme.css · Bootstrap 5, HTMX and
+                      Chart.js saved locally (no JS build step)
 tests/
   conftest.py  factories.py  forms.py          shared fixtures and helpers
-  <app>/unit/  <app>/integration/              tests by app (directory, timesheets, payroll,
-                                               analytics, audit)
+  <app>/unit/  <app>/integration/              tests by app
   site/                                        whole-site checks (menus, errors, theme, first run)
   e2e/        helpers.py · test_<area>.py      real-browser tests (see B.11 in the guide)
 scripts/      test_all.sh · doctor.sh · visual_review/ (screenshots)
