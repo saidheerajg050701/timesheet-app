@@ -1,10 +1,13 @@
 # Timesheet App — instructions for Claude Code
 
 ## Source of truth
-- The full spec is docs/BUILD_GUIDE.md (Part B, including B.11 testing). Follow it exactly.
-  If something is unclear, ask me before guessing.
-- If docs/BUILD_GUIDE.md B.12 conflicts with anything else, B.12 wins.
-- Build only the phase I ask for (Part C.4). Stop when that phase is done.
+- What the app must do: docs/requirements.md. How it is built: docs/architecture.md. Every
+  decision: docs/decisions/ (one file per decision, D-01 … D-174, index in README.md). Tests:
+  docs/testing.md. Follow them exactly; if something is unclear, ask me before guessing.
+- If a decision file conflicts with anything else, the decision wins.
+- docs/BUILD_GUIDE.md is the historical build log (phase prompts, Part A/C); its B.x and D.x
+  headings only point to the new pages. Don't add new rules there.
+- Build only the change I ask for. Stop when that change is done.
 
 ## Stack (do not substitute without asking)
 Python 3.13 via uv; Django 5.2 LTS; two SQLite databases (default = db.sqlite3, payroll = payroll.sqlite3)
@@ -14,15 +17,16 @@ django-axes; Faker; Django templates + Bootstrap 5 + HTMX + Chart.js
 pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for version 1.
 
 ## Conventions
-- Apps: directory, timesheets, audit, payroll, analytics. Settings package: config.
+- Apps (in apps/): directory, timesheets, projects, compensation, payroll, audit, analytics,
+  reports. Settings package: config/settings/.
 - Every app uses a services package: <app>/services/<module>.py (e.g. apps/payroll/services/publish.py,
   apps/analytics/services/metrics.py); never a single services.py. Business rules live there as plain,
   tested functions. Views stay thin.
 - Every view enforces permissions server-side via apps/directory/services/permissions.py.
 - Payroll models live only in the payroll database; no foreign keys across databases; payroll
-  records are append-only as defined in B.12 D-15 (supersede, never edit). publish_period must be idempotent.
+  records are append-only as defined in D-15 (supersede, never edit). publish_period must be idempotent.
 - Pay period registers (D-132–D-138): OPEN/READY are worked out live; only "Finalize & export"
-  (apps/payroll/services/register.py → finalize) creates a batch and saves the frozen register and
+  (apps/payroll/services/register/ → finalize) creates a batch and saves the frozen register and
   lines; all register numbers come from PayrollWeek/PayrollAdjustment records. "Who must be
   approved" is approvals.must_be_approved, nowhere else. A register is READY only when everyone
   is approved (D-142). When an approver may approve / reject / edit is
@@ -44,7 +48,7 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   (assign_code, never typed or edited, never reused) and sorted by Project.number, never as text.
   Project search matching lives only in projects.search_projects (D-157).
 - Reports → Project hours (D-160–D-164): every number comes from
-  apps/reports/services/project_report.py (page, Excel and CSV alike; who is in it only from
+  apps/reports/services/project_report/ (page, Excel and CSV alike; who is in it only from
   report_people; which People / Group by choices are offered only from scope_options /
   group_options, D-165); report_files.py only lays out files, with safe_cell text, no reasons,
   and one EXPORT audit row per download.
@@ -69,9 +73,15 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
   apps/reports/services/project_report/, apps/payroll/services/register/). Tests live in
   tests/<app>/unit/ and tests/<app>/integration/, whole-site checks in tests/site/, browser tests
   in tests/e2e/test_<area>.py with shared helpers in tests/e2e/helpers.py.
-- Tests: follow docs/BUILD_GUIDE.md B.11 (layout, test IDs T-01 onward, factories, fixed clock).
-  Every new rule gets tests in the same phase. New catalogued tests continue at T-43 and are added
-  to the B.11 table (D-16). Each catalogued test's docstring starts with its ID (D-17).
+- Tests: follow docs/testing.md (layout, test IDs, factories, fixed clock). Every new rule gets
+  tests in the same change. New catalogued tests continue at T-271 and get a row in the
+  docs/testing.md table (D-16). Each catalogued test's docstring starts with its ID (D-17).
+- Decisions: a new decision takes the next number (D-175 …) as a new file
+  docs/decisions/D-NNN-<short-title>.md (same shape as the others) plus a row in
+  docs/decisions/README.md; when it changes an earlier decision, say so and link it from the
+  earlier file.
+- Docs: each change updates the user guides, runbooks, requirements and architecture it affects,
+  and adds a CHANGELOG.md entry (and a row in the BUILD_GUIDE Build progress table).
 - Never commit .env, db.sqlite3 or payroll.sqlite3. Keep .env.example up to date; if you change
   its DJANGO_SECRET_KEY or DEMO_PASSWORD example values, update apps/directory/checks.py and seed_demo
   (they refuse those values, D-145, D-146; T-225/T-226 check they match).
@@ -88,7 +98,7 @@ pytest-cov, Playwright for Python; Ruff. Notifications are OUT of scope for vers
 - uv run python manage.py build_registers                 # registers for periods exported before Change 8
 - uv run python manage.py sync_payroll                    # repair payroll (records, adjustments, registers)
 
-## Definition of done for each phase
+## Definition of done for each change
 1. `bash scripts/test_all.sh` passes (once it exists; before that: ruff + pytest).
 2. The server starts without errors.
 3. Summarize what changed, list the new test IDs, and give me exact browser steps to verify.

@@ -1,0 +1,19 @@
+# D-173: Refactor R1 – the code layout
+
+- **Status:** Accepted
+- **Area:** Layout
+- **From:** Refactor R1 – Code layout (commit `228eae6`)
+- **Recorded:** 2026-10-30
+
+## Context
+
+A decision in the **Layout** area, recorded during Refactor R1 – Code layout. It affects these parts of the specification: D-04, B.11.
+
+## Decision
+
+**Refactor R1 – the code layout** (no behaviour change: same URLs, pages, permissions, rules, tables, migrations, numbers, files and the same 350 tests). **Settings** are a package: `config/settings/base.py` (everything shared, reads `.env`), `local.py` (the default for manage.py, wsgi and asgi), `test.py` (pytest, via pyproject) and `production.py` — a skeleton for later (PostgreSQL through `DATABASE_URL` / `PAYROLL_DATABASE_URL`, which will need `uv add "psycopg[binary]"`; HTTPS, secure cookies, HSTS; logging to stdout) that nothing uses yet; coverage leaves out the two entry-point settings files like wsgi/asgi. **Views**: an app with more than one view file has a `views/` package — `apps/timesheets/views/{weeks,approvals,requests}.py`, `apps/analytics/views/{dashboard,team,reports}.py`; single-file apps keep `views.py`. **Large services are packages** whose `__init__.py` re-exports every public name, so imports never change: `apps/directory/services/demo/` (constants, people, projects, history, pay, approvals, writing — the seeder's parts as mixins — payroll, calendar, records), `apps/reports/services/project_report/` (constants, filters, scope, rows, aggregate, queries), `apps/payroll/services/register/` (constants, state, table, actions, backfill). `apps/timesheets/services/approvals.py` is split only at its natural seam: "who still has to approve" (Change 9) is `apps/timesheets/services/pending.py`, still importable from `approvals` (looked up on use, as pending builds on approvals); the approve / reject / unlock workflow and its payroll hooks stay together. **Tests** by app: `tests/<app>/unit/` (pure rules) and `tests/<app>/integration/` (pages, database); `tests/site/` for whole-site checks (menus and 403s across apps, DEBUG-off errors, theme, first-run checks); `tests/e2e/` has `helpers.py` and one file per area (auth, admin, timesheets, approvals, payroll, reports); shared `conftest.py`, `factories.py`, `forms.py` stay in `tests/`. **Makefile**: run, test, test-fast, e2e, lint, backup, migrate (both databases), check, help — none deletes or reseeds data.
+
+## Consequences
+
+- **Checked by:** no catalogued test cites this decision directly.
+- **Cited in code:** [`Makefile`](../../Makefile), [`apps/analytics/views/__init__.py`](../../apps/analytics/views/__init__.py), [`apps/directory/services/demo/__init__.py`](../../apps/directory/services/demo/__init__.py), [`apps/payroll/services/register/__init__.py`](../../apps/payroll/services/register/__init__.py), [`apps/reports/services/project_report/__init__.py`](../../apps/reports/services/project_report/__init__.py), [`apps/timesheets/services/approvals.py`](../../apps/timesheets/services/approvals.py), [`apps/timesheets/services/pending.py`](../../apps/timesheets/services/pending.py), [`apps/timesheets/views/__init__.py`](../../apps/timesheets/views/__init__.py), [`config/settings/__init__.py`](../../config/settings/__init__.py), [`config/settings/base.py`](../../config/settings/base.py), [`config/settings/local.py`](../../config/settings/local.py), [`config/settings/production.py`](../../config/settings/production.py), [`config/settings/test.py`](../../config/settings/test.py), [`tests/analytics/__init__.py`](../../tests/analytics/__init__.py), [`tests/audit/__init__.py`](../../tests/audit/__init__.py), [`tests/directory/__init__.py`](../../tests/directory/__init__.py), [`tests/payroll/__init__.py`](../../tests/payroll/__init__.py), [`tests/site/__init__.py`](../../tests/site/__init__.py), [`tests/timesheets/__init__.py`](../../tests/timesheets/__init__.py)
